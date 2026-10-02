@@ -1,5 +1,6 @@
 import { Activity, ArrowUpRight, Bot, GitBranch, Plus, Settings2, Workflow } from "lucide-react";
 import Link from "next/link";
+import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 
 const agents = [
   { name: "Research Analyst", model: "claude-sonnet", tone: "emerald" },
@@ -69,9 +70,7 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
-        <button className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-xs text-slate-400 transition hover:border-emerald-500/60 hover:text-emerald-300">
-          <Plus size={14} /> Create agent
-        </button>
+        <CreateAgentDialog />
       </aside>
 
       <section className="min-w-0">
