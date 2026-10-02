@@ -92,9 +92,9 @@ export function CreateAgentDialog() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-xs text-slate-400 transition hover:border-emerald-500/60 hover:text-emerald-300"
+        className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-xs text-slate-200 transition hover:border-emerald-500/60 hover:text-emerald-300"
       >
-        <Plus size={14} /> Create agent
+        <Plus size={14} /> Create Agent
       </button>
       {open && (
         <div
@@ -218,7 +218,7 @@ export function CreateAgentDialog() {
                           <Select.Item
                             key={model.id}
                             value={model.id}
-                            className="relative flex cursor-pointer select-none items-center gap-2 rounded-md py-2.5 pl-3 pr-8 text-base text-slate-300 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-white data-[state=checked]:text-white"
+                            className="relative flex cursor-pointer select-none items-center gap-2 rounded-md py-2.5 pl-3 pr-8 text-base text-slate-300 outline-none data-highlighted:bg-white/5 data-highlighted:text-white data-[state=checked]:text-white"
                           >
                             <Sparkles size={14} className="shrink-0 text-emerald-400" />
                             <Select.ItemText>{model.label}</Select.ItemText>

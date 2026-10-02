@@ -1,4 +1,14 @@
-import { Activity, ArrowUpRight, Bot, GitBranch, Plus, Settings2, Workflow } from "lucide-react";
+import {
+  Activity,
+  ArrowUpRight,
+  Bot,
+  GitBranch,
+  Plus,
+  Settings,
+  Cpu,
+  LayoutGrid,
+  Box,
+} from "lucide-react";
 import Link from "next/link";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 
@@ -12,49 +22,52 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       <aside className="flex flex-col border-b border-(--border) bg-(--surface) p-5 lg:min-h-screen lg:border-b-0 lg:border-r">
-        <Link className="mb-10 flex items-center gap-3" href="/">
-          <span className="grid size-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-400">
-            <Workflow size={19} />
+        <Link className="mb-7 flex items-center gap-3" href="/">
+          <span className="grid size-8 place-items-center rounded-md bg-emerald-500/15 text-emerald-400 border">
+            <Cpu size={19} />
           </span>
-          <span>
-            <span className="block text-sm font-semibold tracking-wide">ORCHESTRATOR</span>
-            <span className="text-xs text-(--muted)">Multi-agent workspace</span>
+          <span className="block text-lg font-bold tracking-wide">AgentFlow</span>
+          <span className="text-xs text-(--muted) bg-slate-700 px-2 py-px rounded-sm font-mono">
+            v0.1
           </span>
         </Link>
-        <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[.18em] text-slate-500">
-          Workspace
-        </p>
-        <nav className="space-y-1 text-sm">
+        <nav className="space-y-0.5 text-sm">
           <Link
             className="flex items-center gap-3 rounded-lg bg-emerald-500/10 px-3 py-2.5 font-medium text-emerald-300"
             href="/"
           >
-            <Activity size={16} /> Dashboard
+            <LayoutGrid size={16} /> Dashboard
           </Link>
-          <a
+          <Link
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
             href="/workflows"
           >
             <GitBranch size={16} /> Workflows
-          </a>
-          <a
+          </Link>
+          <Link
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
             href="/agents"
           >
             <Bot size={16} /> Agents
-          </a>
-          <a
+          </Link>
+          <Link
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
             href="/settings"
           >
-            <Settings2 size={16} /> Settings
-          </a>
+            <Box size={16} /> Models
+          </Link>
+          <Link
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
+            href="/settings"
+          >
+            <Settings size={16} /> Settings
+          </Link>
         </nav>
-        <div className="mt-10 flex items-center justify-between px-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[.18em] text-slate-500">
+        <div className="mt-10 flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-[.18em] text-slate-300">
             Ready agents
           </p>
-          <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-slate-400">03</span>
+          <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-slate-400">03</span>
         </div>
         <div className="mt-3 space-y-1">
           {agents.map((agent) => (
@@ -86,7 +99,7 @@ export default function DashboardPage() {
               aria-label="Settings"
               className="rounded-lg p-2 text-slate-400 hover:bg-white/5"
             >
-              <Settings2 size={17} />
+              <Settings size={17} />
             </button>
           </div>
         </header>
