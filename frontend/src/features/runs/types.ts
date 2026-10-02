@@ -1,5 +1,4 @@
-export type RunStatus =
-  "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type RunStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export interface RunSummary {
   id: string;

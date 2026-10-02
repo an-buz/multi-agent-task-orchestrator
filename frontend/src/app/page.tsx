@@ -1,12 +1,4 @@
-import {
-  Activity,
-  ArrowUpRight,
-  Bot,
-  GitBranch,
-  Plus,
-  Settings2,
-  Workflow,
-} from "lucide-react";
+import { Activity, ArrowUpRight, Bot, GitBranch, Plus, Settings2, Workflow } from "lucide-react";
 import Link from "next/link";
 
 const agents = [
@@ -24,12 +16,8 @@ export default function DashboardPage() {
             <Workflow size={19} />
           </span>
           <span>
-            <span className="block text-sm font-semibold tracking-wide">
-              ORCHESTRATOR
-            </span>
-            <span className="text-xs text-(--muted)">
-              Multi-agent workspace
-            </span>
+            <span className="block text-sm font-semibold tracking-wide">ORCHESTRATOR</span>
+            <span className="text-xs text-(--muted)">Multi-agent workspace</span>
           </span>
         </Link>
         <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[.18em] text-slate-500">
@@ -65,26 +53,17 @@ export default function DashboardPage() {
           <p className="text-[10px] font-semibold uppercase tracking-[.18em] text-slate-500">
             Ready agents
           </p>
-          <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-slate-400">
-            03
-          </span>
+          <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-slate-400">03</span>
         </div>
         <div className="mt-3 space-y-1">
           {agents.map((agent) => (
-            <div
-              key={agent.name}
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5"
-            >
+            <div key={agent.name} className="flex items-center gap-3 rounded-lg px-3 py-2.5">
               <span className="grid size-8 place-items-center rounded-lg bg-white/5 text-slate-300">
                 <Bot size={15} />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-xs font-medium">
-                  {agent.name}
-                </span>
-                <span className="font-mono text-[10px] text-slate-500">
-                  {agent.model}
-                </span>
+                <span className="block truncate text-xs font-medium">{agent.name}</span>
+                <span className="font-mono text-[10px] text-slate-500">{agent.model}</span>
               </span>
               <span className="ml-auto size-1.5 rounded-full bg-emerald-400" />
             </div>
@@ -102,9 +81,7 @@ export default function DashboardPage() {
             <span className="text-slate-300">Dashboard</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-slate-500 sm:block">
-              All systems operational
-            </span>
+            <span className="hidden text-xs text-slate-500 sm:block">All systems operational</span>
             <span className="size-2 rounded-full bg-emerald-400" />
             <button
               aria-label="Settings"
@@ -120,9 +97,7 @@ export default function DashboardPage() {
               <p className="mb-2 text-xs font-medium uppercase tracking-[.2em] text-emerald-400">
                 Orchestration center
               </p>
-              <h1 className="text-3xl font-semibold tracking-tight">
-                Good morning.
-              </h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Good morning.</h1>
               <p className="mt-2 text-sm text-slate-400">
                 Build a workflow or monitor your agents in one place.
               </p>
@@ -160,9 +135,7 @@ export default function DashboardPage() {
                   <span>{label}</span>
                   <Icon size={16} />
                 </div>
-                <div className="mt-5 text-3xl font-semibold tracking-tight">
-                  {value}
-                </div>
+                <div className="mt-5 text-3xl font-semibold tracking-tight">{value}</div>
                 <p className="mt-1 text-xs text-slate-500">{hint}</p>
               </article>
             ))}
@@ -172,9 +145,7 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between border-b border-(--border) px-5 py-4">
                 <div>
                   <h2 className="text-sm font-semibold">Recent runs</h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Execution history and live status
-                  </p>
+                  <p className="mt-1 text-xs text-slate-500">Execution history and live status</p>
                 </div>
                 <a
                   href="/runs"
@@ -190,8 +161,7 @@ export default function DashboardPage() {
                   </span>
                   <h3 className="mt-4 text-sm font-medium">No runs yet</h3>
                   <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">
-                    Once you launch a workflow, its progress and results will
-                    appear here.
+                    Once you launch a workflow, its progress and results will appear here.
                   </p>
                   <button className="mt-4 text-xs font-medium text-emerald-400 hover:text-emerald-300">
                     Create a workflow <span aria-hidden="true">→</span>
@@ -202,9 +172,7 @@ export default function DashboardPage() {
             <section className="rounded-xl border border-(--border) bg-(--surface)">
               <div className="border-b border-(--border) px-5 py-4">
                 <h2 className="text-sm font-semibold">Quick start</h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Set up your orchestration workspace
-                </p>
+                <p className="mt-1 text-xs text-slate-500">Set up your orchestration workspace</p>
               </div>
               <div className="space-y-3 p-4">
                 <QuickStart
@@ -226,8 +194,7 @@ export default function DashboardPage() {
             </section>
           </div>
           <p className="mt-8 text-center text-[11px] text-slate-600">
-            Frontend foundation · API connection will be configured through
-            environment settings
+            Frontend foundation · API connection will be configured through environment settings
           </p>
         </div>
       </section>
@@ -254,9 +221,7 @@ function QuickStart({
       </span>
       <span className="min-w-0">
         <span className="block text-xs font-medium">{title}</span>
-        <span className="mt-1 block text-[11px] text-slate-500">
-          {description}
-        </span>
+        <span className="mt-1 block text-[11px] text-slate-500">{description}</span>
       </span>
       <ArrowUpRight className="ml-auto text-slate-600" size={14} />
     </a>

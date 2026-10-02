@@ -1,5 +1,4 @@
-export type AgentStatus =
-  "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type AgentStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export interface AgentSummary {
   id: string;

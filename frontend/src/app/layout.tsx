@@ -7,9 +7,7 @@ export const metadata: Metadata = {
   description: "Design, run, and monitor multi-agent workflows.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
