@@ -5,6 +5,7 @@ README.md
 .pnpm-store/
 .zed/
 
+# Next JS frontend
 !frontend/README.md
 frontend/node_modules/
 frontend/.next/
@@ -13,3 +14,13 @@ frontend/.env.local
 frontend/coverage/
 frontend/.env
 frontend/tsconfig.tsbuildinfo
+
+# Python backend
+backend/.venv/
+backend/.env
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/.coverage
+backend/htmlcov/
