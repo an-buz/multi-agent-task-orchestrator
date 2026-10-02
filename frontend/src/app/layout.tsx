@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "Orchestrator — Multi-Agent Task Orchestrator",
+  title: "AgentFlow",
   description: "Design, run, and monitor multi-agent workflows.",
 };
 

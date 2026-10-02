@@ -139,15 +139,15 @@ export function CreateAgentDialog() {
                 <span className="grid size-14 shrink-0 place-items-center rounded-full bg-slate-800 text-emerald-400">
                   <Bot size={25} />
                 </span>
-                <label className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Agent name
+                <label className="min-w-0 flex-1 tracking-wide text-slate-400">
+                  <span className="text-[11px] font-semibold uppercase">Agent name</span>
                   <input
                     {...form.register("name")}
                     autoFocus
                     placeholder="e.g., Senior Code Reviewer"
                     className="mt-1.5 block w-full rounded-lg border border-(--border) bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
                   />
-                  <span className="mt-1.5 block text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                  <span className="mt-1.5 block text-[11px] font-normal normal-case tracking-normal text-slate-500">
                     Choose a unique identifier for this agent in your workflows
                   </span>
                   {form.formState.errors.name && (
@@ -158,8 +158,8 @@ export function CreateAgentDialog() {
                 </label>
               </div>
 
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Role
+              <label className="block tracking-wide text-slate-400">
+                <span className="text-[11px] font-semibold uppercase">Role</span>
                 <input
                   {...form.register("role")}
                   placeholder="e.g., Reviews code for bugs, security, and performance"
@@ -172,8 +172,8 @@ export function CreateAgentDialog() {
                 )}
               </label>
 
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                System prompt
+              <label className="block tracking-wide text-slate-400">
+                <span className="text-[11px] font-semibold uppercase">System prompt</span>
                 <textarea
                   {...form.register("system_prompt")}
                   rows={4}
@@ -188,7 +188,7 @@ export function CreateAgentDialog() {
               </label>
 
               <fieldset>
-                <legend className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   AI model
                 </legend>
                 <Select.Root
@@ -197,7 +197,7 @@ export function CreateAgentDialog() {
                 >
                   <Select.Trigger
                     aria-label="AI model"
-                    className="flex w-full items-center justify-between rounded-lg border border-(--border) bg-slate-950 py-2.5 pl-3 pr-4 text-base text-slate-300 outline-none focus:border-emerald-500"
+                    className="flex w-full items-center justify-between rounded-lg border border-(--border) bg-slate-950 py-2.5 pl-3 pr-4 text-[16px] text-slate-300 outline-none focus:border-emerald-500"
                   >
                     <div className="flex flex-row items-center content-center gap-2">
                       <Sparkles size={14} className=" text-emerald-400" />
@@ -218,7 +218,7 @@ export function CreateAgentDialog() {
                           <Select.Item
                             key={model.id}
                             value={model.id}
-                            className="relative flex cursor-pointer select-none items-center gap-2 rounded-md py-2.5 pl-3 pr-8 text-base text-slate-300 outline-none data-highlighted:bg-white/5 data-highlighted:text-white data-[state=checked]:text-white"
+                            className="relative flex cursor-pointer select-none items-center gap-2 rounded-md py-2.5 pl-3 pr-8 text-[16px] text-slate-300 outline-none data-highlighted:bg-white/5 data-highlighted:text-white data-[state=checked]:text-white"
                           >
                             <Sparkles size={14} className="shrink-0 text-emerald-400" />
                             <Select.ItemText>{model.label}</Select.ItemText>
@@ -250,7 +250,7 @@ export function CreateAgentDialog() {
               </fieldset>
 
               <fieldset>
-                <legend className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   Available tools
                 </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -304,7 +304,7 @@ export function CreateAgentDialog() {
                 </button>
                 {advanced && (
                   <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                    <label className="text-[10px] text-slate-400">
+                    <label className="text-[11px] text-slate-400">
                       Temperature{" "}
                       <span className="float-right text-emerald-400">{temperature.toFixed(1)}</span>
                       <div className="mt-3">
@@ -318,21 +318,21 @@ export function CreateAgentDialog() {
                         />
                       </div>
                     </label>
-                    <label className="text-[10px] text-slate-400">
+                    <label className="text-[11px] text-slate-400">
                       Max tokens
                       <input
                         {...form.register("max_tokens", { valueAsNumber: true })}
                         type="number"
                         min="1"
-                        className="mt-2 block w-full rounded-md border border-(--border) bg-slate-950 px-2 py-2 text-base text-slate-300"
+                        className="mt-2 block w-full rounded-md border border-(--border) bg-slate-950 px-2 py-2 text-[16px] text-slate-300"
                       />
                     </label>
-                    <label className="text-[10px] text-slate-400">
+                    <label className="text-[11px] text-slate-400">
                       Context window
                       <span className="relative mt-2 block">
                         <select
                           {...form.register("context_window", { valueAsNumber: true })}
-                          className="block w-full appearance-none rounded-md border border-(--border) bg-slate-950 px-2 py-2 pr-9 text-base text-slate-300"
+                          className="block w-full appearance-none rounded-md border border-(--border) bg-slate-950 px-2 py-2 pr-9 text-[16px] text-slate-300"
                         >
                           <option value={8000}>8K tokens</option>
                           <option value={32000}>32K tokens</option>
