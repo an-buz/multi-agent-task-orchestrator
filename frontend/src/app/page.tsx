@@ -1,90 +1,10 @@
-import {
-  Activity,
-  ArrowUpRight,
-  Bot,
-  GitBranch,
-  Plus,
-  Settings,
-  Cpu,
-  LayoutGrid,
-  Box,
-} from "lucide-react";
-import Link from "next/link";
-import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
-
-const agents = [
-  { name: "Research Analyst", model: "claude-sonnet", tone: "emerald" },
-  { name: "Data Synthesizer", model: "gpt-4.1", tone: "blue" },
-  { name: "Report Writer", model: "claude-sonnet", tone: "violet" },
-];
+import { Activity, ArrowUpRight, Bot, GitBranch, Plus, Settings } from "lucide-react";
+import { Sidebar } from "@/components/sidebar";
 
 export default function DashboardPage() {
   return (
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-      <aside className="flex flex-col border-b border-(--border) bg-(--surface) p-5 lg:min-h-screen lg:border-b-0 lg:border-r">
-        <Link className="mb-7 flex items-center gap-3" href="/">
-          <span className="grid size-8 place-items-center rounded-md bg-emerald-500/15 text-emerald-400 border">
-            <Cpu size={19} />
-          </span>
-          <span className="block text-lg font-bold tracking-wide">AgentFlow</span>
-          <span className="text-xs text-(--muted) bg-slate-700 px-2 py-px rounded-sm font-mono">
-            v0.1
-          </span>
-        </Link>
-        <nav className="space-y-0.5 text-sm">
-          <Link
-            className="flex items-center gap-3 rounded-lg bg-emerald-500/10 px-3 py-2.5 font-medium text-emerald-300"
-            href="/"
-          >
-            <LayoutGrid size={16} /> Dashboard
-          </Link>
-          <Link
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
-            href="/workflows"
-          >
-            <GitBranch size={16} /> Workflows
-          </Link>
-          <Link
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
-            href="/agents"
-          >
-            <Bot size={16} /> Agents
-          </Link>
-          <Link
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
-            href="/settings"
-          >
-            <Box size={16} /> Models
-          </Link>
-          <Link
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
-            href="/settings"
-          >
-            <Settings size={16} /> Settings
-          </Link>
-        </nav>
-        <div className="mt-10 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-[.18em] text-slate-300">
-            Ready agents
-          </p>
-          <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-slate-400">03</span>
-        </div>
-        <div className="mt-3 space-y-1">
-          {agents.map((agent) => (
-            <div key={agent.name} className="flex items-center gap-3 rounded-lg px-3 py-2.5">
-              <span className="grid size-8 place-items-center rounded-lg bg-white/5 text-slate-300">
-                <Bot size={15} />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-medium">{agent.name}</span>
-                <span className="font-mono text-[10px] text-slate-500">{agent.model}</span>
-              </span>
-              <span className="ml-auto size-1.5 rounded-full bg-emerald-400" />
-            </div>
-          ))}
-        </div>
-        <CreateAgentDialog />
-      </aside>
+      <Sidebar />
 
       <section className="min-w-0">
         <header className="flex items-center justify-between border-b border-(--border) px-6 py-4 lg:px-10">
