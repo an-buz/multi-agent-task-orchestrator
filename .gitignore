@@ -1,3 +1,13 @@
 /docs
 AGENTS.md
 README.md
+
+!frontend/README.md
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/coverage/
+.pnpm-store/
+frontend/.env
+frontend/tsconfig.tsbuildinfo
