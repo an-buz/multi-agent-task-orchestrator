@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as Select from "@radix-ui/react-select";
 import { useMutation } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
 import {
   Bot,
   ChevronDown,
@@ -17,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import remarkGfm from "remark-gfm";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Slider } from "@/components/ui/slider";
@@ -68,12 +70,14 @@ const models = [
 export function CreateAgentDialog() {
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [promptView, setPromptView] = useState<"write" | "preview">("write");
   const mutation = useMutation({
     mutationFn: (values: AgentFormValues) =>
       apiRequest<{ id: string }>("/agents", { method: "POST", body: JSON.stringify(values) }),
     onSuccess: () => {
       setOpen(false);
       form.reset(defaultValues);
+      setPromptView("write");
     },
   });
   const form = useForm<AgentFormValues>({ resolver: zodResolver(agentSchema), defaultValues });
@@ -84,6 +88,7 @@ export function CreateAgentDialog() {
   function close() {
     setOpen(false);
     form.reset(defaultValues);
+    setPromptView("write");
     mutation.reset();
   }
 
@@ -172,20 +177,58 @@ export function CreateAgentDialog() {
                 )}
               </label>
 
-              <label className="block tracking-wide text-slate-400">
+              <div className="block tracking-wide text-slate-400">
                 <span className="text-[11px] font-semibold uppercase">System prompt</span>
-                <textarea
-                  {...form.register("system_prompt")}
-                  rows={4}
-                  placeholder="Describe how this agent should behave..."
-                  className="mt-1.5 block w-full resize-y rounded-lg border border-(--border) bg-slate-950 p-3 font-mono text-base leading-5 normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-600 focus:border-emerald-500"
-                />
+                <div className="mt-1.5 overflow-hidden rounded-lg border border-(--border) bg-slate-950 focus-within:border-emerald-500">
+                  <div
+                    className="flex border-b border-(--border) px-2 pt-2"
+                    role="tablist"
+                    aria-label="System prompt view"
+                  >
+                    {(["write", "preview"] as const).map((view) => (
+                      <button
+                        key={view}
+                        type="button"
+                        role="tab"
+                        aria-selected={promptView === view}
+                        onClick={() => setPromptView(view)}
+                        className={`rounded-t-md px-3 py-1.5 text-xs capitalize ${promptView === view ? "border border-b-0 border-(--border) bg-slate-900 text-emerald-300" : "text-slate-500 hover:text-slate-300"}`}
+                      >
+                        {view}
+                      </button>
+                    ))}
+                  </div>
+                  {promptView === "write" ? (
+                    <textarea
+                      {...form.register("system_prompt")}
+                      aria-label="System prompt Markdown source"
+                      rows={6}
+                      placeholder={
+                        "# Role\nDescribe how this agent should behave...\n\n## Guidelines\n- Be concise\n- Explain your reasoning"
+                      }
+                      className="block w-full resize-y bg-transparent p-3 font-mono text-base leading-6 normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-600"
+                    />
+                  ) : (
+                    <div
+                      role="tabpanel"
+                      className="prose prose-invert min-h-36 max-w-none overflow-auto p-3 text-sm prose-headings:text-slate-100 prose-p:text-slate-300 prose-a:text-emerald-300 prose-code:text-emerald-200 prose-pre:bg-slate-900 prose-li:text-slate-300 prose-strong:text-slate-100 prose-th:text-slate-200 prose-td:text-slate-300"
+                    >
+                      {form.watch("system_prompt").trim() ? (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {form.watch("system_prompt")}
+                        </ReactMarkdown>
+                      ) : (
+                        <p className="m-0 text-slate-500">Markdown preview will appear here.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {form.formState.errors.system_prompt && (
                   <span className="mt-1 block normal-case text-rose-400">
                     {form.formState.errors.system_prompt.message}
                   </span>
                 )}
-              </label>
+              </div>
 
               <fieldset>
                 <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
