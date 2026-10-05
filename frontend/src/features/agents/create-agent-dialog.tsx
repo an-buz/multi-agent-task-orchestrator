@@ -17,7 +17,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import remarkGfm from "remark-gfm";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -68,30 +68,53 @@ const toolIcons = {
   file_reader: FileText,
 } as const;
 
-export function CreateAgentDialog() {
+export function CreateAgentDialog({
+  agent,
+  onClose,
+  trigger = true,
+}: {
+  agent?: Agent;
+  onClose?: () => void;
+  trigger?: boolean;
+}) {
   const queryClient = useQueryClient();
   const catalog = useAgentCatalog();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(agent));
   const [advanced, setAdvanced] = useState(false);
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
   const mutation = useMutation({
     mutationFn: (values: AgentFormValues) =>
-      apiRequest<Agent>("/agents", { method: "POST", body: JSON.stringify(values) }),
-    onSuccess: async (createdAgent) => {
+      apiRequest<Agent>(agent ? `/agents/${agent.id}` : "/agents", {
+        method: agent ? "PUT" : "POST",
+        body: JSON.stringify(values),
+      }),
+    onSuccess: async (savedAgent) => {
       queryClient.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) => ({
-        items: [
-          createdAgent,
-          ...(current?.items ?? []).filter((agent) => agent.id !== createdAgent.id),
-        ],
-        total: (current?.total ?? 0) + 1,
+        items: [savedAgent, ...(current?.items ?? []).filter((item) => item.id !== savedAgent.id)],
+        total: current?.total ?? 1,
       }));
       await queryClient.invalidateQueries({ queryKey: agentsQueryKey });
       setOpen(false);
+      onClose?.();
       form.reset(defaultValues);
       setPromptView("write");
     },
   });
   const form = useForm<AgentFormValues>({ resolver: zodResolver(agentSchema), defaultValues });
+  useEffect(() => {
+    if (agent) {
+      form.reset({
+        name: agent.name,
+        role: agent.role,
+        system_prompt: agent.system_prompt,
+        model: agent.model,
+        temperature: agent.temperature,
+        max_tokens: agent.max_tokens,
+        context_window: agent.context_window,
+        tools: agent.tools,
+      });
+    }
+  }, [agent, form]);
   const temperature = form.watch("temperature");
   const selectedTools = form.watch("tools");
   const selectedModel = form.watch("model");
@@ -104,17 +127,20 @@ export function CreateAgentDialog() {
     form.reset(defaultValues);
     setPromptView("write");
     mutation.reset();
+    onClose?.();
   }
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-xs text-slate-200 transition hover:border-emerald-500/60 hover:text-emerald-300"
-      >
-        <Plus size={14} /> Create Agent
-      </button>
+      {trigger && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-xs text-slate-200 transition hover:border-emerald-500/60 hover:text-emerald-300"
+        >
+          <Plus size={14} /> Create Agent
+        </button>
+      )}
       {open && (
         <div
           className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm"
@@ -134,7 +160,7 @@ export function CreateAgentDialog() {
             <header className="mb-6 flex items-start justify-between border-b border-(--border) pb-5">
               <div>
                 <h2 id="create-agent-title" className="text-lg font-semibold">
-                  Create New Agent
+                  {agent ? "Edit Agent" : "Create New Agent"}
                 </h2>
                 <p className="mt-1 text-xs text-slate-400">
                   Configure your AI agent with a custom role, model, and toolset.
@@ -451,7 +477,7 @@ export function CreateAgentDialog() {
                   ) : (
                     <Sparkles size={14} />
                   )}{" "}
-                  Create Agent
+                  {agent ? "Save Changes" : "Create Agent"}
                 </button>
               </footer>
             </form>

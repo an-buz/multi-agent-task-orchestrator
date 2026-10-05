@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 
 export const agentsQueryKey = ["agents"] as const;
@@ -51,5 +51,19 @@ export function useAgentCatalog() {
       return { models: models.items, tools: tools.items };
     },
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useDeleteAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiRequest<void>(`/agents/${id}`, { method: "DELETE" }),
+    onSuccess: async (_result, id) => {
+      queryClient.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) => ({
+        items: (current?.items ?? []).filter((agent) => agent.id !== id),
+        total: Math.max(0, (current?.total ?? 1) - 1),
+      }));
+      await queryClient.invalidateQueries({ queryKey: agentsQueryKey });
+    },
   });
 }

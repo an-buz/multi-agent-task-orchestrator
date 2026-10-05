@@ -18,6 +18,7 @@ class MemorySession:
 
     def __init__(self) -> None:
         self.agent: Agent | None = None
+        self.deleted = False
         self.created_at = datetime.now(UTC)
 
     def add(self, agent: Agent) -> None:
@@ -31,6 +32,16 @@ class MemorySession:
 
     async def refresh(self, agent: Agent) -> None:
         del agent
+
+    async def get(self, model: type[Agent], agent_id: UUID) -> Agent | None:
+        del model
+        if self.agent is not None and self.agent.id == agent_id and not self.deleted:
+            return self.agent
+        return None
+
+    async def delete(self, agent: Agent) -> None:
+        assert agent is self.agent
+        self.deleted = True
 
 
 @pytest.fixture
@@ -89,3 +100,32 @@ def test_models_and_tools_catalogues_are_available(test_client: TestClient) -> N
     assert {item["key"] for item in models.json()["items"]} >= {"claude-sonnet", "gpt-4o"}
     assert tools.status_code == 200
     assert "web_search" in {item["key"] for item in tools.json()["items"]}
+
+
+def test_agent_can_be_read_updated_and_deleted(test_client: TestClient) -> None:
+    """Agent detail, full update, and delete routes return the expected contract."""
+    payload = {
+        "name": "Market Analyst",
+        "role": "Analyze the market",
+        "system_prompt": "Be accurate and concise.",
+        "model": "claude-sonnet",
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "context_window": 128000,
+        "tools": ["web_search"],
+    }
+    created = test_client.post("/api/v1/agents", json=payload)
+    agent_id = created.json()["id"]
+
+    detail = test_client.get(f"/api/v1/agents/{agent_id}")
+    assert detail.status_code == 200
+    assert detail.json()["name"] == "Market Analyst"
+
+    payload["name"] = "Updated Analyst"
+    updated = test_client.put(f"/api/v1/agents/{agent_id}", json=payload)
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "Updated Analyst"
+
+    deleted = test_client.delete(f"/api/v1/agents/{agent_id}")
+    assert deleted.status_code == 204
+    assert test_client.get(f"/api/v1/agents/{agent_id}").status_code == 404

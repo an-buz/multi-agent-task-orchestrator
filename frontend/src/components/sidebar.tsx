@@ -1,9 +1,13 @@
+"use client";
+
 import { Bot, Box, Cpu, GitBranch, LayoutGrid, Settings } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 import { useAgents } from "@/features/agents/queries";
 
 export function Sidebar() {
+  const pathname = usePathname();
   const agentsQuery = useAgents();
   const agents = agentsQuery.data?.items ?? [];
 
@@ -20,19 +24,19 @@ export function Sidebar() {
       </Link>
       <nav className="space-y-0.5 text-sm">
         <Link
-          className="flex items-center gap-3 rounded-lg bg-emerald-500/10 px-3 py-2.5 font-medium text-emerald-300"
+          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium ${pathname === "/" ? "bg-emerald-500/10 text-emerald-300" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
           href="/"
         >
           <LayoutGrid size={16} /> Dashboard
         </Link>
         <Link
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
+          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${pathname.startsWith("/workflows") ? "bg-emerald-500/10 font-medium text-emerald-300" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
           href="/workflows"
         >
           <GitBranch size={16} /> Workflows
         </Link>
         <Link
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 hover:bg-white/5 hover:text-white"
+          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${pathname.startsWith("/agents") ? "bg-emerald-500/10 font-medium text-emerald-300" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
           href="/agents"
         >
           <Bot size={16} /> Agents
@@ -71,14 +75,20 @@ export function Sidebar() {
             <span className="min-w-0 leading-tight">
               <span className="block truncate text-xs font-medium">{agent.name}</span>
               <span className="mt-0.5 block truncate font-mono text-[10px] text-slate-500">
-              {agent.model}
+                {agent.model}
               </span>
             </span>
             <span className="ml-auto size-1.5 rounded-full bg-emerald-400" />
           </div>
         ))}
-        {agentsQuery.isLoading && <p className="px-3 py-2 text-xs text-slate-500">Loading agents…</p>}
-        {agentsQuery.isError && <p role="alert" className="px-3 py-2 text-xs text-rose-400">Could not load agents.</p>}
+        {agentsQuery.isLoading && (
+          <p className="px-3 py-2 text-xs text-slate-500">Loading agents…</p>
+        )}
+        {agentsQuery.isError && (
+          <p role="alert" className="px-3 py-2 text-xs text-rose-400">
+            Could not load agents.
+          </p>
+        )}
         {!agentsQuery.isLoading && !agentsQuery.isError && agents.length === 0 && (
           <p className="px-3 py-2 text-xs text-slate-500">No agents yet.</p>
         )}

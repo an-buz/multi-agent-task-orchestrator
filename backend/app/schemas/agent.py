@@ -22,6 +22,10 @@ class AgentCreate(BaseModel):
     tools: list[str] = Field(default_factory=list)
 
 
+class AgentUpdate(AgentCreate):
+    """Validated full agent update payload."""
+
+
 class AgentRead(BaseModel):
     """Public agent representation."""
 
