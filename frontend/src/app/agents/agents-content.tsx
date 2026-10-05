@@ -52,25 +52,16 @@ export default function AgentsContent() {
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       <Sidebar />
       <section className="min-w-0">
-        <header className="border-b border-(--border) px-6 py-4 lg:px-10">
-          <div className="text-xs text-slate-500">
-            Workspace <span className="px-2">/</span>
-            <span className="text-slate-300">Agents</span>
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
+            <p className="mt-1 text-xs text-slate-400">
+              Team workspace · Browse and manage the agents available to your workflows.
+            </p>
           </div>
         </header>
         <div className="mx-auto max-w-360 p-6 lg:p-10">
-          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-[.2em] text-emerald-400">
-                Team workspace
-              </p>
-              <h1 className="text-3xl font-semibold tracking-tight">Agents</h1>
-              <p className="mt-2 text-sm text-slate-400">
-                Browse and manage the agents available to your workflows.
-              </p>
-            </div>
-            <CreateAgentDialog trigger={false} />
-          </div>
+          <CreateAgentDialog trigger={false} />
 
           <section className="mb-6 rounded-xl border border-(--border) bg-(--surface) p-4">
             <div className="grid gap-3 md:grid-cols-[1fr_220px]">

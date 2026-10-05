@@ -49,4 +49,6 @@ def test_sequential_requires_a_single_chain() -> None:
             ],
         }
     )
-    assert "sequential workflows must form a single ordered chain" in validate_workflow_graph(payload)
+    assert "sequential workflows must form a single ordered chain" in validate_workflow_graph(
+        payload
+    )

@@ -69,14 +69,25 @@ function inferType(nodes: AgentNode[], edges: Edge[]): WorkflowType {
 function graphErrors(nodes: AgentNode[], edges: Edge[]): string[] {
   const errors: string[] = [];
   if (!nodes.length) errors.push("Add at least one agent to the workflow.");
-  const incoming = new Map(nodes.map((node) => [node.id, 0]));
-  edges.forEach((edge) => incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1));
-  if (
-    nodes.length > 1 &&
-    nodes.some((node) => (incoming.get(node.id) ?? 0) === 0) &&
-    edges.length > 0
-  )
-    errors.push("Every node must be connected to the workflow.");
+  if (nodes.length > 1) {
+    const connected = new Set<string>([nodes[0].id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      edges.forEach((edge) => {
+        if (connected.has(edge.source) && !connected.has(edge.target)) {
+          connected.add(edge.target);
+          changed = true;
+        }
+        if (connected.has(edge.target) && !connected.has(edge.source)) {
+          connected.add(edge.source);
+          changed = true;
+        }
+      });
+    }
+    if (connected.size !== nodes.length)
+      errors.push("Every node must be connected to the workflow.");
+  }
   const remaining = new Map(
     nodes.map((node) => [node.id, edges.filter((edge) => edge.target === node.id).length]),
   );
@@ -210,31 +221,23 @@ export default function WorkflowsContent() {
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       <Sidebar />
       <section className="min-w-0">
-        <header className="border-b border-(--border) px-6 py-4 lg:px-10">
-          <div className="text-xs text-slate-500">
-            Workspace <span className="px-2">/</span>
-            <span className="text-slate-300">Workflows</span>
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Workflows</h1>
+            <p className="mt-1 text-xs text-slate-400">
+              Orchestration design · Compose agents into sequential, parallel, or hybrid execution
+              graphs.
+            </p>
           </div>
+          <button
+            onClick={() => openEditor()}
+            disabled={!agents.length}
+            className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50"
+          >
+            <Plus size={16} /> New workflow
+          </button>
         </header>
         <div className="mx-auto max-w-360 p-6 lg:p-10">
-          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-[.2em] text-emerald-400">
-                Orchestration design
-              </p>
-              <h1 className="text-3xl font-semibold tracking-tight">Workflows</h1>
-              <p className="mt-2 text-sm text-slate-400">
-                Compose agents into sequential, parallel, or hybrid execution graphs.
-              </p>
-            </div>
-            <button
-              onClick={() => openEditor()}
-              disabled={!agents.length}
-              className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50"
-            >
-              <Plus size={16} /> New workflow
-            </button>
-          </div>
           {workflowsQuery.isLoading && (
             <div className="grid min-h-52 place-items-center">
               <LoaderCircle className="animate-spin text-slate-400" />
@@ -397,7 +400,7 @@ export default function WorkflowsContent() {
                   </select>
                 </div>
               </aside>
-              <div className="min-w-0 flex-1 bg-slate-950">
+              <div className="workflow-canvas min-w-0 flex-1 bg-slate-950">
                 <ReactFlow
                   nodes={nodes}
                   edges={edges}
@@ -407,9 +410,9 @@ export default function WorkflowsContent() {
                   onNodeClick={(_, node) => setSelectedId(node.id)}
                   fitView
                 >
-                  <Background />
+                  <Background color="var(--border)" />
                   <Controls />
-                  <MiniMap pannable zoomable />
+                  <MiniMap pannable zoomable style={{ width: 140, height: 100 }} />
                 </ReactFlow>
               </div>
               <aside className="w-64 shrink-0 overflow-y-auto border-l border-(--border) p-4">

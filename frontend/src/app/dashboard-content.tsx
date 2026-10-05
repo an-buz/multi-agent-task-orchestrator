@@ -220,9 +220,9 @@ export default function DashboardPage() {
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {agents.map((agent, index) => (
-                  <div key={agent.name} className="flex min-w-[122px] flex-1 items-center gap-2">
+                  <div key={agent.name} className="flex min-w-30.5 flex-1 items-center gap-2">
                     <article
-                      className={`min-w-[118px] flex-1 rounded-lg border p-3 ${agent.status === "In Progress" ? "border-blue-500 bg-blue-500/10" : "border-(--border) bg-[#0b1220]"}`}
+                      className={`min-w-29.5 flex-1 rounded-lg border p-3 ${agent.status === "In Progress" ? "border-blue-500 bg-blue-500/10" : "border-(--border) bg-[#0b1220]"}`}
                     >
                       <h3 className="truncate text-xs font-semibold text-slate-200">
                         {agent.name}
@@ -244,7 +244,7 @@ export default function DashboardPage() {
                 ))}
               </div>
             </section>
-            <section className="flex min-h-[390px] flex-col overflow-hidden rounded-xl border border-(--border) bg-[#050816]">
+            <section className="flex min-h-97.5 flex-col overflow-hidden rounded-xl border border-(--border) bg-[#050816]">
               <div className="flex items-center justify-between border-b border-(--border) bg-(--surface) px-4 py-3">
                 <h2 className="flex items-center gap-2 font-mono text-xs font-semibold tracking-wide text-slate-200">
                   <i className="size-2 rounded-full bg-emerald-400" />
