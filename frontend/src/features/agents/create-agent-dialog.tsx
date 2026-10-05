@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as Select from "@radix-ui/react-select";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import {
   Bot,
@@ -23,6 +23,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Slider } from "@/components/ui/slider";
 import { apiRequest } from "@/lib/api";
+import { agentsQueryKey, useAgentCatalog, type Agent } from "./queries";
 
 const agentSchema = z.object({
   name: z
@@ -52,29 +53,39 @@ const defaultValues: AgentFormValues = {
   tools: [],
 };
 
-const tools = [
-  { id: "code_executor", label: "Code Executor", icon: Code2 },
-  { id: "web_search", label: "Web Search", icon: Globe },
-  { id: "file_manager", label: "File Manager", icon: FileText },
-  { id: "api_caller", label: "API Caller", icon: Globe, restricted: true },
-  { id: "database_query", label: "Database Query", icon: Database, restricted: true },
-  { id: "terminal_access", label: "Terminal Access", icon: Terminal, restricted: true },
-];
+const tierLabels = { fast: "Fast", balanced: "Balanced", powerful: "Powerful" } as const;
+const modelLabels: Record<string, string> = {
+  "claude-haiku": "Claude Haiku",
+  "claude-sonnet": "Claude Sonnet",
+  "claude-opus": "Claude Opus",
+  "gpt-4o": "GPT-4o",
+};
 
-const models = [
-  { id: "claude-haiku", label: "Claude Haiku", tier: "Fast" },
-  { id: "claude-sonnet", label: "Claude Sonnet", tier: "Balanced" },
-  { id: "claude-opus", label: "Claude Opus", tier: "Powerful" },
-];
+const toolIcons = {
+  code_executor: Code2,
+  web_search: Globe,
+  calculator: Database,
+  file_reader: FileText,
+} as const;
 
 export function CreateAgentDialog() {
+  const queryClient = useQueryClient();
+  const catalog = useAgentCatalog();
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
   const mutation = useMutation({
     mutationFn: (values: AgentFormValues) =>
-      apiRequest<{ id: string }>("/agents", { method: "POST", body: JSON.stringify(values) }),
-    onSuccess: () => {
+      apiRequest<Agent>("/agents", { method: "POST", body: JSON.stringify(values) }),
+    onSuccess: async (createdAgent) => {
+      queryClient.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) => ({
+        items: [
+          createdAgent,
+          ...(current?.items ?? []).filter((agent) => agent.id !== createdAgent.id),
+        ],
+        total: (current?.total ?? 0) + 1,
+      }));
+      await queryClient.invalidateQueries({ queryKey: agentsQueryKey });
       setOpen(false);
       form.reset(defaultValues);
       setPromptView("write");
@@ -84,6 +95,9 @@ export function CreateAgentDialog() {
   const temperature = form.watch("temperature");
   const selectedTools = form.watch("tools");
   const selectedModel = form.watch("model");
+  const models = catalog.data?.models ?? [];
+  const tools = catalog.data?.tools ?? [];
+  const selectedModelInfo = models.find((model) => model.key === selectedModel);
 
   function close() {
     setOpen(false);
@@ -236,7 +250,21 @@ export function CreateAgentDialog() {
                 </legend>
                 <Select.Root
                   value={selectedModel}
-                  onValueChange={(model) => form.setValue("model", model)}
+                  onValueChange={(model) => {
+                    const modelInfo = models.find((item) => item.key === model);
+                    form.setValue("model", model);
+                    if (modelInfo) {
+                      form.setValue(
+                        "context_window",
+                        Math.min(form.getValues("context_window"), modelInfo.context_window),
+                      );
+                      form.setValue(
+                        "max_tokens",
+                        Math.min(form.getValues("max_tokens"), modelInfo.context_window),
+                      );
+                    }
+                  }}
+                  disabled={catalog.isLoading || models.length === 0}
                 >
                   <Select.Trigger
                     aria-label="AI model"
@@ -259,37 +287,32 @@ export function CreateAgentDialog() {
                       <Select.Viewport>
                         {models.map((model) => (
                           <Select.Item
-                            key={model.id}
-                            value={model.id}
+                            key={model.key}
+                            value={model.key}
                             className="relative flex cursor-pointer select-none items-center gap-2 rounded-md py-2.5 pl-3 pr-8 text-[16px] text-slate-300 outline-none data-highlighted:bg-white/5 data-highlighted:text-white data-[state=checked]:text-white"
                           >
                             <Sparkles size={14} className="shrink-0 text-emerald-400" />
-                            <Select.ItemText>{model.label}</Select.ItemText>
-                            <span className="ml-auto text-xs text-slate-500">{model.tier}</span>
+                            <Select.ItemText>{modelLabels[model.key] ?? model.key}</Select.ItemText>
+                            <span className="ml-auto text-xs text-slate-500">
+                              {tierLabels[model.tier]}
+                            </span>
                           </Select.Item>
                         ))}
                       </Select.Viewport>
                     </Select.Content>
                   </Select.Portal>
                 </Select.Root>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      ["Fast (Haiku)", "claude-haiku"],
-                      ["Balanced (Sonnet)", "claude-sonnet"],
-                      ["Powerful (Opus)", "claude-opus"],
-                    ] as const
-                  ).map(([label, model]) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => form.setValue("model", model)}
-                      className={`rounded-md border px-2 py-2 text-xs transition ${form.watch("model") === model ? "border-emerald-500 bg-emerald-500/10 text-emerald-300" : "border-(--border) text-slate-400 hover:border-slate-600"}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                {selectedModelInfo && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {selectedModelInfo.provider} ·{" "}
+                    {selectedModelInfo.context_window.toLocaleString()} token context
+                  </p>
+                )}
+                {catalog.isError && (
+                  <p role="alert" className="mt-2 text-xs text-rose-400">
+                    Unable to load model catalogue: {catalog.error.message}
+                  </p>
+                )}
               </fieldset>
 
               <fieldset>
@@ -297,31 +320,29 @@ export function CreateAgentDialog() {
                   Available tools
                 </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {tools.map(({ id, label, icon: Icon, restricted }) => {
-                    const selected = selectedTools.includes(id);
+                  {tools.map((tool) => {
+                    const selected = selectedTools.includes(tool.key);
+                    const Icon = toolIcons[tool.key as keyof typeof toolIcons] ?? Terminal;
                     return (
                       <button
-                        key={id}
+                        key={tool.key}
                         type="button"
                         role="switch"
                         aria-checked={selected}
-                        aria-label={`${label}${restricted ? " (disabled in MVP)" : ""}`}
-                        title={
-                          restricted ? "This high-risk tool is disabled in the MVP." : undefined
-                        }
-                        disabled={restricted}
+                        aria-label={tool.name}
+                        title={tool.description}
                         onClick={() =>
                           form.setValue(
                             "tools",
                             selected
-                              ? selectedTools.filter((tool) => tool !== id)
-                              : [...selectedTools, id],
+                              ? selectedTools.filter((key) => key !== tool.key)
+                              : [...selectedTools, tool.key],
                           )
                         }
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${selected ? "border-emerald-500/70 bg-emerald-500/10 text-white" : "border-(--border) bg-slate-950 text-slate-400 hover:border-slate-600"} ${restricted ? "cursor-not-allowed opacity-50" : ""}`}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${selected ? "border-emerald-500/70 bg-emerald-500/10 text-white" : "border-(--border) bg-slate-950 text-slate-400 hover:border-slate-600"}`}
                       >
                         <Icon size={14} className={selected ? "text-emerald-400" : ""} />
-                        <span>{label}</span>
+                        <span>{tool.name}</span>
                         <span
                           className={`ml-auto flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${selected ? "bg-emerald-500" : "bg-slate-700"}`}
                         >
@@ -333,6 +354,11 @@ export function CreateAgentDialog() {
                     );
                   })}
                 </div>
+                {catalog.isError && (
+                  <p role="alert" className="mt-2 text-xs text-rose-400">
+                    Unable to load tool catalogue: {catalog.error.message}
+                  </p>
+                )}
               </fieldset>
 
               <div>
@@ -380,7 +406,12 @@ export function CreateAgentDialog() {
                           <option value={8000}>8K tokens</option>
                           <option value={32000}>32K tokens</option>
                           <option value={128000}>128K tokens</option>
-                          <option value={200000}>200K tokens</option>
+                          <option
+                            value={200000}
+                            disabled={(selectedModelInfo?.context_window ?? 0) < 200000}
+                          >
+                            200K tokens
+                          </option>
                         </select>
                         <ChevronDown
                           size={15}
@@ -407,7 +438,12 @@ export function CreateAgentDialog() {
                 </button>
                 <button
                   type="submit"
-                  disabled={mutation.isPending}
+                  disabled={
+                    mutation.isPending ||
+                    catalog.isLoading ||
+                    catalog.isError ||
+                    models.length === 0
+                  }
                   className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-100 transition hover:bg-emerald-400 disabled:cursor-wait disabled:opacity-70"
                 >
                   {mutation.isPending ? (
