@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
+import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 const agents = [
@@ -133,27 +134,30 @@ export default function DashboardPage() {
                       <Paperclip size={13} />
                       Additional context
                     </span>
-                    <button
+                    <Button
+                      variant="ghost"
                       onClick={() => setContextOpen(false)}
                       aria-label="Close context"
-                      className="rounded p-1 hover:bg-white/5"
+                      className="rounded p-1 hover:bg-white/5 [&_svg]:size-4"
                     >
                       <X size={14} />
-                    </button>
+                    </Button>
                   </div>
                   {attachment && (
                     <div className="mb-2 flex items-center gap-2 text-xs text-emerald-300">
                       <FileText size={13} />
                       {attachment}
-                      <button
+                      <Button
+                        variant="ghost"
                         aria-label="Remove attachment"
                         onClick={() => {
                           setAttachment("");
                           setContext("");
                         }}
+                        className="[&_svg]:size-[13px]"
                       >
                         <X size={13} />
-                      </button>
+                      </Button>
                     </div>
                   )}
                   <Textarea
@@ -174,19 +178,19 @@ export default function DashboardPage() {
                     className="hidden"
                     onChange={(event) => handleFile(event.target.files?.[0])}
                   />
-                  <button
+                  <Button
                     onClick={() => fileInput.current?.click()}
-                    className="flex items-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2 text-xs text-slate-400 transition hover:border-slate-500 hover:text-slate-200"
+                    variant="secondary"
                   >
                     <CloudUpload size={15} />
                     Add context file <span className="text-slate-600">TXT · MD · JSON</span>
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => setContextOpen(true)}
-                    className="rounded-lg px-2 py-2 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                    variant="ghost"
                   >
                     Paste text
-                  </button>
+                  </Button>
                   {attachment && (
                     <span className="flex items-center gap-1 text-xs text-emerald-300">
                       <Check size={12} />
@@ -194,14 +198,11 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
-                >
+                <Button type="button">
                   <Sparkles size={16} />
-                  <span>Decompose and Run</span>
+                  Decompose and Run
                   <Play size={14} />
-                </button>
+                </Button>
               </div>
             </section>
             <section className="rounded-xl border border-(--border) bg-(--surface) p-4 lg:p-5">
@@ -212,12 +213,13 @@ export default function DashboardPage() {
                   </h2>
                   <p className="mt-1 text-[11px] text-slate-600">Demo workflow · sample data</p>
                 </div>
-                <button
+                <Button
                   aria-label="More pipeline options"
-                  className="text-slate-500 hover:text-slate-300"
+                  variant="ghost"
+                  className="[&_svg]:size-[18px] [&_svg]:text-slate-500 hover:[&_svg]:text-slate-300"
                 >
                   <MoreHorizontal size={18} />
-                </button>
+                </Button>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {agents.map((agent, index) => (
@@ -251,12 +253,7 @@ export default function DashboardPage() {
                   <i className="size-2 rounded-full bg-emerald-400" />
                   LIVE ORCHESTRATION CONSOLE
                 </h2>
-                <button
-                  type="button"
-                  className="rounded border border-(--border) px-2 py-1 font-mono text-[10px] text-slate-400 hover:text-white"
-                >
-                  Clear
-                </button>
+                <Button variant="ghost">Clear</Button>
               </div>
               <div
                 aria-label="Sample orchestration events"
@@ -316,9 +313,9 @@ export default function DashboardPage() {
                 <h3 className="text-[10px] font-semibold uppercase text-slate-400">
                   Input context
                 </h3>
-                <button aria-label="Help about input context" className="text-slate-600">
+                <Button aria-label="Help about input context" variant="ghost">
                   <CircleHelp size={13} />
-                </button>
+                </Button>
               </div>
               <pre className="overflow-x-auto rounded bg-[#050816] p-2.5 font-mono text-[10px] leading-4 text-cyan-300">
                 {

@@ -31,6 +31,12 @@ textarea,
 select {
   font: inherit;
 }
+
+/* Tailwind v4 switched from cursor: pointer to cursor: default for buttons */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
 a {
   color: inherit;
   text-decoration: none;
