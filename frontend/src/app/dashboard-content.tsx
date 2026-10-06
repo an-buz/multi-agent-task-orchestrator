@@ -154,7 +154,7 @@ export default function DashboardPage() {
                           setAttachment("");
                           setContext("");
                         }}
-                        className="[&_svg]:size-[13px]"
+                        className="[&_svg]:size-3.25"
                       >
                         <X size={13} />
                       </Button>
@@ -178,17 +178,11 @@ export default function DashboardPage() {
                     className="hidden"
                     onChange={(event) => handleFile(event.target.files?.[0])}
                   />
-                  <Button
-                    onClick={() => fileInput.current?.click()}
-                    variant="secondary"
-                  >
+                  <Button onClick={() => fileInput.current?.click()} variant="secondary">
                     <CloudUpload size={15} />
                     Add context file <span className="text-slate-600">TXT · MD · JSON</span>
                   </Button>
-                  <Button
-                    onClick={() => setContextOpen(true)}
-                    variant="ghost"
-                  >
+                  <Button onClick={() => setContextOpen(true)} variant="ghost">
                     Paste text
                   </Button>
                   {attachment && (
@@ -216,7 +210,7 @@ export default function DashboardPage() {
                 <Button
                   aria-label="More pipeline options"
                   variant="ghost"
-                  className="[&_svg]:size-[18px] [&_svg]:text-slate-500 hover:[&_svg]:text-slate-300"
+                  className="[&_svg]:size-4.5 [&_svg]:text-slate-500 hover:[&_svg]:text-slate-300"
                 >
                   <MoreHorizontal size={18} />
                 </Button>

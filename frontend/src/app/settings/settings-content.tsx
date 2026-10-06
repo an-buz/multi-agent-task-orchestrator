@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Sidebar } from "@/components/sidebar";
 import { apiRequest } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 const settingsSchema = z.object({
   default_model: z.string().min(1, "Default model is required."),
@@ -119,9 +120,9 @@ export default function SettingsContent() {
               className="mb-5 rounded-lg border border-rose-900/60 bg-rose-950/20 p-4 text-sm text-rose-300"
             >
               {loadError}{" "}
-              <button onClick={handleRetry} className="underline">
+              <Button variant="ghost" onClick={handleRetry} className="underline">
                 Retry
-              </button>
+              </Button>
             </div>
           )}
 
@@ -266,10 +267,11 @@ export default function SettingsContent() {
                   </div>
 
                   <footer className="flex justify-end gap-2">
-                    <button
+                    <Button
+                      variant="default"
                       type="submit"
                       disabled={saveDisabled || saving || form.formState.isSubmitting}
-                      className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50"
+                      className="disabled:opacity-50"
                     >
                       {saving ? (
                         <LoaderCircle size={15} className="animate-spin" />
@@ -280,7 +282,7 @@ export default function SettingsContent() {
                           <SettingsIcon size={15} /> Save changes
                         </>
                       )}
-                    </button>
+                    </Button>
                   </footer>
                 </form>
               </article>

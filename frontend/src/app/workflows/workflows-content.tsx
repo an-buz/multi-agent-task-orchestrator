@@ -14,7 +14,8 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GitBranch, LoaderCircle, Plus, Save, Trash2, X } from "lucide-react";
+import { GitBranch, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/sidebar";
 import { useAgents } from "@/features/agents/queries";
 import {
@@ -229,13 +230,9 @@ export default function WorkflowsContent() {
               graphs.
             </p>
           </div>
-          <button
-            onClick={() => openEditor()}
-            disabled={!agents.length}
-            className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50"
-          >
+          <Button onClick={() => openEditor()} disabled={!agents.length}>
             <Plus size={16} /> New workflow
-          </button>
+          </Button>
         </header>
         <div className="mx-auto max-w-360 p-6 lg:p-10">
           {workflowsQuery.isLoading && (
@@ -278,7 +275,7 @@ export default function WorkflowsContent() {
                 key={workflow.id}
                 className="rounded-xl border border-(--border) bg-(--surface) p-5"
               >
-                <button className="w-full text-left" onClick={() => openEditor(workflow)}>
+                <span className="w-full text-left flex flex-col">
                   <p className="font-semibold">{workflow.title}</p>
                   <p className="mt-2 text-xs uppercase tracking-wider text-emerald-400">
                     {workflow.execution_type}
@@ -287,24 +284,22 @@ export default function WorkflowsContent() {
                     {workflow.steps.length} steps · updated{" "}
                     {new Date(workflow.updated_at).toLocaleDateString()}
                   </p>
-                </button>
+                </span>
                 <footer className="mt-4 flex justify-end gap-2 border-t border-(--border) pt-3">
-                  <button
-                    onClick={() => openEditor(workflow)}
-                    className="rounded-md border border-(--border) px-3 py-1.5 text-xs text-slate-300"
-                  >
-                    Edit graph
-                  </button>
-                  <button
+                  <Button onClick={() => openEditor(workflow)} size="icon">
+                    <Pencil size={18} />
+                  </Button>
+                  <Button
                     aria-label={`Delete ${workflow.title}`}
+                    variant="danger"
+                    size="icon"
                     onClick={() => {
-                      if (window.confirm(`Delete “${workflow.title}”?`))
+                      if (window.confirm(`Delete "${workflow.title}"?`))
                         void deleteMutation.mutateAsync(workflow.id);
                     }}
-                    className="rounded-md border border-(--border) p-1.5 text-slate-400 hover:text-rose-300"
                   >
-                    <Trash2 size={14} />
-                  </button>
+                    <Trash2 size={18} />
+                  </Button>
                 </footer>
               </article>
             ))}
@@ -330,13 +325,14 @@ export default function WorkflowsContent() {
               <span className="rounded-md bg-emerald-500/10 px-3 py-2 text-xs font-medium uppercase text-emerald-300">
                 {executionType}
               </span>
-              <button
+              <Button
                 onClick={() => setEditorOpen(false)}
                 aria-label="Close editor"
-                className="rounded-md p-2 text-slate-400 hover:bg-white/5"
+                size="icon"
+                variant="ghost"
               >
-                <X size={17} />
-              </button>
+                <X size={18} />
+              </Button>
             </header>
             <div className="flex min-h-0 flex-1">
               <aside className="w-56 shrink-0 overflow-y-auto border-r border-(--border) p-3">
@@ -344,8 +340,9 @@ export default function WorkflowsContent() {
                   Agent palette
                 </p>
                 {agents.map((agent) => (
-                  <button
+                  <Button
                     key={agent.id}
+                    variant="ghost"
                     onClick={() => addAgent(agent.id)}
                     className="mb-2 w-full rounded-lg border border-(--border) p-3 text-left hover:border-emerald-500/50"
                   >
@@ -353,7 +350,7 @@ export default function WorkflowsContent() {
                     <span className="mt-1 block truncate font-mono text-[10px] text-slate-500">
                       {agent.model}
                     </span>
-                  </button>
+                  </Button>
                 ))}
                 <div className="mt-4 border-t border-(--border) pt-3">
                   <label htmlFor="preset" className="text-xs text-slate-400">
@@ -450,7 +447,8 @@ export default function WorkflowsContent() {
                     <p className="mt-2 text-[10px] text-slate-500">
                       Available: task, subtask, context, steps.N.output
                     </p>
-                    <button
+                    <Button
+                      variant="ghost"
                       onClick={() => {
                         setNodes((current) => current.filter((node) => node.id !== selected.id));
                         setEdges((current) =>
@@ -463,7 +461,7 @@ export default function WorkflowsContent() {
                       className="mt-5 flex items-center gap-2 text-xs text-rose-300"
                     >
                       <Trash2 size={13} /> Remove node
-                    </button>
+                    </Button>
                   </>
                 ) : (
                   <p className="text-xs text-slate-500">
@@ -493,13 +491,15 @@ export default function WorkflowsContent() {
               </p>
             )}
             <footer className="flex justify-end gap-2 border-t border-(--border) p-3">
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => setEditorOpen(false)}
                 className="rounded-md border border-(--border) px-4 py-2 text-sm text-slate-300"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="default"
                 onClick={() => void save()}
                 disabled={!title.trim() || errors.length > 0 || saveMutation.isPending}
                 className="flex items-center gap-2 rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40"
@@ -510,7 +510,7 @@ export default function WorkflowsContent() {
                   <Save size={15} />
                 )}{" "}
                 Save workflow
-              </button>
+              </Button>
             </footer>
           </section>
         </div>

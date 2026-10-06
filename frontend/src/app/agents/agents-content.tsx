@@ -13,8 +13,10 @@ import {
   Search,
   Trash2,
   X,
+  Info,
 } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
+import { Button } from "@/components/ui/button";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 import { useAgents, useDeleteAgent, type Agent } from "@/features/agents/queries";
 
@@ -104,9 +106,13 @@ export default function AgentsContent() {
               role="alert"
             >
               Could not load agents.{" "}
-              <button onClick={() => void agentsQuery.refetch()} className="underline">
+              <Button
+                onClick={() => void agentsQuery.refetch()}
+                variant="ghost"
+                className="underline"
+              >
                 Try again
-              </button>
+              </Button>
             </div>
           )}
           {deleteMutation.isError && (
@@ -137,10 +143,7 @@ export default function AgentsContent() {
                 key={agent.id}
                 className="flex min-h-64 flex-col rounded-xl border border-(--border) bg-(--surface) p-5 transition hover:border-slate-600"
               >
-                <button
-                  onClick={() => setSelected(agent)}
-                  className="flex w-full items-start gap-3 text-left"
-                >
+                <span className="flex w-full items-start gap-3 text-left">
                   <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400">
                     <Bot size={21} />
                   </span>
@@ -150,7 +153,7 @@ export default function AgentsContent() {
                       {agent.model}
                     </span>
                   </span>
-                </button>
+                </span>
                 <p className="mt-4 line-clamp-3 min-h-14 text-sm leading-6 text-slate-400">
                   {agent.role}
                 </p>
@@ -180,27 +183,25 @@ export default function AgentsContent() {
                   </span>
                 </div>
                 <footer className="mt-auto flex justify-end gap-2 pt-4">
-                  <button
-                    onClick={() => setSelected(agent)}
-                    className="rounded-md border border-(--border) px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5"
-                  >
-                    View
-                  </button>
-                  <button
+                  <Button onClick={() => setSelected(agent)} size="icon">
+                    <Info size={20} />
+                  </Button>
+                  <Button
                     onClick={() => setEditing(agent)}
                     aria-label={`Edit ${agent.name}`}
-                    className="rounded-md border border-(--border) py-1.5 px-2.5 text-slate-400 hover:text-emerald-300"
+                    size="icon"
                   >
-                    <Pencil size={14} />
-                  </button>
-                  <button
+                    <Pencil size={18} />
+                  </Button>
+                  <Button
                     onClick={() => void removeAgent(agent)}
                     disabled={deleteMutation.isPending}
                     aria-label={`Delete ${agent.name}`}
-                    className="rounded-md border border-(--border) py-1.5 px-2.5 text-slate-400 hover:text-rose-300 disabled:opacity-50"
+                    size="icon"
+                    variant="danger"
                   >
-                    <Trash2 size={14} />
-                  </button>
+                    <Trash2 size={18} />
+                  </Button>
                 </footer>
               </article>
             ))}
@@ -231,13 +232,13 @@ export default function AgentsContent() {
                   {selected.name}
                 </h2>
               </div>
-              <button
+              <Button
                 onClick={() => setSelected(null)}
                 aria-label="Close details"
                 className="rounded-md p-2 text-slate-400 hover:bg-white/5"
               >
                 <X size={17} />
-              </button>
+              </Button>
             </div>
             <dl className="mt-8 space-y-5 text-sm">
               <Detail label="Role" value={selected.role} />
@@ -256,7 +257,7 @@ export default function AgentsContent() {
               <Detail label="Created" value={new Date(selected.created_at).toLocaleString()} />
               <Detail label="Updated" value={new Date(selected.updated_at).toLocaleString()} />
             </dl>
-            <button
+            <Button
               onClick={() => {
                 setEditing(selected);
                 setSelected(null);
@@ -264,7 +265,7 @@ export default function AgentsContent() {
               className="mt-8 flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950"
             >
               <Pencil size={15} /> Edit agent
-            </button>
+            </Button>
           </aside>
         </div>
       )}
