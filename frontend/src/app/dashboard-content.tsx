@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
+import { Textarea } from "@/components/ui/textarea";
 
 const agents = [
   { name: "Repo Analyzer", model: "git.connector", status: "Completed", tone: "emerald" },
@@ -117,7 +118,7 @@ export default function DashboardPage() {
               >
                 Workflow task definition
               </label>
-              <textarea
+              <Textarea
                 id="workflow-task"
                 value={task}
                 onChange={(event) => setTask(event.target.value)}
@@ -155,7 +156,7 @@ export default function DashboardPage() {
                       </button>
                     </div>
                   )}
-                  <textarea
+                  <Textarea
                     value={context}
                     onChange={(event) => setContext(event.target.value)}
                     rows={3}
