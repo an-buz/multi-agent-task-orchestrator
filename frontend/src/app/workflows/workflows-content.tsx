@@ -252,7 +252,7 @@ export default function WorkflowsContent() {
             </div>
           )}
           {agentsQuery.isSuccess && agents.length === 0 && (
-            <p className="mb-4 rounded-lg border border-(--border) p-4 text-sm text-slate-400">
+            <p className="mb-4 rounded-lg border border-border p-4 text-sm text-slate-400">
               Create an agent before building a workflow.
             </p>
           )}
@@ -285,13 +285,13 @@ export default function WorkflowsContent() {
                     {new Date(workflow.updated_at).toLocaleDateString()}
                   </p>
                 </span>
-                <footer className="mt-4 flex justify-end gap-2 border-t border-(--border) pt-3">
+                <footer className="mt-4 flex justify-end gap-2 border-t border-border pt-3">
                   <Button onClick={() => openEditor(workflow)} size="icon">
                     <Pencil size={18} />
                   </Button>
                   <Button
                     aria-label={`Delete ${workflow.title}`}
-                    variant="danger"
+                    variant="destructive"
                     size="icon"
                     onClick={() => {
                       if (window.confirm(`Delete "${workflow.title}"?`))

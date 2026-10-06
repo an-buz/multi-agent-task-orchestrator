@@ -15,6 +15,7 @@ import {
   X,
   Info,
 } from "lucide-react";
+import { Select, SelectTrigger, SelectContent, SelectItem } from "@/components/ui/select";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
@@ -65,7 +66,7 @@ export default function AgentsContent() {
         <div className="mx-auto max-w-360 p-6 lg:p-10">
           <CreateAgentDialog trigger={false} />
 
-          <section className="mb-6 rounded-xl border border-(--border) bg-(--surface) p-4">
+          <section className="mb-6 rounded-xl border border-border bg-(--surface) p-4">
             <div className="grid gap-3 md:grid-cols-[1fr_220px]">
               <label className="relative block">
                 <Search
@@ -76,22 +77,22 @@ export default function AgentsContent() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search agents by name, role, or model…"
-                  className="w-full rounded-lg border border-(--border) bg-slate-950 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-emerald-500"
+                  className="w-full rounded-lg border border-border bg-slate-950 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-emerald-500"
                 />
               </label>
-              <select
-                value={modelFilter}
-                onChange={(event) => setModelFilter(event.target.value)}
-                aria-label="Filter by model"
-                className="rounded-lg border border-(--border) bg-slate-950 px-3 py-2.5 text-sm text-slate-300 outline-none focus:border-emerald-500"
-              >
-                <option value="all">All models</option>
-                {models.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
+              <Select value={modelFilter} onValueChange={(value) => setModelFilter(value ?? "all")}>
+                <SelectTrigger aria-label="Filter by model">
+                  {modelFilter === "all" ? "All models" : modelFilter}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All models</SelectItem>
+                  {models.map((model) => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </section>
 
@@ -198,7 +199,7 @@ export default function AgentsContent() {
                     disabled={deleteMutation.isPending}
                     aria-label={`Delete ${agent.name}`}
                     size="icon"
-                    variant="danger"
+                    variant="destructive"
                   >
                     <Trash2 size={18} />
                   </Button>

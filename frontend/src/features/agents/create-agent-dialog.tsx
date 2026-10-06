@@ -1,7 +1,6 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as Select from "@radix-ui/react-select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import {
@@ -22,6 +21,13 @@ import remarkGfm from "remark-gfm";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiRequest } from "@/lib/api";
 import { agentsQueryKey, useAgentCatalog, type Agent } from "./queries";
 
@@ -274,9 +280,10 @@ export function CreateAgentDialog({
                 <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   AI model
                 </legend>
-                <Select.Root
+                <Select
                   value={selectedModel}
                   onValueChange={(model) => {
+                    if (!model) return;
                     const modelInfo = models.find((item) => item.key === model);
                     form.setValue("model", model);
                     if (modelInfo) {
@@ -292,42 +299,22 @@ export function CreateAgentDialog({
                   }}
                   disabled={catalog.isLoading || models.length === 0}
                 >
-                  <Select.Trigger
-                    aria-label="AI model"
-                    className="flex w-full items-center justify-between rounded-lg border border-(--border) bg-slate-950 py-2.5 pl-3 pr-4 text-[16px] text-slate-300 outline-none focus:border-emerald-500"
-                  >
+                  <SelectTrigger aria-label="AI model">
                     <div className="flex flex-row items-center content-center gap-2">
-                      <Sparkles size={14} className=" text-emerald-400" />
-                      <Select.Value />
+                      <SelectValue />
                     </div>
-                    <Select.Icon>
-                      <ChevronDown size={16} className="text-slate-400" />
-                    </Select.Icon>
-                  </Select.Trigger>
-                  <Select.Portal>
-                    <Select.Content
-                      position="popper"
-                      sideOffset={4}
-                      className="z-50 max-h-64 min-w-(--radix-select-trigger-width) overflow-hidden rounded-lg border border-(--border) bg-slate-950 p-1 shadow-xl"
-                    >
-                      <Select.Viewport>
-                        {models.map((model) => (
-                          <Select.Item
-                            key={model.key}
-                            value={model.key}
-                            className="relative flex cursor-pointer select-none items-center gap-2 rounded-md py-2.5 pl-3 pr-8 text-[16px] text-slate-300 outline-none data-highlighted:bg-white/5 data-highlighted:text-white data-[state=checked]:text-white"
-                          >
-                            <Sparkles size={14} className="shrink-0 text-emerald-400" />
-                            <Select.ItemText>{modelLabels[model.key] ?? model.key}</Select.ItemText>
-                            <span className="ml-auto text-xs text-slate-500">
-                              {tierLabels[model.tier]}
-                            </span>
-                          </Select.Item>
-                        ))}
-                      </Select.Viewport>
-                    </Select.Content>
-                  </Select.Portal>
-                </Select.Root>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((model) => (
+                      <SelectItem
+                        key={model.key}
+                        value={model.key}
+                      >
+                        {modelLabels[model.key] ?? model.key}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {selectedModelInfo && (
                   <p className="mt-2 text-xs text-slate-500">
                     {selectedModelInfo.provider} ·{" "}
@@ -409,7 +396,10 @@ export function CreateAgentDialog({
                           max={1}
                           step={0.1}
                           value={temperature}
-                          onValueChange={(value) => form.setValue("temperature", value)}
+                          onValueChange={(value) => {
+                            const v = Array.isArray(value) ? value[0] : value;
+                            form.setValue("temperature", v);
+                          }}
                         />
                       </div>
                     </label>
