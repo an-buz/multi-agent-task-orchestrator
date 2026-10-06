@@ -1,6 +1,6 @@
 """Application settings endpoints."""
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 
@@ -10,7 +10,9 @@ router = APIRouter()
 
 
 @router.get("/config")
-def get_config(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+async def get_config(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
     """Return non-sensitive application configuration.
 
     Exposes LLM provider mode, code executor backend, and which API keys are configured,

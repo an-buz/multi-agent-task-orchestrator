@@ -16,11 +16,13 @@ const settingsSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsSchema>;
 
-const defaultValues: SettingsFormValues = {
-  default_model: "claude-sonnet",
-  temperature: 0.7,
-  max_tokens: 4096,
-};
+interface ModelInfo {
+  key: string;
+  provider: string;
+  model_id: string;
+  tier: string;
+  context_window: number;
+}
 
 interface AppConfig {
   llm_provider_mode: string;
@@ -32,41 +34,70 @@ interface AppConfig {
 
 export default function SettingsContent() {
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [saveNotice, setSaveNotice] = useState("");
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
-    defaultValues,
+    defaultValues: { default_model: "", temperature: 0.7, max_tokens: 4096 },
   });
 
   useEffect(() => {
-    apiRequest<AppConfig>("/settings/config")
-      .then((data) => {
-        setConfig(data);
+    let cancelled = false;
+
+    Promise.all([
+      apiRequest<AppConfig>("/settings/config"),
+      apiRequest<{ items: ModelInfo[] }>("/agents/models").then((res) => res.items),
+    ])
+      .then(([cfg, mdl]) => {
+        if (cancelled) return;
+        setConfig(cfg);
+        setModels(mdl);
+
+        // Select first model matching the current provider mode.
+        const preferredProvider = cfg.llm_provider_mode === "mock" ? "anthropic" : undefined;
+        let selectedModel =
+          preferredProvider && mdl.find((m) => m.provider === preferredProvider)?.key;
+        if (!selectedModel) selectedModel = mdl[0]?.key ?? "";
+
+        form.setValue("default_model", selectedModel);
+        setLoadError(null);
       })
       .catch(() => {
-        setNotice("Could not load configuration.");
-      })
-      .finally(() => setLoading(false));
+        setLoadError("Could not load configuration.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function onSubmit(values: SettingsFormValues) {
     setSaving(true);
-    setNotice("");
+    setSaveNotice("");
     try {
       await apiRequest<AppConfig>("/settings/config", {
         method: "PATCH",
         body: JSON.stringify(values),
       });
-      setNotice("Settings saved successfully.");
+      setSaveNotice("Settings saved successfully.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not save settings.");
+      setSaveNotice(error instanceof Error ? error.message : "Could not save settings.");
     } finally {
       setSaving(false);
     }
   }
+
+  function handleRetry() {
+    setLoadError(null);
+    // Re-run the effect by toggling a dummy key; React will re-fetch.
+    window.location.reload();
+  }
+
+  const saveDisabled = true; // PATCH /settings/config does not persist yet.
 
   return (
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
@@ -81,13 +112,34 @@ export default function SettingsContent() {
           </div>
         </header>
         <div className="mx-auto max-w-360 p-6 lg:p-10">
-          {loading && (
-            <div className="grid min-h-52 place-items-center text-sm text-slate-400">
-              <LoaderCircle className="animate-spin" size={20} />
+          {/* Load error (distinct from save notice) */}
+          {loadError && (
+            <div
+              role="alert"
+              className="mb-5 rounded-lg border border-rose-900/60 bg-rose-950/20 p-4 text-sm text-rose-300"
+            >
+              {loadError}{" "}
+              <button onClick={handleRetry} className="underline">
+                Retry
+              </button>
             </div>
           )}
 
-          {!loading && config && (
+          {/* Loading state */}
+          {!config && !loadError && (
+            <div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-(--border) bg-(--surface) p-8 text-center">
+              <div>
+                <LoaderCircle size={24} className="mx-auto animate-spin text-slate-400" />
+                <h2 className="mt-4 font-semibold">Loading settings…</h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Loading configuration and model catalog from the server.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Loaded config */}
+          {config && !loadError && (
             <section className="space-y-6">
               {/* API Keys Section */}
               <article className="rounded-xl border border-(--border) bg-(--surface) p-5">
@@ -108,7 +160,7 @@ export default function SettingsContent() {
                 <h2 className="text-sm font-semibold">LLM provider mode</h2>
                 <p className="mt-1 text-xs text-slate-400">
                   When set to{" "}
-                  <span className="font-mono text-emerald-300">{config.llm_provider_mode}</span>,{" "}
+                  <span className="font-mono text-emerald-300">{config.llm_provider_mode}</span>,
                   the orchestrator uses{" "}
                   {config.llm_provider_mode === "mock"
                     ? "deterministic mock responses"
@@ -121,41 +173,57 @@ export default function SettingsContent() {
               <article className="rounded-xl border border-(--border) bg-(--surface) p-5">
                 <h2 className="text-sm font-semibold">Code executor</h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  The code executor runs agent code in an isolated Docker container when enabled.{" "}
+                  The code executor backend is{" "}
                   <span className="font-mono text-emerald-300">{config.code_executor_backend}</span>
                   .
                 </p>
               </article>
 
-              {/* Default Agent Parameters */}
-              {notice && (
+              {/* Save notice (distinct from load error) */}
+              {(saveNotice || loadError) && (
                 <div
                   role="alert"
-                  className={`rounded-lg border p-4 text-sm ${saving ? "border-slate-700 text-slate-300" : config ? "" : "text-rose-300"}`}
+                  className={`rounded-lg border p-4 text-sm ${
+                    saveNotice.startsWith("Settings saved")
+                      ? "border-emerald-900/60 bg-emerald-950/20 text-emerald-300"
+                      : saveNotice
+                        ? "border-rose-900/60 bg-rose-950/20 text-rose-300"
+                        : ""
+                  }`}
                 >
-                  {notice}
+                  {saveNotice}
                 </div>
               )}
 
+              {/* Default Agent Parameters */}
               <article className="rounded-xl border border-(--border) bg-(--surface) p-5">
                 <h2 className="text-sm font-semibold">Default agent parameters</h2>
                 <p className="mt-1 text-xs text-slate-400">
                   Values applied when creating a new agent. Adjusted values can be overridden in the
-                  agent creation form.
+                  agent creation form. Saving requires a backend endpoint that persists these
+                  settings; it is not yet available.
                 </p>
 
                 <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-5">
                   <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     Default model
+                    <div id="model-error" aria-live="polite" />
                     <select
                       {...form.register("default_model")}
-                      className="mt-2 block w-full rounded-lg border border-(--border) bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                      disabled={saveDisabled}
+                      className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-emerald-500 ${form.formState.errors.default_model ? "border-rose-500" : "border-(--border)"}`}
                     >
-                      <option value="claude-sonnet">Claude Sonnet</option>
-                      <option value="claude-haiku">Claude Haiku</option>
-                      <option value="claude-opus">Claude Opus</option>
-                      <option value="gpt-4o">GPT-4o</option>
+                      {models.map((model) => (
+                        <option key={model.key} value={model.key}>
+                          {formatModelLabel(model)} ({model.tier}, {model.provider})
+                        </option>
+                      ))}
                     </select>
+                    {form.formState.errors.default_model && (
+                      <p className="mt-1.5 text-xs text-rose-400" aria-hidden="false">
+                        {form.formState.errors.default_model.message}
+                      </p>
+                    )}
                   </label>
 
                   <div className="grid gap-5 sm:grid-cols-2">
@@ -167,8 +235,15 @@ export default function SettingsContent() {
                         step={0.1}
                         min={0}
                         max={1}
-                        className="mt-2 block w-full rounded-lg border border-(--border) bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                        aria-describedby="temp-error"
+                        disabled={saveDisabled}
+                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-emerald-500 ${form.formState.errors.temperature ? "border-rose-500" : "border-(--border)"}`}
                       />
+                      {form.formState.errors.temperature && (
+                        <p id="temp-error" className="mt-1.5 text-xs text-rose-400">
+                          {form.formState.errors.temperature.message}
+                        </p>
+                      )}
                     </label>
 
                     <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
@@ -178,32 +253,36 @@ export default function SettingsContent() {
                         type="number"
                         min={1}
                         max={8192}
-                        className="mt-2 block w-full rounded-lg border border-(--border) bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                        aria-describedby="tokens-error"
+                        disabled={saveDisabled}
+                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-emerald-500 ${form.formState.errors.max_tokens ? "border-rose-500" : "border-(--border)"}`}
                       />
+                      {form.formState.errors.max_tokens && (
+                        <p id="tokens-error" className="mt-1.5 text-xs text-rose-400">
+                          {form.formState.errors.max_tokens.message}
+                        </p>
+                      )}
                     </label>
                   </div>
 
                   <footer className="flex justify-end gap-2">
                     <button
                       type="submit"
-                      disabled={saving || form.formState.isSubmitting}
+                      disabled={saveDisabled || saving || form.formState.isSubmitting}
                       className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50"
                     >
                       {saving ? (
                         <LoaderCircle size={15} className="animate-spin" />
+                      ) : saveDisabled ? (
+                        "Not yet available"
                       ) : (
-                        <SettingsIcon size={15} />
-                      )}{" "}
-                      Save changes
+                        <>
+                          <SettingsIcon size={15} /> Save changes
+                        </>
+                      )}
                     </button>
                   </footer>
                 </form>
-
-                {form.formState.errors.default_model && (
-                  <p className="mt-2 text-xs text-rose-400">
-                    {form.formState.errors.default_model.message}
-                  </p>
-                )}
               </article>
             </section>
           )}
@@ -211,6 +290,14 @@ export default function SettingsContent() {
       </section>
     </main>
   );
+}
+
+function formatModelLabel(model: ModelInfo): string {
+  const parts = model.key.split("-");
+  return `${parts[0].charAt(0).toUpperCase() + parts[0].slice(1)} ${parts
+    .slice(1)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ")}`;
 }
 
 function ApiKeyStatus({ label, configured }: { label: string; configured: boolean }) {
