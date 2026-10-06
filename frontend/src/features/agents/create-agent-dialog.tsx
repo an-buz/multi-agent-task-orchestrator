@@ -161,9 +161,9 @@ export function CreateAgentDialog({
             onKeyDown={(event) => {
               if (event.key === "Escape") close();
             }}
-            className="my-auto w-full max-w-2xl rounded-2xl border border-(--border) bg-(--surface) p-5 shadow-2xl sm:p-7"
+            className="my-auto w-full max-w-2xl rounded-2xl border border-border bg-(--surface) p-5 shadow-2xl sm:p-7"
           >
-            <header className="mb-6 flex items-start justify-between border-b border-(--border) pb-5">
+            <header className="mb-6 flex items-start justify-between border-b border-border pb-5">
               <div>
                 <h2 id="create-agent-title" className="text-lg font-semibold">
                   {agent ? "Edit Agent" : "Create New Agent"}
@@ -196,7 +196,7 @@ export function CreateAgentDialog({
                     {...form.register("name")}
                     autoFocus
                     placeholder="e.g., Senior Code Reviewer"
-                    className="mt-1.5 block w-full rounded-lg border border-(--border) bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
+                    className="mt-1.5 block w-full rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
                   />
                   <span className="mt-1.5 block text-[11px] font-normal normal-case tracking-normal text-slate-500">
                     Choose a unique identifier for this agent in your workflows
@@ -214,7 +214,7 @@ export function CreateAgentDialog({
                 <input
                   {...form.register("role")}
                   placeholder="e.g., Reviews code for bugs, security, and performance"
-                  className="mt-1.5 block w-full rounded-lg border border-(--border) bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
                 />
                 {form.formState.errors.role && (
                   <span className="mt-1 block normal-case text-rose-400">
@@ -225,9 +225,9 @@ export function CreateAgentDialog({
 
               <div className="block tracking-wide text-slate-400">
                 <span className="text-[11px] font-semibold uppercase">System prompt</span>
-                <div className="mt-1.5 overflow-hidden rounded-lg border border-(--border) bg-slate-950 focus-within:border-emerald-500">
+                <div className="mt-1.5 overflow-hidden rounded-lg border border-border bg-slate-950 focus-within:border-emerald-500">
                   <div
-                    className="flex border-b border-(--border) px-2 pt-2"
+                    className="flex border-b border-border px-2 pt-2"
                     role="tablist"
                     aria-label="System prompt view"
                   >
@@ -238,7 +238,7 @@ export function CreateAgentDialog({
                         role="tab"
                         aria-selected={promptView === view}
                         onClick={() => setPromptView(view)}
-                        className={`rounded-t-md px-3 py-1.5 text-xs capitalize ${promptView === view ? "border border-b-0 border-(--border) bg-slate-900 text-emerald-300" : "text-slate-500 hover:text-slate-300"}`}
+                        className={`rounded-t-md px-3 py-1.5 text-xs capitalize ${promptView === view ? "border border-b-0 border-border bg-slate-900 text-emerald-300" : "text-slate-500 hover:text-slate-300"}`}
                       >
                         {view}
                       </button>
@@ -300,19 +300,44 @@ export function CreateAgentDialog({
                   disabled={catalog.isLoading || models.length === 0}
                 >
                   <SelectTrigger aria-label="AI model">
-                    <div className="flex flex-row items-center content-center gap-2">
+                    {selectedModelInfo ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <Sparkles size={15} className="shrink-0 text-emerald-400" />
+
+                        <span className="truncate text-sm text-slate-200">
+                          {modelLabels[selectedModelInfo.key] ?? selectedModelInfo.key}
+                        </span>
+
+                        <span className="ml-auto shrink-0 text-xs text-slate-500">
+                          {tierLabels[selectedModelInfo.tier as keyof typeof tierLabels]}
+                        </span>
+                      </div>
+                    ) : (
                       <SelectValue />
-                    </div>
+                    )}
                   </SelectTrigger>
                   <SelectContent>
-                    {models.map((model) => (
-                      <SelectItem
-                        key={model.key}
-                        value={model.key}
-                      >
-                        {modelLabels[model.key] ?? model.key}
-                      </SelectItem>
-                    ))}
+                    {models.map((model) => {
+                      const tier = tierLabels[model.tier as keyof typeof tierLabels];
+
+                      return (
+                        <SelectItem
+                          key={model.key}
+                          value={model.key}
+                          className="px-3 py-2.5 text-slate-300 focus:bg-slate-800 focus:text-white"
+                        >
+                          <div className="flex w-full min-w-0 items-center gap-2">
+                            <Sparkles size={15} className="shrink-0 text-emerald-400" />
+
+                            <span className="min-w-0 flex-1 truncate">
+                              {modelLabels[model.key] ?? model.key}
+                            </span>
+
+                            <span className="ml-auto shrink-0 text-xs text-slate-500">{tier}</span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 {selectedModelInfo && (
@@ -352,7 +377,7 @@ export function CreateAgentDialog({
                               : [...selectedTools, tool.key],
                           )
                         }
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${selected ? "border-emerald-500/70 bg-emerald-500/10 text-white" : "border-(--border) bg-slate-950 text-slate-400 hover:border-slate-600"}`}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${selected ? "border-emerald-500/70 bg-emerald-500/10 text-white" : "border-border bg-slate-950 text-slate-400 hover:border-slate-600"}`}
                       >
                         <Icon size={14} className={selected ? "text-emerald-400" : ""} />
                         <span>{tool.name}</span>
@@ -389,7 +414,7 @@ export function CreateAgentDialog({
                     <label className="text-[11px] text-slate-400">
                       Temperature{" "}
                       <span className="float-right text-emerald-400">{temperature.toFixed(1)}</span>
-                      <div className="mt-3">
+                      <div className="mt-3 flex h-5 items-center">
                         <Slider
                           aria-label="Temperature"
                           min={0}
@@ -409,7 +434,7 @@ export function CreateAgentDialog({
                         {...form.register("max_tokens", { valueAsNumber: true })}
                         type="number"
                         min="1"
-                        className="mt-2 block w-full rounded-md border border-(--border) bg-slate-950 px-2 py-2 text-[16px] text-slate-300"
+                        className="mt-2 block w-full rounded-md border border-border bg-slate-950 px-2 py-2 text-[16px] text-slate-300"
                       />
                     </label>
                     <label className="text-[11px] text-slate-400">
@@ -417,7 +442,7 @@ export function CreateAgentDialog({
                       <span className="relative mt-2 block">
                         <select
                           {...form.register("context_window", { valueAsNumber: true })}
-                          className="block w-full appearance-none rounded-md border border-(--border) bg-slate-950 px-2 py-2 pr-9 text-[16px] text-slate-300"
+                          className="block w-full appearance-none rounded-md border border-border bg-slate-950 px-2 py-2 pr-9 text-[16px] text-slate-300"
                         >
                           <option value={8000}>8K tokens</option>
                           <option value={32000}>32K tokens</option>
@@ -444,11 +469,11 @@ export function CreateAgentDialog({
                   {mutation.error.message}. Check that the API is available and try again.
                 </p>
               )}
-              <footer className="flex justify-end gap-2 border-t border-(--border) pt-5">
+              <footer className="flex justify-end gap-2 border-t border-border pt-5">
                 <button
                   type="button"
                   onClick={close}
-                  className="rounded-lg border border-(--border) px-4 py-2 text-xs font-medium text-slate-400 hover:bg-white/5"
+                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-slate-400 hover:bg-white/5"
                 >
                   Cancel
                 </button>

@@ -55,7 +55,7 @@ export default function AgentsContent() {
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       <Sidebar />
       <section className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
             <p className="mt-1 text-xs text-slate-400">
@@ -122,7 +122,7 @@ export default function AgentsContent() {
             </p>
           )}
           {!agentsQuery.isLoading && !agentsQuery.isError && filtered.length === 0 && (
-            <div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-(--border) bg-(--surface) p-8 text-center">
+            <div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-border bg-(--surface) p-8 text-center">
               <div>
                 <span className="mx-auto grid size-12 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400">
                   <Bot size={22} />
@@ -142,7 +142,7 @@ export default function AgentsContent() {
             {filtered.map((agent) => (
               <article
                 key={agent.id}
-                className="flex min-h-64 flex-col rounded-xl border border-(--border) bg-(--surface) p-5 transition hover:border-slate-600"
+                className="flex min-h-64 flex-col rounded-xl border border-border bg-(--surface) p-5 transition hover:border-slate-600"
               >
                 <span className="flex w-full items-start gap-3 text-left">
                   <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400">
@@ -158,7 +158,7 @@ export default function AgentsContent() {
                 <p className="mt-4 line-clamp-3 min-h-14 text-sm leading-6 text-slate-400">
                   {agent.role}
                 </p>
-                <div className="mt-4 flex items-center gap-2 border-t border-(--border) pt-3 text-slate-500">
+                <div className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-slate-500">
                   <div
                     className="flex min-w-0 flex-1 items-center gap-2"
                     aria-label="Enabled tools"
@@ -221,7 +221,7 @@ export default function AgentsContent() {
           }}
         >
           <aside
-            className="h-full w-full max-w-lg overflow-y-auto border-l border-(--border) bg-(--surface) p-6 shadow-2xl"
+            className="h-full w-full max-w-lg overflow-y-auto border-l border-border bg-(--surface) p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="agent-details-title"

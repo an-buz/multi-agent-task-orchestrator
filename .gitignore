@@ -3,6 +3,7 @@ AGENTS.md
 README.md
 skills-lock.json
 .agents
+.playwright-mcp
 
 .pnpm-store/
 .zed/

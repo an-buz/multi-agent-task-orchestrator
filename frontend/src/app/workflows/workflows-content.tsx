@@ -222,7 +222,7 @@ export default function WorkflowsContent() {
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       <Sidebar />
       <section className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Workflows</h1>
             <p className="mt-1 text-xs text-slate-400">
@@ -259,7 +259,7 @@ export default function WorkflowsContent() {
           {!workflowsQuery.isLoading &&
             workflowsQuery.isSuccess &&
             workflowsQuery.data.items.length === 0 && (
-              <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-(--border) bg-(--surface) p-8 text-center">
+              <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-border bg-(--surface) p-8 text-center">
                 <div>
                   <GitBranch className="mx-auto text-emerald-400" />
                   <h2 className="mt-4 font-semibold">No workflows yet</h2>
@@ -273,7 +273,7 @@ export default function WorkflowsContent() {
             {(workflowsQuery.data?.items ?? []).map((workflow) => (
               <article
                 key={workflow.id}
-                className="rounded-xl border border-(--border) bg-(--surface) p-5"
+                className="rounded-xl border border-border bg-(--surface) p-5"
               >
                 <span className="w-full text-left flex flex-col">
                   <p className="font-semibold">{workflow.title}</p>
@@ -309,18 +309,18 @@ export default function WorkflowsContent() {
       {editorOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/80 p-3 sm:p-6">
           <section
-            className="flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-(--border) bg-(--surface)"
+            className="flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-border bg-(--surface)"
             role="dialog"
             aria-modal="true"
             aria-labelledby="workflow-editor-title"
           >
-            <header className="flex flex-wrap items-center gap-3 border-b border-(--border) p-4">
+            <header className="flex flex-wrap items-center gap-3 border-b border-border p-4">
               <input
                 id="workflow-title"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="Workflow title"
-                className="min-w-40 flex-1 rounded-md border border-(--border) bg-slate-950 px-3 py-2 text-sm"
+                className="min-w-40 flex-1 rounded-md border border-border bg-slate-950 px-3 py-2 text-sm"
               />
               <span className="rounded-md bg-emerald-500/10 px-3 py-2 text-xs font-medium uppercase text-emerald-300">
                 {executionType}
@@ -335,7 +335,7 @@ export default function WorkflowsContent() {
               </Button>
             </header>
             <div className="flex min-h-0 flex-1">
-              <aside className="w-56 shrink-0 overflow-y-auto border-r border-(--border) p-3">
+              <aside className="w-56 shrink-0 overflow-y-auto border-r border-border p-3">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Agent palette
                 </p>
@@ -344,7 +344,7 @@ export default function WorkflowsContent() {
                     key={agent.id}
                     variant="ghost"
                     onClick={() => addAgent(agent.id)}
-                    className="mb-2 w-full rounded-lg border border-(--border) p-3 text-left hover:border-emerald-500/50"
+                    className="mb-2 w-full rounded-lg border border-border p-3 text-left hover:border-emerald-500/50"
                   >
                     <span className="block truncate text-xs font-medium">{agent.name}</span>
                     <span className="mt-1 block truncate font-mono text-[10px] text-slate-500">
@@ -352,7 +352,7 @@ export default function WorkflowsContent() {
                     </span>
                   </Button>
                 ))}
-                <div className="mt-4 border-t border-(--border) pt-3">
+                <div className="mt-4 border-t border-border pt-3">
                   <label htmlFor="preset" className="text-xs text-slate-400">
                     Arrange preset
                   </label>
@@ -389,7 +389,7 @@ export default function WorkflowsContent() {
                         );
                       }
                     }}
-                    className="mt-2 w-full rounded-md border border-(--border) bg-slate-950 px-2 py-2 text-xs"
+                    className="mt-2 w-full rounded-md border border-border bg-slate-950 px-2 py-2 text-xs"
                   >
                     <option value="hybrid">Hybrid graph</option>
                     <option value="sequential">Sequential chain</option>
@@ -412,7 +412,7 @@ export default function WorkflowsContent() {
                   <MiniMap pannable zoomable style={{ width: 140, height: 100 }} />
                 </ReactFlow>
               </div>
-              <aside className="w-64 shrink-0 overflow-y-auto border-l border-(--border) p-4">
+              <aside className="w-64 shrink-0 overflow-y-auto border-l border-border p-4">
                 <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Node properties
                 </p>
@@ -442,7 +442,7 @@ export default function WorkflowsContent() {
                         )
                       }
                       rows={8}
-                      className="mt-2 w-full resize-y rounded-md border border-(--border) bg-slate-950 p-2 font-mono text-xs"
+                      className="mt-2 w-full resize-y rounded-md border border-border bg-slate-950 p-2 font-mono text-xs"
                     />
                     <p className="mt-2 text-[10px] text-slate-500">
                       Available: task, subtask, context, steps.N.output
@@ -468,7 +468,7 @@ export default function WorkflowsContent() {
                     Select a graph node to edit its input template.
                   </p>
                 )}
-                <div className="mt-6 border-t border-(--border) pt-4">
+                <div className="mt-6 border-t border-border pt-4">
                   <p className="text-xs font-semibold text-slate-400">Validation</p>
                   {errors.length ? (
                     <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-rose-300">
@@ -490,11 +490,11 @@ export default function WorkflowsContent() {
                 {notice}
               </p>
             )}
-            <footer className="flex justify-end gap-2 border-t border-(--border) p-3">
+            <footer className="flex justify-end gap-2 border-t border-border p-3">
               <Button
                 variant="secondary"
                 onClick={() => setEditorOpen(false)}
-                className="rounded-md border border-(--border) px-4 py-2 text-sm text-slate-300"
+                className="rounded-md border border-border px-4 py-2 text-sm text-slate-300"
               >
                 Cancel
               </Button>
