@@ -10,7 +10,7 @@ worker:
 	cd backend && uv run arq app.workers.settings.WorkerSettings
 
 frontend-dev:
-	cd frontend && npm run dev
+	cd frontend && pnpm dev
 
 migrate:
 	cd backend && uv run alembic upgrade head
@@ -20,13 +20,13 @@ migration:
 
 lint:
 	cd backend && uv run ruff check app tests && uv run ruff format --check app tests && uv run mypy --strict app
-	cd frontend && npm run lint && npm run typecheck
+	cd frontend && pnpm lint && pnpm typecheck
 
 test:
 	cd backend && uv run pytest
 
 test-e2e:
-	cd frontend && npm run playwright test
+	cd frontend && pnpm test:e2e
 
 frontend-install:
-	cd frontend && npm install
+	cd frontend && pnpm install

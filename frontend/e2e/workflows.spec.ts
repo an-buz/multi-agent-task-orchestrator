@@ -53,8 +53,20 @@ test("creates and saves a connected sequential workflow", async ({ page }) => {
   await page.route("**/*", async (route) => {
     const requestUrl = new URL(route.request().url());
     console.log("E2E route", requestUrl.href);
+    const cors = { "access-control-allow-origin": "http://127.0.0.1:3000" };
+    if (requestUrl.pathname.startsWith("/api/v1/") && route.request().method() === "OPTIONS") {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          ...cors,
+          "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+          "access-control-allow-headers": "content-type",
+        },
+      });
+      return;
+    }
     if (requestUrl.pathname === "/api/v1/agents") {
-      await route.fulfill({ json: { items: agents, total: agents.length } });
+      await route.fulfill({ json: { items: agents, total: agents.length }, headers: cors });
       return;
     }
 
@@ -70,7 +82,7 @@ test("creates and saves a connected sequential workflow", async ({ page }) => {
           created_at: timestamp,
           updated_at: timestamp,
         };
-        await route.fulfill({ status: 201, json: savedWorkflow });
+        await route.fulfill({ status: 201, json: savedWorkflow, headers: cors });
         return;
       }
 
@@ -79,6 +91,7 @@ test("creates and saves a connected sequential workflow", async ({ page }) => {
           items: savedWorkflow ? [savedWorkflow] : [],
           total: savedWorkflow ? 1 : 0,
         },
+        headers: cors,
       });
       return;
     }

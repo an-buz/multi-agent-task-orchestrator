@@ -17,9 +17,13 @@ import {
   X,
 } from "lucide-react";
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useWorkflows } from "@/features/workflows/queries";
+import { confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
+import type { RunDetails } from "@/features/runs/types";
 
 const agents = [
   { name: "Repo Analyzer", model: "git.connector", status: "Completed", tone: "emerald" },
@@ -80,6 +84,12 @@ export default function DashboardPage() {
   const [context, setContext] = useState("");
   const [attachment, setAttachment] = useState("");
   const [contextOpen, setContextOpen] = useState(false);
+  const router = useRouter();
+  const workflowsQuery = useWorkflows();
+  const [workflowId, setWorkflowId] = useState("");
+  const [runDraft, setRunDraft] = useState<RunDetails | null>(null);
+  const [runError, setRunError] = useState("");
+  const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   function handleFile(file: File | undefined) {
     if (!file || !/\.(txt|md|json)$/i.test(file.name)) return;
@@ -87,6 +97,51 @@ export default function DashboardPage() {
     void file.text().then(setContext);
     setContextOpen(true);
   }
+
+  async function createPlan() {
+    if (!workflowId || !task.trim()) {
+      setRunError("Choose a workflow and enter a task.");
+      return;
+    }
+    setBusy(true);
+    setRunError("");
+    try {
+      const created = await createRun({
+        workflow_id: workflowId,
+        task: task.trim(),
+        context_text: context || undefined,
+      });
+      const draft = "plan" in created && created.plan ? created : await waitForRunPlan(created.id);
+      setRunDraft(draft);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "Could not create a run.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmPlan() {
+    if (!runDraft) return;
+    setBusy(true);
+    try {
+      if (runDraft.plan) {
+        const steps = Array.isArray(runDraft.plan) ? runDraft.plan : runDraft.plan.steps;
+        await editRunPlan(runDraft.id, steps);
+      }
+      const run = await confirmRun(runDraft.id);
+      router.push(`/runs/${run.id}`);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "Could not start the run.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const planSteps = runDraft?.plan
+    ? Array.isArray(runDraft.plan)
+      ? runDraft.plan
+      : runDraft.plan.steps
+    : [];
 
   return (
     <main className="min-h-screen bg-[#050816] lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
@@ -171,6 +226,19 @@ export default function DashboardPage() {
               )}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    aria-label="Workflow"
+                    value={workflowId}
+                    onChange={(event) => setWorkflowId(event.target.value)}
+                    className="rounded-lg border border-(--border) bg-[#050816] px-3 py-2 text-xs text-slate-300"
+                  >
+                    <option value="">Choose workflow</option>
+                    {workflowsQuery.data?.items.map((workflow) => (
+                      <option key={workflow.id} value={workflow.id}>
+                        {workflow.title}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     ref={fileInput}
                     type="file"
@@ -192,12 +260,85 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
-                <Button type="button">
+                <Button type="button" disabled={busy} onClick={() => void createPlan()}>
                   <Sparkles size={16} />
-                  Decompose and Run
+                  {busy ? "Preparing…" : "Decompose and Run"}
                   <Play size={14} />
                 </Button>
               </div>
+              {runError && (
+                <p role="alert" className="mt-3 text-xs text-rose-300">
+                  {runError}
+                </p>
+              )}
+              {workflowsQuery.isError && (
+                <p role="alert" className="mt-2 text-xs text-rose-300">
+                  Could not load workflows.
+                </p>
+              )}
+              {runDraft && (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="plan-title"
+                  className="mt-4 rounded-lg border border-emerald-500/30 bg-[#080e1d] p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <h2 id="plan-title" className="text-sm font-semibold">
+                      Plan preview
+                    </h2>
+                    <Button
+                      variant="ghost"
+                      aria-label="Close plan"
+                      onClick={() => setRunDraft(null)}
+                    >
+                      <X size={15} />
+                    </Button>
+                  </div>
+                  <ol className="mt-3 space-y-2">
+                    {planSteps.map((step) => (
+                      <li
+                        key={step.step_number}
+                        className="rounded border border-(--border) p-3 text-xs"
+                      >
+                        <span className="font-medium">
+                          {step.step_number}. {step.agent_name}
+                        </span>
+                        <span className="ml-2 text-slate-400">
+                          Depends on: {step.depends_on.length ? step.depends_on.join(", ") : "none"}
+                        </span>
+                        <textarea
+                          aria-label={`Task for ${step.agent_name}`}
+                          className="mt-2 block w-full rounded border border-(--border) bg-[#050816] p-2 text-slate-300"
+                          value={step.input ?? step.subtask ?? ""}
+                          onChange={(event) =>
+                            setRunDraft({
+                              ...runDraft,
+                              plan: planSteps.map((item) =>
+                                item.step_number === step.step_number
+                                  ? {
+                                      ...item,
+                                      input: event.target.value,
+                                      subtask: event.target.value,
+                                    }
+                                  : item,
+                              ),
+                            })
+                          }
+                        />
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <Button variant="secondary" onClick={() => setRunDraft(null)}>
+                      Cancel
+                    </Button>
+                    <Button disabled={busy} onClick={() => void confirmPlan()}>
+                      {busy ? "Starting…" : "Confirm and run"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </section>
             <section className="rounded-xl border border-(--border) bg-(--surface) p-4 lg:p-5">
               <div className="mb-4 flex items-center justify-between">

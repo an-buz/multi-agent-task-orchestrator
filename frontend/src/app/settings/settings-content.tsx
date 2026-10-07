@@ -98,7 +98,7 @@ export default function SettingsContent() {
     window.location.reload();
   }
 
-  const saveDisabled = true; // PATCH /settings/config does not persist yet.
+  const saveDisabled = false;
 
   return (
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
@@ -201,8 +201,7 @@ export default function SettingsContent() {
                 <h2 className="text-sm font-semibold">Default agent parameters</h2>
                 <p className="mt-1 text-xs text-slate-400">
                   Values applied when creating a new agent. Adjusted values can be overridden in the
-                  agent creation form. Saving requires a backend endpoint that persists these
-                  settings; it is not yet available.
+                  agent creation form. Values are saved through the settings API.
                 </p>
 
                 <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-5">

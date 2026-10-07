@@ -25,5 +25,10 @@ backend/**/__pycache__/
 backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/
+backend/.uv-cache/
 backend/.coverage
 backend/htmlcov/
+
+.ruff_cache
+.uv-cache
+.uv-cache-diagnostic

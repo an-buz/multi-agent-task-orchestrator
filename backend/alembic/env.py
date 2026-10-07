@@ -7,6 +7,7 @@ from alembic import context
 from app.core.config import get_settings
 from app.db.base import Base
 from app.models.agent import Agent  # noqa: F401
+from app.models.run import Run  # noqa: F401
 from app.models.workflow import Workflow  # noqa: F401
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection

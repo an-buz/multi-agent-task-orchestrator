@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Cpu, GitBranch, LayoutGrid, Settings } from "lucide-react";
+import { Activity, Bot, Cpu, GitBranch, LayoutGrid, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
@@ -40,6 +40,12 @@ export function Sidebar() {
           href="/agents"
         >
           <Bot size={16} /> Agents
+        </Link>
+        <Link
+          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${pathname.startsWith("/runs") ? "bg-emerald-500/10 font-medium text-emerald-300" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
+          href="/runs"
+        >
+          <Activity size={16} /> Runs
         </Link>
         <Link
           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${pathname === "/settings" ? "bg-emerald-500/10 font-medium text-emerald-300" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
