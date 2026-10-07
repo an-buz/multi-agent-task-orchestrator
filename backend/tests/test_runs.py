@@ -14,7 +14,8 @@ from app.models.agent import Agent
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
-from app.services.runs import RunService
+from app.schemas.run import RunCreate
+from app.services.runs import RunError, RunService
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,6 +50,7 @@ class MemoryRunRepository(RunRepository):
         )
         self.runs: dict[UUID, Run] = {}
         self.saved_steps: list[RunStep] = []
+        self.saved_events: list[tuple[str, dict[str, Any]]] = []
         self.session = cast(AsyncSession, AsyncMock())
 
     def add(self, value: Run | RunStep) -> None:
@@ -75,6 +77,9 @@ class MemoryRunRepository(RunRepository):
 
     async def save(self) -> None:
         return None
+
+    def emit(self, run_id: UUID, event: str, data: dict[str, Any]) -> None:
+        self.saved_events.append((event, data))
 
 
 @pytest.fixture
@@ -150,3 +155,44 @@ def test_plan_rejects_duplicate_step_numbers(test_client: TestClient) -> None:
     step = created["plan"]["steps"][0]
     response = test_client.patch(f"/api/v1/runs/{created['id']}/plan", json={"steps": [step, step]})
     assert response.status_code == 422
+
+
+def test_cancel_unconfirmed_run_is_idempotent(test_client: TestClient) -> None:
+    created = test_client.post(
+        "/api/v1/runs", json={"workflow_id": str(WORKFLOW_ID), "task": "Review"}
+    ).json()
+    path = f"/api/v1/runs/{created['id']}"
+    cancelled = test_client.post(f"{path}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "CANCELLED"
+    assert cancelled.json()["plan"]["steps"][0]["status"] == "CANCELLED"
+    assert test_client.post(f"{path}/cancel").status_code == 200
+    assert test_client.post(f"{path}/confirm").status_code == 409
+    assert test_client.post(f"{path}/steps/1/retry").status_code == 409
+
+
+async def test_retry_rejects_nonfailed_steps_and_terminal_cancel() -> None:
+    repository = MemoryRunRepository()
+    service = RunService(repository)
+    created = await service.create(RunCreate(workflow_id=WORKFLOW_ID, task="Review"))
+    run = repository.runs[created.id]
+    run.status = "FAILED"
+    with pytest.raises(RunError):
+        await service.retry(run.id, 1)
+    with pytest.raises(RunError) as missing:
+        await service.retry(run.id, 2)
+    assert missing.value.status_code == 404
+    with pytest.raises(RunError):
+        await service.cancel(run.id)
+
+
+def test_sse_checks_run_and_validates_cursor_before_opening(test_client: TestClient) -> None:
+    assert test_client.get(f"/api/v1/runs/{uuid4()}/events").status_code == 404
+    for cursor in ("-1", "invalid", "9223372036854775808"):
+        assert (
+            test_client.get(
+                f"/api/v1/runs/{uuid4()}/events",
+                headers={"Last-Event-ID": cursor},
+            ).status_code
+            == 422
+        )

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     code_executor_backend: Literal["docker", "disabled"] = "disabled"
     max_parallel_steps: int = Field(default=4, ge=1, le=100)
     worker_job_timeout: int = Field(default=600, ge=1)
+    run_poll_interval: float = Field(default=0.5, gt=0)
     llm_request_timeout: float = Field(default=60.0, gt=0)
     cors_origins: list[AnyHttpUrl] = Field(
         default_factory=lambda: [AnyHttpUrl("http://localhost:3000")]

@@ -51,3 +51,15 @@ async def confirm_run(run_id: UUID, service: Service) -> RunRead:
     run = await service.confirm(run_id)
     await enqueue_run(run.id)
     return run
+
+
+@router.post("/{run_id}/cancel", response_model=RunRead)
+async def cancel_run(run_id: UUID, service: Service) -> RunRead:
+    return await service.cancel(run_id)
+
+
+@router.post("/{run_id}/steps/{step_number}/retry", response_model=RunRead)
+async def retry_step(run_id: UUID, step_number: int, service: Service) -> RunRead:
+    run = await service.retry(run_id, step_number)
+    await enqueue_run(run.id)
+    return run

@@ -200,3 +200,52 @@ async def test_cancellation_does_not_leave_detached_calls(monkeypatch: pytest.Mo
     with pytest.raises(asyncio.CancelledError):
         await task
     assert all(step.status == "IN_PROGRESS" for step in repository.saved_steps)
+
+
+async def test_retry_preserves_completed_steps_and_resumes_dependents() -> None:
+    repository, run = await make_run([[], [], [1], [2]])
+    provider = RecordingMock(fail="Task 1")
+    await DAGExecutor(repository, lambda _: provider).execute(run)
+    completed = repository.saved_steps[1]
+    original_input = repository.saved_steps[0].input
+    await RunService(repository).retry(run.id, 1)
+    provider.fail = None
+    provider.calls.clear()
+    await DAGExecutor(repository, lambda _: provider).execute(run)
+    assert run.status == "COMPLETED"
+    assert len(provider.calls) == 2
+    assert completed.attempt == 1
+    assert repository.saved_steps[0].attempt == 2
+    assert repository.saved_steps[0].input == original_input
+    assert run.total_tokens == 112
+    assert [event for event, _ in repository.saved_events].count("task:failed") == 1
+    assert repository.saved_events[-1][0] == "task:finished"
+
+
+async def test_api_cancel_stops_inflight_provider_and_prevents_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository, run = await make_run([[], [1]])
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+    provider = RecordingMock()
+
+    async def blocked(*args: object, **kwargs: object) -> LLMResponse:
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(provider, "complete", blocked)
+    task = asyncio.create_task(DAGExecutor(repository, lambda _: provider).execute(run))
+    await entered.wait()
+    await RunService(repository).cancel(run.id)
+    await asyncio.wait_for(task, 3)
+    assert closed.is_set()
+    assert run.status == "CANCELLED"
+    assert all(step.status == "CANCELLED" for step in repository.saved_steps)
+    assert run.total_tokens == 0
+    assert all(step.output is None for step in repository.saved_steps)
+    assert repository.saved_events[-1][0] == "task:cancelled"

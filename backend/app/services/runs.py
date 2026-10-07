@@ -122,6 +122,7 @@ class RunService:
         self.repository.add(run)
         for snapshot in snapshots:
             self.repository.add(snapshot)
+        self.repository.emit(run.id, "plan:ready", {"plan": run.plan})
         await self.repository.save()
         await self.repository.refresh(run)
         return await self.read(run)
@@ -154,6 +155,71 @@ class RunService:
             raise RunError("This legacy run has no execution snapshot; create a new run")
         run.status = "IN_PROGRESS"
         run.started_at = datetime.now(UTC)
+        self.repository.emit(
+            run.id,
+            "task:started",
+            {
+                "taskId": str(run.id),
+                "workflowId": str(run.workflow_id),
+            },
+        )
+        await self.repository.save()
+        return await self.read(run)
+
+    async def cancel(self, run_id: UUID) -> RunRead:
+        run = await self.require(run_id, lock=True)
+        if run.status == "CANCELLED":
+            return await self.read(run)
+        if run.status not in {"AWAITING_CONFIRMATION", "IN_PROGRESS"}:
+            raise RunError("Run cannot be cancelled in its current state")
+        run.status = "CANCELLED"
+        run.finished_at = datetime.now(UTC)
+        for step in await self.repository.steps(run.id):
+            if step.status in {"PENDING", "IN_PROGRESS"}:
+                step.status = "CANCELLED"
+                self.repository.emit(
+                    run.id,
+                    "agent:status_change",
+                    {
+                        "agentId": str(step.agent_id),
+                        "stepNumber": step.step_number,
+                        "status": step.status,
+                    },
+                )
+        self.repository.emit(run.id, "task:cancelled", {"taskId": str(run.id)})
+        await self.repository.save()
+        return await self.read(run)
+
+    async def retry(self, run_id: UUID, step_number: int) -> RunRead:
+        run = await self.require(run_id, lock=True)
+        if run.status != "FAILED":
+            raise RunError("Retry requires a failed run with no active execution")
+        step = next(
+            (
+                value
+                for value in await self.repository.steps(run.id)
+                if value.step_number == step_number
+            ),
+            None,
+        )
+        if step is None:
+            raise RunError("Step not found", 404)
+        if step.status != "FAILED":
+            raise RunError("Only failed steps can be retried")
+        step.status = "PENDING"
+        step.error = None
+        run.status = "IN_PROGRESS"
+        run.finished_at = None
+        run.final_report = None
+        self.repository.emit(
+            run.id,
+            "agent:status_change",
+            {
+                "agentId": str(step.agent_id),
+                "stepNumber": step.step_number,
+                "status": "PENDING",
+            },
+        )
         await self.repository.save()
         return await self.read(run)
 
