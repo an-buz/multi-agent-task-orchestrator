@@ -33,19 +33,19 @@ function SelectTrigger({
   children,
   ...props
 }: SelectPrimitive.Trigger.Props & {
-  size?: "sm" | "default";
+  size?: "sm" | "default" | "lg";
 }) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-sm whitespace-nowrap text-slate-300 shadow-none transition-colors outline-none",
+        "flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-sm leading-normal whitespace-nowrap text-slate-300 shadow-none transition-colors outline-none",
         "hover:border-slate-600",
         "focus:border-emerald-500",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-placeholder:text-slate-500",
-        "data-[size=default]:h-auto data-[size=sm]:h-8",
+        "data-[size=default]:h-10 data-[size=sm]:h-8 data-[size=lg]:h-10",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}

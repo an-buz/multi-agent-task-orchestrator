@@ -1,13 +1,15 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderCircle, Settings as SettingsIcon } from "lucide-react";
+import { LoaderCircle, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Sidebar } from "@/components/sidebar";
 import { apiRequest } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 
 const settingsSchema = z.object({
   default_model: z.string().min(1, "Default model is required."),
@@ -44,6 +46,8 @@ export default function SettingsContent() {
     resolver: zodResolver(settingsSchema),
     defaultValues: { default_model: "", temperature: 0.7, max_tokens: 4096 },
   });
+  const selectedDefaultModel = useWatch({ control: form.control, name: "default_model" });
+  const selectedDefaultModelInfo = models.find((model) => model.key === selectedDefaultModel);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,31 +209,62 @@ export default function SettingsContent() {
                 </p>
 
                 <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-5">
-                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Default model
+                  <fieldset>
+                    <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      Default model
+                    </legend>
                     <div id="model-error" aria-live="polite" />
-                    <select
-                      {...form.register("default_model")}
+                    <Select
+                      value={selectedDefaultModel}
+                      onValueChange={(value) => value && form.setValue("default_model", value, { shouldValidate: true })}
                       disabled={saveDisabled}
-                      className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-emerald-500 ${form.formState.errors.default_model ? "border-rose-500" : "border-(--border)"}`}
                     >
-                      {models.map((model) => (
-                        <option key={model.key} value={model.key}>
-                          {formatModelLabel(model)} ({model.tier}, {model.provider})
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger aria-label="Default model" className={form.formState.errors.default_model ? "border-rose-500" : "border-(--border)"}>
+                        {selectedDefaultModelInfo ? (
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <Sparkles size={15} className="shrink-0 text-emerald-400" />
+                            <span className="truncate text-sm text-slate-200">
+                              {formatModelLabel(selectedDefaultModelInfo)}
+                            </span>
+                            <span className="ml-auto shrink-0 text-xs text-slate-500">
+                              {formatTierLabel(selectedDefaultModelInfo.tier)}
+                            </span>
+                          </div>
+                        ) : (
+                          "Choose a model"
+                        )}
+                      </SelectTrigger>
+                      <SelectContent>
+                        {models.map((model) => (
+                          <SelectItem
+                            key={model.key}
+                            value={model.key}
+                            className="px-3 py-2.5 text-slate-300 focus:bg-slate-800 focus:text-white"
+                          >
+                            <div className="flex w-full min-w-0 items-center gap-2">
+                              <Sparkles size={15} className="shrink-0 text-emerald-400" />
+                              <span className="min-w-0 flex-1 truncate">
+                                {formatModelLabel(model)}
+                              </span>
+                              <span className="ml-auto shrink-0 text-xs text-slate-500">
+                                {formatTierLabel(model.tier)}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {form.formState.errors.default_model && (
                       <p className="mt-1.5 text-xs text-rose-400" aria-hidden="false">
                         {form.formState.errors.default_model.message}
                       </p>
                     )}
-                  </label>
+                  </fieldset>
 
                   <div className="grid gap-5 sm:grid-cols-2">
                     <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                       Default temperature (0.0–1.0)
-                      <input
+                      <Input
                         {...form.register("temperature", { valueAsNumber: true })}
                         type="number"
                         step={0.1}
@@ -248,7 +283,7 @@ export default function SettingsContent() {
 
                     <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                       Default max tokens (1–8192)
-                      <input
+                      <Input
                         {...form.register("max_tokens", { valueAsNumber: true })}
                         type="number"
                         min={1}
@@ -294,11 +329,27 @@ export default function SettingsContent() {
 }
 
 function formatModelLabel(model: ModelInfo): string {
+  const modelLabels: Record<string, string> = {
+    "claude-haiku": "Claude Haiku",
+    "claude-sonnet": "Claude Sonnet",
+    "claude-opus": "Claude Opus",
+    "gpt-4o": "GPT-4o",
+  };
+  if (modelLabels[model.key]) return modelLabels[model.key];
   const parts = model.key.split("-");
   return `${parts[0].charAt(0).toUpperCase() + parts[0].slice(1)} ${parts
     .slice(1)
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join(" ")}`;
+}
+
+function formatTierLabel(tier: string): string {
+  const labels: Record<string, string> = {
+    fast: "Fast",
+    balanced: "Balanced",
+    powerful: "Powerful",
+  };
+  return labels[tier] ?? tier;
 }
 
 function ApiKeyStatus({ label, configured }: { label: string; configured: boolean }) {

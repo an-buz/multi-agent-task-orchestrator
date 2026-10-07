@@ -21,6 +21,7 @@ import remarkGfm from "remark-gfm";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectTrigger,
@@ -192,7 +193,7 @@ export function CreateAgentDialog({
                 </span>
                 <label className="min-w-0 flex-1 tracking-wide text-slate-400">
                   <span className="text-[11px] font-semibold uppercase">Agent name</span>
-                  <input
+                  <Input
                     {...form.register("name")}
                     autoFocus
                     placeholder="e.g., Senior Code Reviewer"
@@ -211,7 +212,7 @@ export function CreateAgentDialog({
 
               <label className="block tracking-wide text-slate-400">
                 <span className="text-[11px] font-semibold uppercase">Role</span>
-                <input
+                <Input
                   {...form.register("role")}
                   placeholder="e.g., Reviews code for bugs, security, and performance"
                   className="mt-1.5 block w-full rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
@@ -430,7 +431,7 @@ export function CreateAgentDialog({
                     </label>
                     <label className="text-[11px] text-slate-400">
                       Max tokens
-                      <input
+                      <Input
                         {...form.register("max_tokens", { valueAsNumber: true })}
                         type="number"
                         min="1"
@@ -440,24 +441,20 @@ export function CreateAgentDialog({
                     <label className="text-[11px] text-slate-400">
                       Context window
                       <span className="relative mt-2 block">
-                        <select
-                          {...form.register("context_window", { valueAsNumber: true })}
-                          className="block w-full appearance-none rounded-md border border-border bg-slate-950 px-2 py-2 pr-9 text-[16px] text-slate-300"
+                        <Select
+                          value={String(form.watch("context_window"))}
+                          onValueChange={(value) => value && form.setValue("context_window", Number(value))}
                         >
-                          <option value={8000}>8K tokens</option>
-                          <option value={32000}>32K tokens</option>
-                          <option value={128000}>128K tokens</option>
-                          <option
-                            value={200000}
-                            disabled={(selectedModelInfo?.context_window ?? 0) < 200000}
-                          >
-                            200K tokens
-                          </option>
-                        </select>
-                        <ChevronDown
-                          size={15}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-                        />
+                          <SelectTrigger aria-label="Context window" className="block w-full appearance-none rounded-md border border-border bg-slate-950 px-2 py-2 pr-9 text-[16px] text-slate-300">
+                            {Number(form.watch("context_window")) / 1000}K tokens
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="8000">8K tokens</SelectItem>
+                            <SelectItem value="32000">32K tokens</SelectItem>
+                            <SelectItem value="128000">128K tokens</SelectItem>
+                            <SelectItem value="200000" disabled={(selectedModelInfo?.context_window ?? 0) < 200000}>200K tokens</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </span>
                     </label>
                   </div>

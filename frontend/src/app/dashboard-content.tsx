@@ -20,6 +20,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkflows } from "@/features/workflows/queries";
 import { confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
@@ -226,19 +227,16 @@ export default function DashboardPage() {
               )}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    aria-label="Workflow"
-                    value={workflowId}
-                    onChange={(event) => setWorkflowId(event.target.value)}
-                    className="rounded-lg border border-(--border) bg-[#050816] px-3 py-2 text-xs text-slate-300"
-                  >
-                    <option value="">Choose workflow</option>
+                  <Select value={workflowId || undefined} onValueChange={(value) => setWorkflowId(value ?? "")}>
+                    <SelectTrigger aria-label="Workflow" className="h-auto w-auto rounded-lg border-(--border) bg-[#050816] px-3 py-2 text-xs text-slate-300">
+                      {workflowsQuery.data?.items.find((workflow) => workflow.id === workflowId)?.title ?? "Choose workflow"}
+                    </SelectTrigger>
+                    <SelectContent>
                     {workflowsQuery.data?.items.map((workflow) => (
-                      <option key={workflow.id} value={workflow.id}>
-                        {workflow.title}
-                      </option>
+                      <SelectItem key={workflow.id} value={workflow.id}>{workflow.title}</SelectItem>
                     ))}
-                  </select>
+                    </SelectContent>
+                  </Select>
                   <input
                     ref={fileInput}
                     type="file"

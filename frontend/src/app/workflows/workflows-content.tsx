@@ -16,6 +16,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import { GitBranch, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Sidebar } from "@/components/sidebar";
 import { useAgents } from "@/features/agents/queries";
 import {
@@ -376,7 +378,7 @@ export default function WorkflowsContent() {
             aria-labelledby="workflow-editor-title"
           >
             <header className="flex flex-wrap items-center gap-3 border-b border-border p-4">
-              <input
+              <Input
                 id="workflow-title"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
@@ -426,10 +428,9 @@ export default function WorkflowsContent() {
                   <label htmlFor="preset" className="text-xs text-slate-400">
                     Arrange preset
                   </label>
-                  <select
-                    id="preset"
-                    onChange={(event) => {
-                      const kind = event.target.value as WorkflowType;
+                  <Select
+                    onValueChange={(value) => {
+                      const kind = value as WorkflowType;
                       rememberGraph();
                       setEdges([]);
                       setNodes((current) =>
@@ -460,12 +461,14 @@ export default function WorkflowsContent() {
                         );
                       }
                     }}
-                    className="mt-2 w-full rounded-md border border-border bg-slate-950 px-2 py-2 text-xs"
                   >
-                    <option value="hybrid">Hybrid graph</option>
-                    <option value="sequential">Sequential chain</option>
-                    <option value="parallel">Parallel + aggregator</option>
-                  </select>
+                    <SelectTrigger id="preset" aria-label="Arrange preset" className="mt-2 w-full rounded-md border border-border bg-slate-950 px-2 py-2 text-xs">Hybrid graph</SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hybrid">Hybrid graph</SelectItem>
+                      <SelectItem value="sequential">Sequential chain</SelectItem>
+                      <SelectItem value="parallel">Parallel + aggregator</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </aside>
               <div className="workflow-canvas min-w-0 flex-1 bg-slate-950">

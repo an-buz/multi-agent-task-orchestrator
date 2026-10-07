@@ -18,6 +18,7 @@ import {
 import { Select, SelectTrigger, SelectContent, SelectItem } from "@/components/ui/select";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 import { useAgents, useDeleteAgent, type Agent } from "@/features/agents/queries";
 
@@ -73,7 +74,7 @@ export default function AgentsContent() {
                   size={16}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
                 />
-                <input
+                <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search agents by name, role, or model…"
@@ -81,7 +82,7 @@ export default function AgentsContent() {
                 />
               </label>
               <Select value={modelFilter} onValueChange={(value) => setModelFilter(value ?? "all")}>
-                <SelectTrigger aria-label="Filter by model">
+                <SelectTrigger aria-label="Filter by model" className="h-10">
                   {modelFilter === "all" ? "All models" : modelFilter}
                 </SelectTrigger>
                 <SelectContent>
