@@ -6,6 +6,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.errors import AppError
 from app.core.logging import configure_logging
 
 settings = get_settings()
@@ -20,6 +21,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.exception_handler(AppError)
+async def handle_domain_error(_request: Request, exception: AppError) -> JSONResponse:
+    return JSONResponse(
+        status_code=getattr(exception, "status_code", 409),
+        content={
+            "error": {
+                "code": exception.code,
+                "message": exception.message,
+                "details": exception.details,
+            }
+        },
+    )
 
 
 @app.exception_handler(Exception)

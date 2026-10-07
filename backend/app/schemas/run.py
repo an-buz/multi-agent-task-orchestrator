@@ -36,6 +36,13 @@ class RunPlanStep(BaseModel):
     subtask: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     status: StepStatus = "PENDING"
     depends_on: list[int] = Field(default_factory=list)
+    input: str | None = None
+    output: str | None = None
+    error: dict[str, str] | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    duration_ms: int = 0
+    attempt: int = 0
 
 
 class RunPlan(BaseModel):

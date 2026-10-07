@@ -22,5 +22,16 @@ class LLMResponse(BaseModel):
 class LLMProvider(Protocol):
     """Interface implemented by real and mock LLM providers."""
 
-    async def complete(self, system_prompt: str, user_prompt: str, model: str) -> LLMResponse:
+    async def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> LLMResponse:
         """Generate a completion and return provider usage."""
+
+    async def aclose(self) -> None:
+        """Release provider HTTP resources after the completion retry loop."""

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     tavily_api_key: str | None = None
     llm_provider_mode: Literal["real", "mock"] = "mock"
     code_executor_backend: Literal["docker", "disabled"] = "disabled"
+    max_parallel_steps: int = Field(default=4, ge=1, le=100)
+    worker_job_timeout: int = Field(default=600, ge=1)
+    llm_request_timeout: float = Field(default=60.0, gt=0)
     cors_origins: list[AnyHttpUrl] = Field(
         default_factory=lambda: [AnyHttpUrl("http://localhost:3000")]
     )

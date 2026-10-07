@@ -12,13 +12,24 @@ class AnthropicProvider:
     """Adapter for Anthropic's Messages API."""
 
     def __init__(self, api_key: str) -> None:
-        self._client = AsyncAnthropic(api_key=api_key)
+        self._client = AsyncAnthropic(
+            api_key=api_key, max_retries=0, timeout=get_settings().llm_request_timeout
+        )
 
-    async def complete(self, system_prompt: str, user_prompt: str, model: str) -> LLMResponse:
+    async def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> LLMResponse:
         info = get_model_registry()[model]
         response = await self._client.messages.create(
             model=info.model_id,
-            max_tokens=4096,
+            max_tokens=max_tokens,
+            temperature=temperature,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
@@ -30,18 +41,32 @@ class AnthropicProvider:
             ),
         )
 
+    async def aclose(self) -> None:
+        await self._client.close()
+
 
 class OpenAIProvider:
     """Adapter for OpenAI Chat Completions API."""
 
     def __init__(self, api_key: str) -> None:
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(
+            api_key=api_key, max_retries=0, timeout=get_settings().llm_request_timeout
+        )
 
-    async def complete(self, system_prompt: str, user_prompt: str, model: str) -> LLMResponse:
+    async def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> LLMResponse:
         info = get_model_registry()[model]
         response = await self._client.chat.completions.create(
             model=info.model_id,
-            max_tokens=4096,
+            max_tokens=max_tokens,
+            temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -57,16 +82,30 @@ class OpenAIProvider:
             ),
         )
 
+    async def aclose(self) -> None:
+        await self._client.close()
+
 
 class MockLLMProvider:
     """Provider-compatible deterministic local response for development without keys."""
 
-    async def complete(self, system_prompt: str, user_prompt: str, model: str) -> LLMResponse:
-        del system_prompt, model
+    async def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> LLMResponse:
+        del system_prompt, model, temperature, max_tokens
         return LLMResponse(
             content=f"Mock response: {user_prompt[:500]}",
             usage=LLMUsage(input_tokens=max(1, len(user_prompt.split())), output_tokens=5),
         )
+
+    async def aclose(self) -> None:
+        pass
 
 
 class MockAnthropicProvider(MockLLMProvider):

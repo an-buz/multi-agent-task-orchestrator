@@ -7,7 +7,7 @@ backend-dev:
 	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 worker:
-	cd backend && uv run arq app.workers.settings.WorkerSettings
+	cd backend && uv run python -m app.workers.runner
 
 frontend-dev:
 	cd frontend && pnpm dev
