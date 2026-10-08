@@ -44,6 +44,14 @@ class FileRepository:
         )
         return list(result)
 
+    async def text_for_run(self, run_id: UUID) -> dict[str, str]:
+        rows = await self.session.execute(
+            select(ContextFile.id, ContextFile.text_content)
+            .join(RunFile, RunFile.file_id == ContextFile.id)
+            .where(RunFile.run_id == run_id)
+        )
+        return {str(file_id): text for file_id, text in rows}
+
     async def is_attached(self, file_id: UUID) -> bool:
         return (
             await self.session.scalar(

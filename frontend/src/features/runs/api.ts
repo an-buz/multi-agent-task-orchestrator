@@ -102,6 +102,7 @@ export function subscribeToRun(
     "agent:status_change",
     "agent:stream_chunk",
     "agent:tool_call",
+    "agent:tool_result",
     "agent:retry",
     "agent:completed",
     "agent:failed",

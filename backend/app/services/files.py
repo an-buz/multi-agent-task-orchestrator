@@ -1,8 +1,12 @@
 """Bounded text validation and immutable context assembly, independent of HTTP."""
 
+import asyncio
 import json
+from io import BytesIO
 from pathlib import PurePosixPath
 from uuid import UUID
+
+from pypdf import PdfReader
 
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -25,9 +29,14 @@ def validate_text_file(filename: str, media_type: str, content: bytes) -> tuple[
     if not name or len(name) > 255 or any(ord(char) < 32 for char in name):
         raise FileError("Invalid filename.")
     extension = PurePosixPath(name).suffix.lower()
-    types = {".txt": "text/plain", ".md": "text/markdown", ".json": "application/json"}
+    types = {
+        ".txt": "text/plain",
+        ".md": "text/markdown",
+        ".json": "application/json",
+        ".pdf": "application/pdf",
+    }
     if extension not in types:
-        raise FileError("Only TXT, MD and JSON context files are supported.")
+        raise FileError("Only TXT, MD, JSON and PDF context files are supported.")
     mime = media_type.split(";", 1)[0].strip().lower()
     allowed = {types[extension], "application/octet-stream"}
     if extension in {".md", ".json"}:
@@ -36,6 +45,8 @@ def validate_text_file(filename: str, media_type: str, content: bytes) -> tuple[
         raise FileError("The file MIME type does not match its extension.")
     if len(content) > settings.context_file_max_bytes:
         raise FileError("The context file exceeds the upload limit.", 413)
+    if extension == ".pdf":
+        return name, types[extension], extract_pdf(content)
     try:
         decoded = content.decode("utf-8-sig")
     except UnicodeDecodeError as exception:
@@ -48,6 +59,34 @@ def validate_text_file(filename: str, media_type: str, content: bytes) -> tuple[
         except (ValueError, RecursionError) as exception:
             raise FileError("The context file contains invalid JSON.") from exception
     return name, types[extension], decoded
+
+
+def extract_pdf(content: bytes) -> str:
+    """Extract bounded text without evaluating embedded PDF actions or scripts."""
+    if not content.startswith(b"%PDF-"):
+        raise FileError("Invalid PDF signature.")
+    try:
+        reader = PdfReader(BytesIO(content), strict=True)
+        if reader.is_encrypted:
+            raise FileError("Encrypted PDFs are not supported.")
+        if len(reader.pages) > get_settings().pdf_max_pages:
+            raise FileError("PDF exceeds the page limit.")
+        parts = []
+        length = 0
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            length += len(text) + 2
+            if length > get_settings().run_context_max_chars:
+                raise FileError("PDF text exceeds the context limit.", 413)
+            parts.append(text)
+        decoded = "\n\n".join(parts)
+        if not decoded.strip():
+            raise FileError("PDF has no extractable text; OCR is not supported.")
+        return decoded
+    except FileError:
+        raise
+    except Exception as exception:
+        raise FileError("The PDF could not be read.") from exception
 
 
 def reject_constant(value: str) -> None:
@@ -65,7 +104,9 @@ class FileService:
         return file
 
     async def upload(self, filename: str, media_type: str, content: bytes) -> ContextFileRead:
-        name, mime, decoded = validate_text_file(filename, media_type, content)
+        name, mime, decoded = await asyncio.to_thread(
+            validate_text_file, filename, media_type, content
+        )
         file = ContextFile(
             filename=name,
             media_type=mime,
@@ -88,7 +129,7 @@ class FileService:
         files = {file_id: await self.require(file_id, lock=True) for file_id in sorted(file_ids)}
         for file_id in file_ids:
             file = files[file_id]
-            parts.append(f"Attachment: {file.filename}\n{file.text_content}")
+            parts.append(f"Attachment: {file.filename} (file_id: {file.id})\n{file.text_content}")
         context = "\n\n".join(parts)
         if len(context) > get_settings().run_context_max_chars:
             raise FileError("The combined run context exceeds the configured limit.", 413)

@@ -1,8 +1,14 @@
 """Provider interface shared by LLM backends."""
 
-from typing import Protocol
+from typing import Any, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ToolCall(BaseModel):
+    id: str
+    name: str
+    arguments: dict[str, Any]
 
 
 class LLMUsage(BaseModel):
@@ -17,6 +23,8 @@ class LLMResponse(BaseModel):
 
     content: str
     usage: LLMUsage
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    message: dict[str, Any] = Field(default_factory=dict)
 
 
 class LLMProvider(Protocol):
@@ -35,3 +43,15 @@ class LLMProvider(Protocol):
 
     async def aclose(self) -> None:
         """Release provider HTTP resources after the completion retry loop."""
+
+    async def complete_tools(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> LLMResponse:
+        """Continue a conversation containing native tool calls and results."""

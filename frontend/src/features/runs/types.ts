@@ -37,6 +37,7 @@ export interface RunPlan {
 }
 
 export interface RunDetails extends RunSummary {
+  token_budget?: number | null;
   files?: import("@/features/files/queries").ContextFile[];
   task: string;
   context_text?: string;
@@ -54,6 +55,7 @@ export interface RunListResponse {
   total: number;
 }
 export interface CreateRunInput {
+  token_budget?: number;
   file_ids?: string[];
   workflow_id: string;
   task: string;
@@ -71,4 +73,19 @@ export interface RunEvent {
   ts?: string;
   payload?: Record<string, unknown>;
   data?: Record<string, unknown>;
+}
+
+export interface ToolCallData {
+  agentId: string;
+  stepNumber: number;
+  toolName: string;
+  input: { argumentNames: string[] };
+}
+
+export interface ToolResultData {
+  agentId: string;
+  stepNumber: number;
+  toolName: string;
+  ok: boolean;
+  summary: string;
 }

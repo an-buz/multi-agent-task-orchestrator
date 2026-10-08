@@ -34,6 +34,18 @@ class Settings(BaseSettings):
     )
     openai_model_default: str = Field(default="gpt-4o", validation_alias="OPENAI_MODEL_DEFAULT")
     tavily_api_key: str | None = None
+    tavily_search_url: str = "https://api.tavily.com/search"
+    tool_max_rounds: int = Field(default=8, ge=1, le=50)
+    tool_max_calls: int = Field(default=16, ge=1, le=100)
+    tool_output_max_chars: int = Field(default=20000, ge=1)
+    tool_timeout: float = Field(default=30, gt=0)
+    pdf_max_pages: int = Field(default=100, ge=1)
+    code_executor_image: str = "python:3.14-slim"
+    code_executor_memory: str = "128m"
+    code_executor_cpus: float = Field(default=0.5, gt=0)
+    code_executor_pids: int = Field(default=64, ge=1)
+    code_executor_workspace_bytes: int = Field(default=16 * 1024 * 1024, ge=1)
+    run_token_budget: int | None = Field(default=None, ge=1)
     context_file_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
     run_context_max_chars: int = Field(default=200000, ge=1)
     llm_provider_mode: Literal["real", "mock"] = "mock"

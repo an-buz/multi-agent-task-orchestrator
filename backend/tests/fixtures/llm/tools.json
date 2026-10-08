@@ -1,0 +1,6 @@
+[
+  {"content": "", "usage": {"input_tokens": 10, "output_tokens": 4},
+   "tool_calls": [{"id": "calc-1", "name": "calculator", "arguments": {"expression": "(2 + 3) * 4"}}],
+   "message": {"role": "assistant", "content": "", "tool_calls": []}},
+  {"content": "The result is 20.", "usage": {"input_tokens": 18, "output_tokens": 6}}
+]

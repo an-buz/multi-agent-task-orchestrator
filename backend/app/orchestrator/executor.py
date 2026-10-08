@@ -1,21 +1,26 @@
 """Dependency-aware execution with persisted checkpoints and provider-neutral calls."""
 
 import asyncio
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
+from typing import Any
 
 import structlog
 
 from app.core.config import get_settings
+from app.db.file_repository import FileRepository
 from app.db.run_repository import RunRepository
 from app.llm.provider import LLMProvider, LLMResponse
 from app.llm.providers import create_provider
 from app.llm.retry import llm_retrying
 from app.models.run import Run
 from app.models.run_step import RunStep
+from app.schemas.event import EventName
+from app.tools.runtime import ToolRuntime
 
 logger = structlog.get_logger()
 
@@ -51,6 +56,8 @@ class StepResult:
     response: LLMResponse | None
     duration_ms: int
     error: dict[str, str] | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class DAGExecutor:
@@ -64,22 +71,112 @@ class DAGExecutor:
         self.provider_factory = provider_factory
         self.limit = max_parallel_steps or get_settings().max_parallel_steps
 
-    async def complete(self, step: RunStep) -> StepResult:
+    async def complete(
+        self,
+        step: RunStep,
+        files: dict[str, str] | None = None,
+        token_allowance: int | None = None,
+        on_tool: Callable[[EventName, dict[str, Any]], None] | None = None,
+    ) -> StepResult:
         started = perf_counter()
         provider: LLMProvider | None = None
+        prompt_tokens = completion_tokens = 0
+        error_code = "llm_error"
         try:
             config = step.agent_config
             provider = self.provider_factory(str(config["model"]))
-            async for attempt in llm_retrying():
-                with attempt:
-                    response = await provider.complete(
-                        str(config["system_prompt"]),
-                        step.input or "",
-                        str(config["model"]),
-                        temperature=float(config["temperature"]),
-                        max_tokens=int(config["max_tokens"]),
+            runtime = ToolRuntime(config.get("tools", []), files)
+            definitions = runtime.definitions()
+            messages: list[dict[str, Any]] = [{"role": "user", "content": step.input or ""}]
+            call_count = 0
+            for round_number in range(get_settings().tool_max_rounds + 1):
+                remaining = (
+                    token_allowance - prompt_tokens - completion_tokens
+                    if token_allowance is not None
+                    else None
+                )
+                if remaining is not None and remaining <= 0:
+                    error_code = "token_budget_exceeded"
+                    raise ValueError("Budget exhausted")
+                max_tokens = (
+                    min(int(config["max_tokens"]), remaining)
+                    if remaining is not None
+                    else int(config["max_tokens"])
+                )
+                async for attempt in llm_retrying():
+                    with attempt:
+                        if definitions:
+                            response = await provider.complete_tools(
+                                str(config["system_prompt"]),
+                                messages,
+                                str(config["model"]),
+                                definitions,
+                                temperature=float(config["temperature"]),
+                                max_tokens=max_tokens,
+                            )
+                        else:
+                            response = await provider.complete(
+                                str(config["system_prompt"]),
+                                step.input or "",
+                                str(config["model"]),
+                                temperature=float(config["temperature"]),
+                                max_tokens=max_tokens,
+                            )
+                prompt_tokens += response.usage.input_tokens
+                completion_tokens += response.usage.output_tokens
+                if (
+                    token_allowance is not None
+                    and prompt_tokens + completion_tokens > token_allowance
+                ):
+                    error_code = "token_budget_exceeded"
+                    raise ValueError("Budget exceeded")
+                if not response.tool_calls:
+                    return StepResult(
+                        response,
+                        round((perf_counter() - started) * 1000),
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
                     )
-            return StepResult(response, round((perf_counter() - started) * 1000))
+                call_count += len(response.tool_calls)
+                ids = [call.id for call in response.tool_calls]
+                if (
+                    round_number >= get_settings().tool_max_rounds
+                    or call_count > get_settings().tool_max_calls
+                    or len(set(ids)) != len(ids)
+                ):
+                    error_code = "tool_limit_exceeded"
+                    raise ValueError("Tool loop limit exceeded")
+                messages.append(response.message)
+                for call in response.tool_calls:
+                    identity = {
+                        "agentId": str(step.agent_id),
+                        "stepNumber": step.step_number,
+                        "toolName": call.name,
+                    }
+                    if on_tool is not None:
+                        on_tool(
+                            "agent:tool_call",
+                            {**identity, "input": {"argumentNames": sorted(call.arguments)}},
+                        )
+                    tool_result = await runtime.execute(call)
+                    if on_tool is not None:
+                        ok = "error" not in json.loads(tool_result)
+                        on_tool(
+                            "agent:tool_result",
+                            {
+                                **identity,
+                                "ok": ok,
+                                "summary": "Tool completed." if ok else "Tool failed.",
+                            },
+                        )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": tool_result,
+                        }
+                    )
+            raise ValueError("Tool loop did not finish")
         except Exception as exception:
             # Provider exception strings may contain prompts/keys; persist a safe message.
             logger.warning(
@@ -92,7 +189,9 @@ class DAGExecutor:
             return StepResult(
                 None,
                 round((perf_counter() - started) * 1000),
-                {"code": "llm_error", "message": "The step could not be completed."},
+                {"code": error_code, "message": "The step could not be completed."},
+                prompt_tokens,
+                completion_tokens,
             )
         finally:
             if provider is not None:
@@ -118,6 +217,14 @@ class DAGExecutor:
             await self.repository.save()
             return
         by_number = {step.step_number: step for step in steps}
+        budget = run.planner_config.get("token_budget")
+        # Serialize budgeted runs so parallel steps cannot spend the same remainder.
+        limit = 1 if budget is not None else self.limit
+        files = (
+            await FileRepository(self.repository.session).text_for_run(run.id)
+            if any("file_reader" in step.agent_config.get("tools", []) for step in steps)
+            else {}
+        )
         # A worker owns this run exclusively; recover only unfinished calls.
         for step in steps:
             if step.status == "IN_PROGRESS":
@@ -125,10 +232,28 @@ class DAGExecutor:
                 self.status_event(run, step)
         await self.repository.save()
         active: dict[asyncio.Task[StepResult], RunStep] = {}
+        tool_events: list[tuple[EventName, dict[str, Any]]] = []
+
+        def on_tool(name: EventName, data: dict[str, Any]) -> None:
+            tool_events.append((name, data))
+
+        async def flush_tool_events() -> bool:
+            if not tool_events:
+                return True
+            if not await self.still_running(run):
+                return False
+            for name, data in tool_events:
+                self.repository.emit(run.id, name, data)
+            tool_events.clear()
+            await self.repository.save()
+            return True
+
         try:
             while True:
+                if not await flush_tool_events():
+                    return
                 for step in steps:
-                    if len(active) >= self.limit:
+                    if len(active) >= limit:
                         break
                     if step.status != "PENDING" or any(
                         number not in by_number or by_number[number].status != "COMPLETED"
@@ -154,7 +279,13 @@ class DAGExecutor:
                     step.error = None
                     self.status_event(run, step)
                     await self.repository.save()
-                    active[asyncio.create_task(self.complete(step))] = step
+                    self.update_totals(run, steps)
+                    allowance = (
+                        max(0, int(budget) - run.total_tokens) if budget is not None else None
+                    )
+                    active[asyncio.create_task(self.complete(step, files, allowance, on_tool))] = (
+                        step
+                    )
                 if not active:
                     break
                 done, _ = await asyncio.wait(
@@ -162,6 +293,8 @@ class DAGExecutor:
                     timeout=get_settings().run_poll_interval,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
+                if not await flush_tool_events():
+                    return
                 if not done:
                     if not await self.still_running(run):
                         return
@@ -174,13 +307,13 @@ class DAGExecutor:
                     result = task.result()
                     step.execution_time_ms += result.duration_ms
                     step.error = result.error
+                    step.tokens_prompt += result.prompt_tokens
+                    step.tokens_completion += result.completion_tokens
                     if result.response is None:
                         step.status = "FAILED"
                     else:
                         step.status = "COMPLETED"
                         step.output = result.response.content
-                        step.tokens_prompt += result.response.usage.input_tokens
-                        step.tokens_completion += result.response.usage.output_tokens
                     self.update_totals(run, steps)
                     self.result_event(run, step)
                     await self.repository.save()

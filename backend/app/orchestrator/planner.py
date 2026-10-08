@@ -71,6 +71,18 @@ class LLMPlanner:
                 ],
             }
             for repair in range(int(config["max_repairs"]) + 1):
+                budget = config.get("token_budget")
+                remaining = (
+                    int(budget) - result.prompt_tokens - result.completion_tokens
+                    if budget is not None
+                    else None
+                )
+                if remaining is not None and remaining <= 0:
+                    result.error = {
+                        "code": "token_budget_exceeded",
+                        "message": "The run token budget was exhausted during planning.",
+                    }
+                    return result
                 if repair:
                     request["validation_note"] = (
                         "The previous response was invalid. Return valid JSON matching the "
@@ -83,10 +95,22 @@ class LLMPlanner:
                             json.dumps(request, ensure_ascii=False),
                             model,
                             temperature=float(config["temperature"]),
-                            max_tokens=int(config["max_tokens"]),
+                            max_tokens=(
+                                min(int(config["max_tokens"]), remaining)
+                                if remaining is not None
+                                else int(config["max_tokens"])
+                            ),
                         )
                 result.prompt_tokens += response.usage.input_tokens
                 result.completion_tokens += response.usage.output_tokens
+                if budget is not None and result.prompt_tokens + result.completion_tokens > int(
+                    budget
+                ):
+                    result.error = {
+                        "code": "token_budget_exceeded",
+                        "message": "The run token budget was exceeded during planning.",
+                    }
+                    return result
                 try:
                     parsed = PlannedWorkflow.model_validate_json(response.content)
                     by_number = {step.step_number: step for step in parsed.steps}
@@ -144,6 +168,8 @@ class PlannerExecutor:
         plan = RunPlan.model_validate(run.plan)
         task, context = run.task, run.context_text
         config = dict(run.planner_config)
+        if config.get("token_budget") is not None:
+            config["token_budget"] = max(0, int(config["token_budget"]) - run.total_tokens)
         roles = {step.step_number: dict(step.agent_config) for step in steps}
         await self.repository.save()
         pending = asyncio.create_task(

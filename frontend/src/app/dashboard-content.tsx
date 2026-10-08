@@ -281,14 +281,14 @@ export default function DashboardPage() {
                   <input
                     ref={fileInput}
                     type="file"
-                    accept=".txt,.md,.json,text/plain,text/markdown,application/json"
+                    accept=".txt,.md,.json,.pdf,text/plain,text/markdown,application/json,application/pdf"
                     className="hidden"
                     disabled={fileBusy || busy || attachments.length >= 10}
                     onChange={(event) => void handleFile(event.target.files?.[0])}
                   />
                   <Button disabled={fileBusy || busy || attachments.length >= 10} onClick={() => fileInput.current?.click()} variant="secondary">
                     <CloudUpload data-icon="inline-start" />
-                    {uploadFile.isPending ? "Uploading…" : "Add context file"} <span className="text-muted-foreground">TXT · MD · JSON</span>
+                    {uploadFile.isPending ? "Uploading…" : "Add context file"} <span className="text-muted-foreground">TXT · MD · JSON · PDF</span>
                   </Button>
                   <Button onClick={() => setContextOpen(true)} variant="ghost">
                     Paste text

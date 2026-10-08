@@ -1,14 +1,28 @@
 """Anthropic, OpenAI, and deterministic mock provider implementations."""
 
 import json
+from typing import Any, cast
 
 from anthropic import AsyncAnthropic
+from anthropic.types import MessageParam, ToolParam
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
 from app.core.config import Settings, get_settings
 from app.llm.planning import PLANNER_SYSTEM_PROMPT
-from app.llm.provider import LLMResponse, LLMUsage
+from app.llm.provider import LLMResponse, LLMUsage, ToolCall
 from app.llm.registry import get_model_registry
+
+
+def parse_tool_arguments(raw: str) -> dict[str, Any]:
+    """Keep usage and call identity even when a model emits invalid arguments."""
+    try:
+        value = json.loads(raw)
+        if isinstance(value, dict):
+            return cast(dict[str, Any], value)
+    except ValueError, RecursionError:
+        pass
+    return {"_invalid_arguments": True}
 
 
 class AnthropicProvider:
@@ -46,6 +60,60 @@ class AnthropicProvider:
 
     async def aclose(self) -> None:
         await self._client.close()
+
+    async def complete_tools(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> LLMResponse:
+        native: list[dict[str, Any]] = []
+        for message in messages:
+            if message["role"] == "tool":
+                block = {
+                    "type": "tool_result",
+                    "tool_use_id": message["tool_call_id"],
+                    "content": message["content"],
+                }
+                if (
+                    native
+                    and native[-1]["role"] == "user"
+                    and isinstance(native[-1]["content"], list)
+                ):
+                    native[-1]["content"].append(block)
+                else:
+                    native.append({"role": "user", "content": [block]})
+            elif message["role"] == "assistant":
+                native.append({"role": "assistant", "content": message["blocks"]})
+            else:
+                native.append(message)
+        response = await self._client.messages.create(
+            model=get_model_registry()[model].model_id,
+            system=system_prompt,
+            messages=cast(list[MessageParam], native),
+            tools=cast(list[ToolParam], tools),
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return LLMResponse(
+            content="".join(block.text for block in response.content if block.type == "text"),
+            usage=LLMUsage(
+                input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens
+            ),
+            tool_calls=[
+                ToolCall(id=block.id, name=block.name, arguments=cast(dict[str, Any], block.input))
+                for block in response.content
+                if block.type == "tool_use"
+            ],
+            message={
+                "role": "assistant",
+                "blocks": [block.model_dump() for block in response.content],
+            },
+        )
 
 
 class OpenAIProvider:
@@ -88,6 +156,63 @@ class OpenAIProvider:
     async def aclose(self) -> None:
         await self._client.close()
 
+    async def complete_tools(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> LLMResponse:
+        response = await self._client.chat.completions.create(
+            model=get_model_registry()[model].model_id,
+            messages=cast(
+                list[ChatCompletionMessageParam],
+                [{"role": "system", "content": system_prompt}, *messages],
+            ),
+            tools=cast(
+                list[ChatCompletionToolParam],
+                [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool["name"],
+                            "description": tool["description"],
+                            "parameters": tool["input_schema"],
+                        },
+                    }
+                    for tool in tools
+                ],
+            ),
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        message = response.choices[0].message
+        calls = [call for call in message.tool_calls or [] if call.type == "function"]
+        usage = response.usage
+        return LLMResponse(
+            content=message.content or "",
+            usage=LLMUsage(
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+            ),
+            tool_calls=[
+                ToolCall(
+                    id=call.id,
+                    name=call.function.name,
+                    arguments=parse_tool_arguments(call.function.arguments),
+                )
+                for call in calls
+            ],
+            message={
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [call.model_dump() for call in calls],
+            },
+        )
+
 
 class MockLLMProvider:
     """Provider-compatible deterministic local response for development without keys."""
@@ -128,6 +253,25 @@ class MockLLMProvider:
 
     async def aclose(self) -> None:
         pass
+
+    async def complete_tools(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> LLMResponse:
+        del tools
+        return await self.complete(
+            system_prompt,
+            str(messages[-1]["content"]),
+            model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
 
 class MockAnthropicProvider(MockLLMProvider):

@@ -28,6 +28,7 @@ class RunCreate(BaseModel):
     task: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     context_text: str = ""
     file_ids: list[UUID] = Field(default_factory=list, max_length=10)
+    token_budget: int | None = Field(default=None, ge=1, strict=True)
 
 
 class RunPlanStep(BaseModel):
@@ -71,6 +72,7 @@ class RunRead(BaseModel):
     workflow_title: str
     task: str
     context_text: str
+    token_budget: int | None = None
     files: list[ContextFileRead] = Field(default_factory=list)
     status: RunStatus
     plan: RunPlan | None

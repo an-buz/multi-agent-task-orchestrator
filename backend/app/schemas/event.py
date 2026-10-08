@@ -14,6 +14,8 @@ EventName = Literal[
     "agent:status_change",
     "agent:completed",
     "agent:failed",
+    "agent:tool_call",
+    "agent:tool_result",
     "task:finished",
     "task:failed",
     "task:cancelled",
@@ -68,6 +70,21 @@ class StepFailed(StepIdentity):
     retryable: bool
 
 
+class ToolInput(EventData):
+    argumentNames: list[str]
+
+
+class ToolCalled(StepIdentity):
+    toolName: str
+    input: ToolInput
+
+
+class ToolResult(StepIdentity):
+    toolName: str
+    ok: bool
+    summary: str
+
+
 class TaskFinished(TaskIdentity):
     finalReport: str
     totalTokens: int
@@ -88,6 +105,8 @@ PAYLOAD_MODELS: dict[str, type[EventData]] = {
     "agent:status_change": StatusChanged,
     "agent:completed": StepCompleted,
     "agent:failed": StepFailed,
+    "agent:tool_call": ToolCalled,
+    "agent:tool_result": ToolResult,
     "task:finished": TaskFinished,
     "task:failed": TaskFailed,
     "task:cancelled": TaskIdentity,

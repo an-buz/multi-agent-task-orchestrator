@@ -116,7 +116,10 @@ async def test_file_upload_run_snapshot_and_deletion(
             run = await client.post("/api/v1/runs", json=payload)
             assert run.status_code == 201
             body = run.json()
-            assert body["context_text"] == "User note\n\nAttachment: brief.md\n# Facts\nA fact"
+            assert (
+                body["context_text"]
+                == f"User note\n\nAttachment: brief.md (file_id: {file_id})\n# Facts\nA fact"
+            )
             assert body["files"] == [upload.json()]
             run_id = body["id"]
             assert (await client.get(f"/api/v1/runs/{run_id}/files")).json() == [upload.json()]
@@ -145,6 +148,81 @@ async def test_file_upload_run_snapshot_and_deletion(
             unused_id = unused.json()["id"]
             assert (await client.delete(f"/api/v1/files/{unused_id}")).status_code == 204
             assert (await client.get(f"/api/v1/files/{unused_id}")).status_code == 404
+            from app.db.file_repository import FileRepository
+            from app.llm.provider import ToolCall
+            from app.orchestrator.executor import DAGExecutor
+            from app.services.runs import RunService
+
+            from test_tools import pdf_bytes
+
+            pdf = await client.post(
+                "/api/v1/files", files={"file": ("brief.pdf", pdf_bytes(), "application/pdf")}
+            )
+            assert pdf.status_code == 201
+            pdf_id = pdf.json()["id"]
+            created = await client.post(
+                "/api/v1/runs", json={**payload, "file_ids": [pdf_id], "token_budget": 10000}
+            )
+            assert created.status_code == 201
+            pdf_run_id = UUID(created.json()["id"])
+            assert created.json()["token_budget"] == 10000
+            assert "Attachment fixture text" in created.json()["context_text"]
+            async with sessions() as session:
+                repository = RunRepository(session)
+                persisted = await repository.get(pdf_run_id)
+                assert persisted is not None
+                await PlannerExecutor(repository).execute(persisted)
+                await RunService(repository).confirm(pdf_run_id)
+                steps = await repository.steps(pdf_run_id)
+                steps[0].agent_config = {**steps[0].agent_config, "tools": ["file_reader"]}
+                await repository.save()
+                texts = await FileRepository(session).text_for_run(pdf_run_id)
+                assert set(texts) == {pdf_id}
+
+                class ReadingMock(MockLLMProvider):
+                    calls = 0
+
+                    async def complete_tools(self, system_prompt, messages, model, tools, **kwargs):
+                        self.calls += 1
+                        if self.calls == 1:
+                            return LLMResponse(
+                                content="",
+                                usage={"input_tokens": 10, "output_tokens": 2},
+                                tool_calls=[
+                                    ToolCall(
+                                        id="pdf", name="file_reader", arguments={"file_id": pdf_id}
+                                    ),
+                                    ToolCall(
+                                        id="foreign",
+                                        name="file_reader",
+                                        arguments={"file_id": file_id},
+                                    ),
+                                ],
+                                message={"role": "assistant", "blocks": []},
+                            )
+                        assert (
+                            "Attachment fixture text" in json.loads(messages[-2]["content"])["text"]
+                        )
+                        assert "error" in json.loads(messages[-1]["content"])
+                        return LLMResponse(
+                            content="PDF reviewed", usage={"input_tokens": 20, "output_tokens": 4}
+                        )
+
+                await DAGExecutor(repository, lambda _: ReadingMock()).execute(persisted)
+                assert persisted.status == "COMPLETED"
+                assert steps[0].tokens_prompt == 30 and steps[0].tokens_completion == 6
+                events = await repository.events(pdf_run_id, 0)
+                tool_events = [event for event in events if event.event.startswith("agent:tool_")]
+                assert [event.event for event in tool_events] == [
+                    "agent:tool_call",
+                    "agent:tool_result",
+                    "agent:tool_call",
+                    "agent:tool_result",
+                ]
+                assert tool_events[1].data["ok"] is True and tool_events[3].data["ok"] is False
+                assert "Attachment fixture text" not in json.dumps(
+                    [event.data for event in tool_events]
+                )
             monkeypatch.setenv("CONTEXT_FILE_MAX_BYTES", "4")
             get_settings.cache_clear()
             oversized = await client.post(

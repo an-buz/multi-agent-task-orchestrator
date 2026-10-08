@@ -27,7 +27,7 @@ for (const theme of ["dark", "light"]) {
           return route.fulfill({ status: 422, headers, json: { error: { message: "The context file contains invalid JSON." } } });
         }
         return route.fulfill({ status: 201, headers, json: {
-          id: fileId, filename: "brief.md", size_bytes: 7, media_type: "text/markdown", created_at: "2026-10-08T08:00:00Z",
+          id: fileId, filename: "brief.pdf", size_bytes: 7, media_type: "application/pdf", created_at: "2026-10-08T08:00:00Z",
         } });
       }
       if (pathname === `/api/v1/files/${fileId}` && request.method() === "DELETE") {
@@ -46,18 +46,19 @@ for (const theme of ["dark", "light"]) {
     await page.getByRole("button", { name: "Paste text" }).click();
     await page.getByPlaceholder("Paste context here...").fill("Keep this note");
     const input = page.locator('input[type="file"]');
-    const brief = { name: "brief.md", mimeType: "text/markdown", buffer: Buffer.from("# Facts") };
+    await expect(input).toHaveAttribute("accept", /application\/pdf/);
+    const brief = { name: "brief.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-mock") };
     await input.setInputFiles(brief);
-    await expect(page.getByRole("button", { name: "Remove attachment brief.md" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove attachment brief.pdf" })).toBeVisible();
     await expect(page.getByPlaceholder("Paste context here...")).toHaveValue("Keep this note");
-    await page.getByRole("button", { name: "Remove attachment brief.md" }).click();
-    await expect(page.getByRole("button", { name: "Remove attachment brief.md" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Remove attachment brief.pdf" }).click();
+    await expect(page.getByRole("button", { name: "Remove attachment brief.pdf" })).toHaveCount(0);
     expect(removed).toBe(true);
     await expect(page.getByPlaceholder("Paste context here...")).toHaveValue("Keep this note");
     await input.setInputFiles({ name: "invalid.json", mimeType: "application/json", buffer: Buffer.from("{bad}") });
     await expect(page.getByRole("alert").filter({ hasText: "invalid JSON" })).toBeVisible();
     await input.setInputFiles(brief);
-    await expect(page.getByRole("button", { name: "Remove attachment brief.md" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove attachment brief.pdf" })).toBeVisible();
     await page.getByRole("combobox", { name: "Workflow", exact: true }).click();
     await page.getByRole("option", { name: "Files workflow" }).click();
     await page.getByRole("button", { name: "Decompose and Run" }).click();
