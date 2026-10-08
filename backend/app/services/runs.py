@@ -6,11 +6,14 @@ from uuid import UUID, uuid4
 
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.db.file_repository import FileRepository
 from app.db.run_repository import RunRepository
 from app.llm.registry import get_model_registry
 from app.models.run import Run
 from app.models.run_step import RunStep
+from app.schemas.context_file import ContextFileRead
 from app.schemas.run import RunCreate, RunPlan, RunPlanStep, RunPlanUpdate, RunRead, StepStatus
+from app.services.files import FileError, FileService
 
 
 class RunError(AppError):
@@ -23,6 +26,13 @@ class RunError(AppError):
 class RunService:
     def __init__(self, repository: RunRepository) -> None:
         self.repository = repository
+
+    async def files(self, run_id: UUID) -> list[ContextFileRead]:
+        await self.require(run_id)
+        return [
+            ContextFileRead.model_validate(file)
+            for file in await FileRepository(self.repository.session).for_run(run_id)
+        ]
 
     async def require(self, run_id: UUID, *, lock: bool = False) -> Run:
         run = await self.repository.get(run_id, lock=lock)
@@ -53,6 +63,7 @@ class RunService:
             workflow_title=workflow.title,
             task=run.task,
             context_text=run.context_text,
+            files=await self.files(run.id),
             status=run.status,
             plan=plan if run.status not in {"PLANNING"} and not run.planning_error else None,
             planning_prompt_tokens=run.planning_prompt_tokens,
@@ -78,11 +89,16 @@ class RunService:
         settings = get_settings()
         if settings.planner_model not in get_model_registry(settings):
             raise RunError("Configured planner model is not registered", 422)
+        if len(set(payload.file_ids)) != len(payload.file_ids):
+            raise FileError("Every context file must be included only once.")
+        context = await FileService(FileRepository(self.repository.session)).context(
+            payload.context_text, payload.file_ids
+        )
         run = Run(
             id=uuid4(),
             workflow_id=workflow.id,
             task=payload.task,
-            context_text=payload.context_text,
+            context_text=context,
             status="PLANNING",
             planner_config={
                 "model": settings.planner_model,
@@ -139,6 +155,7 @@ class RunService:
             mode="json"
         )
         self.repository.add(run)
+        await FileRepository(self.repository.session).attach(run.id, payload.file_ids)
         for snapshot in snapshots:
             self.repository.add(snapshot)
         await self.repository.save()

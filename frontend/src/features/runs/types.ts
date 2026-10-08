@@ -37,6 +37,7 @@ export interface RunPlan {
 }
 
 export interface RunDetails extends RunSummary {
+  files?: import("@/features/files/queries").ContextFile[];
   task: string;
   context_text?: string;
   plan?: RunPlan | RunStep[] | null;
@@ -53,6 +54,7 @@ export interface RunListResponse {
   total: number;
 }
 export interface CreateRunInput {
+  file_ids?: string[];
   workflow_id: string;
   task: string;
   context_text?: string;

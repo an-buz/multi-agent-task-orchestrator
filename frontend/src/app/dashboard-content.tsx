@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWorkflows } from "@/features/workflows/queries";
 import { cancelRun, confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
 import type { RunDetails } from "@/features/runs/types";
+import { useUploadContextFile, useDeleteContextFile, type ContextFile } from "@/features/files/queries";
 
 const agents = [
   { name: "Repo Analyzer", model: "git.connector", status: "Completed", tone: "emerald" },
@@ -83,7 +84,10 @@ export default function DashboardPage() {
     "Analyze current repository issues, write a summary report for the QA tester, run unit tests via code executor, and compile final markdown release notes.",
   );
   const [context, setContext] = useState("");
-  const [attachment, setAttachment] = useState("");
+  const [attachments, setAttachments] = useState<ContextFile[]>([]);
+  const uploadFile = useUploadContextFile();
+  const deleteFile = useDeleteContextFile();
+  const fileBusy = uploadFile.isPending || deleteFile.isPending;
   const [contextOpen, setContextOpen] = useState(false);
   const router = useRouter();
   const workflowsQuery = useWorkflows();
@@ -95,11 +99,28 @@ export default function DashboardPage() {
   const [pipelineOptions, setPipelineOptions] = useState(false);
   const [contextHelp, setContextHelp] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  function handleFile(file: File | undefined) {
-    if (!file || !/\.(txt|md|json)$/i.test(file.name)) return;
-    setAttachment(file.name);
-    void file.text().then(setContext);
-    setContextOpen(true);
+  async function handleFile(file: File | undefined) {
+    if (!file) return;
+    setRunError("");
+    try {
+      const uploaded = await uploadFile.mutateAsync(file);
+      setAttachments((current) => [...current, uploaded]);
+      setContextOpen(true);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "Could not upload the context file.");
+    } finally {
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
+
+  async function removeFile(file: ContextFile) {
+    setRunError("");
+    try {
+      await deleteFile.mutateAsync(file.id);
+      setAttachments((current) => current.filter((item) => item.id !== file.id));
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "Could not remove the context file.");
+    }
   }
 
   async function createPlan() {
@@ -114,7 +135,10 @@ export default function DashboardPage() {
         workflow_id: workflowId,
         task: task.trim(),
         context_text: context || undefined,
+        file_ids: attachments.map((file) => file.id),
       });
+      // The run now owns immutable references; removing draft attachments must not delete them.
+      setAttachments([]);
       const draft = "plan" in created && created.plan ? created : await waitForRunPlan(created.id);
       setRunDraft(draft);
     } catch (error) {
@@ -216,23 +240,21 @@ export default function DashboardPage() {
                       <X size={14} />
                     </Button>
                   </div>
-                  {attachment && (
-                    <div className="mb-2 flex items-center gap-2 text-xs text-emerald-300">
+                  {attachments.map((attachment) => (
+                    <div key={attachment.id} className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                       <FileText size={13} />
-                      {attachment}
+                      {attachment.filename} ({attachment.size_bytes} bytes)
                       <Button
                         variant="ghost"
-                        aria-label="Remove attachment"
-                        onClick={() => {
-                          setAttachment("");
-                          setContext("");
-                        }}
+                        aria-label={`Remove attachment ${attachment.filename}`}
+                        disabled={fileBusy || busy}
+                        onClick={() => void removeFile(attachment)}
                         className="[&_svg]:size-3.25"
                       >
                         <X size={13} />
                       </Button>
                     </div>
-                  )}
+                  ))}
                   <Textarea
                     value={context}
                     onChange={(event) => setContext(event.target.value)}
@@ -261,23 +283,24 @@ export default function DashboardPage() {
                     type="file"
                     accept=".txt,.md,.json,text/plain,text/markdown,application/json"
                     className="hidden"
-                    onChange={(event) => handleFile(event.target.files?.[0])}
+                    disabled={fileBusy || busy || attachments.length >= 10}
+                    onChange={(event) => void handleFile(event.target.files?.[0])}
                   />
-                  <Button onClick={() => fileInput.current?.click()} variant="secondary">
-                    <CloudUpload size={15} />
-                    Add context file <span className="text-slate-600">TXT · MD · JSON</span>
+                  <Button disabled={fileBusy || busy || attachments.length >= 10} onClick={() => fileInput.current?.click()} variant="secondary">
+                    <CloudUpload data-icon="inline-start" />
+                    {uploadFile.isPending ? "Uploading…" : "Add context file"} <span className="text-muted-foreground">TXT · MD · JSON</span>
                   </Button>
                   <Button onClick={() => setContextOpen(true)} variant="ghost">
                     Paste text
                   </Button>
-                  {attachment && (
-                    <span className="flex items-center gap-1 text-xs text-emerald-300">
+                  {attachments.length > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Check size={12} />
-                      {attachment}
+                      {attachments.length} attached
                     </span>
                   )}
                 </div>
-                <Button type="button" disabled={busy} onClick={() => void createPlan()}>
+                <Button type="button" disabled={busy || fileBusy} onClick={() => void createPlan()}>
                   <Sparkles size={16} />
                   {busy ? "Preparing…" : "Decompose and Run"}
                   <Play size={14} />

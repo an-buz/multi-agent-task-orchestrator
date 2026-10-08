@@ -19,6 +19,8 @@ from app.models.agent import Agent
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
+from app.orchestrator.executor import build_input
+from app.orchestrator.planner import LLMPlanner, PlannerExecutor
 from app.workers.runner import OrchestratorWorker
 from app.workers.tasks import execute_run, plan_run, recover_runs
 from arq.connections import RedisSettings, create_pool
@@ -40,6 +42,119 @@ def infrastructure() -> Generator[tuple[str, str]]:
         )
         redis_url = f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0"
         yield database_url, redis_url
+
+
+async def test_file_upload_run_snapshot_and_deletion(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_url, _ = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_session():
+        async with sessions() as session:
+            yield session
+
+    async def no_dispatch(run_id: UUID) -> None:
+        pass
+
+    app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr("app.api.v1.runs.enqueue_plan", no_dispatch)
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            agent = Agent(
+                id=uuid4(),
+                name=f"File reviewer {uuid4()}",
+                role="Review",
+                system_prompt="Be precise",
+                model="claude-sonnet",
+                temperature=0.2,
+                max_tokens=1024,
+                context_window=128000,
+                tools=[],
+            )
+            workflow = Workflow(
+                id=uuid4(),
+                title="Files pipeline",
+                execution_type="sequential",
+                steps=[{"step_number": 1, "agent_id": str(agent.id), "depends_on": []}],
+                graph_layout={},
+            )
+            session.add_all([agent, workflow])
+            await session.commit()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            upload = await client.post(
+                "/api/v1/files", files={"file": ("brief.md", b"# Facts\nA fact", "text/markdown")}
+            )
+            assert upload.status_code == 201
+            file_id = upload.json()["id"]
+            assert "content" not in upload.json()
+            assert (await client.get(f"/api/v1/files/{file_id}")).json() == upload.json()
+            download = await client.get(f"/api/v1/files/{file_id}/download")
+            assert download.content == b"# Facts\nA fact"
+            assert download.headers["x-content-type-options"] == "nosniff"
+            payload = {
+                "workflow_id": str(workflow.id),
+                "task": "Analyze",
+                "context_text": "User note",
+                "file_ids": [file_id],
+            }
+            assert (
+                await client.post("/api/v1/runs", json={**payload, "file_ids": [file_id, file_id]})
+            ).status_code == 422
+            assert (
+                await client.post("/api/v1/runs", json={**payload, "file_ids": [str(uuid4())]})
+            ).status_code == 404
+            monkeypatch.setenv("RUN_CONTEXT_MAX_CHARS", "5")
+            get_settings.cache_clear()
+            assert (await client.post("/api/v1/runs", json=payload)).status_code == 413
+            monkeypatch.delenv("RUN_CONTEXT_MAX_CHARS")
+            get_settings.cache_clear()
+            run = await client.post("/api/v1/runs", json=payload)
+            assert run.status_code == 201
+            body = run.json()
+            assert body["context_text"] == "User note\n\nAttachment: brief.md\n# Facts\nA fact"
+            assert body["files"] == [upload.json()]
+            run_id = body["id"]
+            assert (await client.get(f"/api/v1/runs/{run_id}/files")).json() == [upload.json()]
+            assert (await client.delete(f"/api/v1/files/{file_id}")).status_code == 409
+            async with sessions() as session:
+                repository = RunRepository(session)
+                persisted = await repository.get(UUID(run_id))
+                steps = await repository.steps(UUID(run_id))
+                assert persisted is not None
+                assert "# Facts" in build_input(persisted, steps[0], {})
+                prompts: list[str] = []
+
+                class CapturingMock(MockLLMProvider):
+                    async def complete(self, system_prompt, user_prompt, model, **kwargs):
+                        prompts.append(user_prompt)
+                        return await super().complete(system_prompt, user_prompt, model, **kwargs)
+
+                await PlannerExecutor(
+                    repository, LLMPlanner(lambda model: CapturingMock())
+                ).execute(persisted)
+                assert json.loads(prompts[0])["context"] == body["context_text"]
+                assert persisted.status == "AWAITING_CONFIRMATION"
+            unused = await client.post(
+                "/api/v1/files", files={"file": ("unused.txt", b"discard", "text/plain")}
+            )
+            unused_id = unused.json()["id"]
+            assert (await client.delete(f"/api/v1/files/{unused_id}")).status_code == 204
+            assert (await client.get(f"/api/v1/files/{unused_id}")).status_code == 404
+            monkeypatch.setenv("CONTEXT_FILE_MAX_BYTES", "4")
+            get_settings.cache_clear()
+            oversized = await client.post(
+                "/api/v1/files", files={"file": ("large.txt", b"12345", "text/plain")}
+            )
+            assert oversized.status_code == 413
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
+        await engine.dispose()
 
 
 @pytest.mark.parametrize("deferred_dispatch", [False, True])

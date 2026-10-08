@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     )
     openai_model_default: str = Field(default="gpt-4o", validation_alias="OPENAI_MODEL_DEFAULT")
     tavily_api_key: str | None = None
+    context_file_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
+    run_context_max_chars: int = Field(default=200000, ge=1)
     llm_provider_mode: Literal["real", "mock"] = "mock"
     code_executor_backend: Literal["docker", "disabled"] = "disabled"
     max_parallel_steps: int = Field(default=4, ge=1, le=100)

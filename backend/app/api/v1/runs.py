@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.run_repository import RunRepository
 from app.db.session import get_session
+from app.schemas.context_file import ContextFileRead
 from app.schemas.run import RunCreate, RunPlanUpdate, RunRead
 from app.services.export import ExportFormat, export_result
 from app.services.runs import RunService
@@ -56,6 +57,11 @@ async def export_run(run_id: UUID, service: Service, format: ExportFormat = "jso
             "Content-Disposition": f'attachment; filename="run-{run_id}.{format}"',
         },
     )
+
+
+@router.get("/{run_id}/files", response_model=list[ContextFileRead])
+async def list_run_files(run_id: UUID, service: Service) -> list[ContextFileRead]:
+    return await service.files(run_id)
 
 
 @router.patch("/{run_id}/plan", response_model=RunRead)

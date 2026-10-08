@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { RunStep } from "@/features/runs/types";
+import { contextFileDownloadUrl } from "@/features/files/queries";
 import {
   cancelRun,
   confirmRun,
@@ -115,6 +116,16 @@ export default function RunDetailContent({ id }: { id: string }) {
               <section className="rounded-xl border border-(--border) bg-(--surface) p-5">
                 <h2 className="text-sm font-semibold">Task</h2>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-slate-300">{run.task}</p>
+                {(run.files?.length ?? 0) > 0 && (
+                  <div className="mt-3 flex flex-col gap-2" aria-label="Context attachments">
+                    <h3 className="text-sm font-medium">Context attachments</h3>
+                    {run.files?.map((file) => (
+                      <a key={file.id} href={contextFileDownloadUrl(file.id)} className="text-sm text-primary underline">
+                        Download {file.filename} ({file.size_bytes} bytes)
+                      </a>
+                    ))}
+                  </div>
+                )}
                 {run.context_text && (
                   <pre className="mt-3 overflow-auto rounded bg-[#050816] p-3 text-xs text-slate-400">
                     {run.context_text}

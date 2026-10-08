@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.context_file import ContextFileRead
+
 RunStatus = Literal[
     "PLANNING",
     "AWAITING_CONFIRMATION",
@@ -25,6 +27,7 @@ class RunCreate(BaseModel):
     workflow_id: UUID
     task: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     context_text: str = ""
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10)
 
 
 class RunPlanStep(BaseModel):
@@ -68,6 +71,7 @@ class RunRead(BaseModel):
     workflow_title: str
     task: str
     context_text: str
+    files: list[ContextFileRead] = Field(default_factory=list)
     status: RunStatus
     plan: RunPlan | None
     planning_prompt_tokens: int = 0
