@@ -25,9 +25,10 @@ const run = {
 };
 
 test("creates a run, previews the plan, confirms it, and opens run details", async ({ page }) => {
+  let confirmed = false;
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
-    const cors = { "access-control-allow-origin": "http://127.0.0.1:3000" };
+    const cors = { "access-control-allow-origin": "http://localhost:3000" };
     if (route.request().method() === "OPTIONS") {
       await route.fulfill({
         status: 204,
@@ -60,11 +61,17 @@ test("creates a run, previews the plan, confirms it, and opens run details", asy
         headers: cors,
       });
     if (url.pathname === "/api/v1/runs" && route.request().method() === "POST")
-      return route.fulfill({ status: 202, json: { id: runId, status: "PLANNING" }, headers: cors });
+      return route.fulfill({
+        status: 201,
+        json: { id: runId, status: "PLANNING", plan: null },
+        headers: cors,
+      });
     if (url.pathname === `/api/v1/runs/${runId}/plan`)
       return route.fulfill({ json: run, headers: cors });
-    if (url.pathname === `/api/v1/runs/${runId}/confirm`)
+    if (url.pathname === `/api/v1/runs/${runId}/confirm`) {
+      confirmed = true;
       return route.fulfill({ json: { ...run, status: "IN_PROGRESS" }, headers: cors });
+    }
     if (url.pathname === `/api/v1/runs/${runId}/events`)
       return route.fulfill({
         status: 200,
@@ -78,12 +85,16 @@ test("creates a run, previews the plan, confirms it, and opens run details", asy
         headers: cors,
       });
     if (url.pathname === `/api/v1/runs/${runId}`)
-      return route.fulfill({ json: { ...run, status: "IN_PROGRESS" }, headers: cors });
+      return route.fulfill({
+        json: { ...run, status: confirmed ? "IN_PROGRESS" : "AWAITING_CONFIRMATION" },
+        headers: cors,
+      });
     return route.fulfill({ status: 404, json: { detail: "Not mocked" }, headers: cors });
   });
 
   await page.goto("/");
-  await page.getByRole("combobox", { name: "Workflow" }).selectOption(workflowId);
+  await page.getByRole("combobox", { name: "Workflow" }).click();
+  await page.getByRole("option", { name: "Demo workflow" }).click();
   await page.getByRole("button", { name: /Decompose and Run/ }).click();
   await expect(page.getByRole("heading", { name: "Plan preview" })).toBeVisible();
   await page.getByRole("button", { name: "Confirm and run" }).click();
@@ -96,7 +107,7 @@ test("saves default settings through the settings API", async ({ page }) => {
   let saved: Record<string, unknown> | undefined;
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
-    const cors = { "access-control-allow-origin": "http://127.0.0.1:3000" };
+    const cors = { "access-control-allow-origin": "http://localhost:3000" };
     if (route.request().method() === "OPTIONS") {
       await route.fulfill({
         status: 204,
@@ -133,6 +144,7 @@ test("saves default settings through the settings API", async ({ page }) => {
           anthropic_key_configured: false,
           openai_key_configured: false,
           tavily_key_configured: false,
+          default_model: "claude-sonnet", temperature: 0.7, max_tokens: 4096,
         },
         headers: cors,
       });
@@ -145,6 +157,7 @@ test("saves default settings through the settings API", async ({ page }) => {
           anthropic_key_configured: false,
           openai_key_configured: false,
           tavily_key_configured: false,
+          ...saved,
         },
         headers: cors,
       });

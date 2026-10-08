@@ -14,6 +14,7 @@ from app.models.agent import Agent
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
+from app.orchestrator.planner import PlannerExecutor
 from app.schemas.run import RunCreate
 from app.services.runs import RunError, RunService
 from fastapi.testclient import TestClient
@@ -87,6 +88,11 @@ def test_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, Any]:
     repository = MemoryRunRepository()
     app.dependency_overrides[get_run_service] = lambda: RunService(repository)
     monkeypatch.setattr("app.api.v1.runs.enqueue_run", AsyncMock())
+
+    async def plan_immediately(run_id: UUID) -> None:
+        await PlannerExecutor(repository).execute(repository.runs[run_id])
+
+    monkeypatch.setattr("app.api.v1.runs.enqueue_plan", plan_immediately)
     try:
         with TestClient(app) as client:
             yield client
@@ -106,6 +112,9 @@ def test_run_plan_can_be_created_edited_and_confirmed(test_client: TestClient) -
     )
     assert created.status_code == 201
     run = created.json()
+    assert run["status"] == "PLANNING"
+    assert run["plan"] is None
+    run = test_client.get(f"/api/v1/runs/{run['id']}").json()
     assert run["status"] == "AWAITING_CONFIRMATION"
     assert run["plan"]["steps"][0]["agent_name"] == "Reviewer"
     assert run["plan"]["steps"][0]["subtask"] == ("Review code changes: Review the latest changes")
@@ -152,6 +161,7 @@ def test_plan_rejects_duplicate_step_numbers(test_client: TestClient) -> None:
     created = test_client.post(
         "/api/v1/runs", json={"workflow_id": str(WORKFLOW_ID), "task": "Review"}
     ).json()
+    created = test_client.get(f"/api/v1/runs/{created['id']}").json()
     step = created["plan"]["steps"][0]
     response = test_client.patch(f"/api/v1/runs/{created['id']}/plan", json={"steps": [step, step]})
     assert response.status_code == 422

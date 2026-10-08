@@ -39,7 +39,11 @@ export interface RunPlan {
 export interface RunDetails extends RunSummary {
   task: string;
   context_text?: string;
-  plan?: RunPlan | RunStep[];
+  plan?: RunPlan | RunStep[] | null;
+  planning_prompt_tokens?: number;
+  planning_completion_tokens?: number;
+  planning_time_ms?: number;
+  planning_error?: { code: string; message: string } | null;
   final_report?: string | null;
   workflow_title?: string;
 }

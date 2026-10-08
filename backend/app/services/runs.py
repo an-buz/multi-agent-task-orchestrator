@@ -4,8 +4,10 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db.run_repository import RunRepository
+from app.llm.registry import get_model_registry
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.schemas.run import RunCreate, RunPlan, RunPlanStep, RunPlanUpdate, RunRead, StepStatus
@@ -52,7 +54,11 @@ class RunService:
             task=run.task,
             context_text=run.context_text,
             status=run.status,
-            plan=plan,
+            plan=plan if run.status not in {"PLANNING"} and not run.planning_error else None,
+            planning_prompt_tokens=run.planning_prompt_tokens,
+            planning_completion_tokens=run.planning_completion_tokens,
+            planning_time_ms=run.planning_time_ms,
+            planning_error=run.planning_error,
             final_report=run.final_report,
             total_tokens=run.total_tokens,
             total_time_ms=run.total_time_ms,
@@ -69,12 +75,24 @@ class RunService:
         agents = await self.repository.agents(agent_ids)
         if set(agents) != agent_ids:
             raise RunError("Workflow references missing agents")
+        settings = get_settings()
+        if settings.planner_model not in get_model_registry(settings):
+            raise RunError("Configured planner model is not registered", 422)
         run = Run(
             id=uuid4(),
             workflow_id=workflow.id,
             task=payload.task,
             context_text=payload.context_text,
-            status="AWAITING_CONFIRMATION",
+            status="PLANNING",
+            planner_config={
+                "model": settings.planner_model,
+                "temperature": settings.planner_temperature,
+                "max_tokens": settings.planner_max_tokens,
+                "max_repairs": settings.planner_max_repairs,
+            },
+            planning_prompt_tokens=0,
+            planning_completion_tokens=0,
+            planning_time_ms=0,
             total_tokens=0,
             total_time_ms=0,
         )
@@ -103,6 +121,7 @@ class RunService:
                     input_transform=definition.get("input_transform", ""),
                     status="PENDING",
                     agent_config={
+                        "role": agent.role,
                         "system_prompt": agent.system_prompt,
                         "model": agent.model,
                         "temperature": agent.temperature,
@@ -116,13 +135,12 @@ class RunService:
                     attempt=0,
                 )
             )
-        run.plan = RunPlan(
-            summary=f"Mock plan for workflow: {workflow.title}", steps=planned_steps
-        ).model_dump(mode="json")
+        run.plan = RunPlan(summary="Planning the workflow", steps=planned_steps).model_dump(
+            mode="json"
+        )
         self.repository.add(run)
         for snapshot in snapshots:
             self.repository.add(snapshot)
-        self.repository.emit(run.id, "plan:ready", {"plan": run.plan})
         await self.repository.save()
         await self.repository.refresh(run)
         return await self.read(run)
@@ -170,7 +188,7 @@ class RunService:
         run = await self.require(run_id, lock=True)
         if run.status == "CANCELLED":
             return await self.read(run)
-        if run.status not in {"AWAITING_CONFIRMATION", "IN_PROGRESS"}:
+        if run.status not in {"PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS"}:
             raise RunError("Run cannot be cancelled in its current state")
         run.status = "CANCELLED"
         run.finished_at = datetime.now(UTC)

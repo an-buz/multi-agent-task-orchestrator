@@ -1,9 +1,12 @@
 """Anthropic, OpenAI, and deterministic mock provider implementations."""
 
+import json
+
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
 from app.core.config import Settings, get_settings
+from app.llm.planning import PLANNER_SYSTEM_PROMPT
 from app.llm.provider import LLMResponse, LLMUsage
 from app.llm.registry import get_model_registry
 
@@ -98,7 +101,26 @@ class MockLLMProvider:
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> LLMResponse:
-        del system_prompt, model, temperature, max_tokens
+        del model, temperature, max_tokens
+        if system_prompt == PLANNER_SYSTEM_PROMPT:
+            request = json.loads(user_prompt)
+            return LLMResponse(
+                content=json.dumps(
+                    {
+                        "summary": "Mock plan for the supplied workflow",
+                        "steps": [
+                            {
+                                "step_number": step["step_number"],
+                                "agent_id": step["agent_id"],
+                                "depends_on": step["depends_on"],
+                                "subtask": f"{step['role']}: {request['task']}",
+                            }
+                            for step in request["steps"]
+                        ],
+                    }
+                ),
+                usage=LLMUsage(input_tokens=max(1, len(user_prompt.split())), output_tokens=5),
+            )
         return LLMResponse(
             content=f"Mock response: {user_prompt[:500]}",
             usage=LLMUsage(input_tokens=max(1, len(user_prompt.split())), output_tokens=5),

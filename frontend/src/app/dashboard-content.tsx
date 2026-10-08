@@ -20,10 +20,10 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkflows } from "@/features/workflows/queries";
-import { confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
+import { cancelRun, confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
 import type { RunDetails } from "@/features/runs/types";
 
 const agents = [
@@ -91,6 +91,9 @@ export default function DashboardPage() {
   const [runDraft, setRunDraft] = useState<RunDetails | null>(null);
   const [runError, setRunError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [consoleCleared, setConsoleCleared] = useState(false);
+  const [pipelineOptions, setPipelineOptions] = useState(false);
+  const [contextHelp, setContextHelp] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   function handleFile(file: File | undefined) {
     if (!file || !/\.(txt|md|json)$/i.test(file.name)) return;
@@ -133,6 +136,20 @@ export default function DashboardPage() {
       router.push(`/runs/${run.id}`);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : "Could not start the run.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelPlan() {
+    if (!runDraft) return;
+    setBusy(true);
+    setRunError("");
+    try {
+      await cancelRun(runDraft.id);
+      setRunDraft(null);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "Could not cancel the run.");
     } finally {
       setBusy(false);
     }
@@ -227,14 +244,16 @@ export default function DashboardPage() {
               )}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Select value={workflowId || undefined} onValueChange={(value) => setWorkflowId(value ?? "")}>
+                  <Select value={workflowId || null} onValueChange={(value) => setWorkflowId(value ?? "")}>
                     <SelectTrigger aria-label="Workflow" className="h-auto w-auto rounded-lg border-(--border) bg-[#050816] px-3 py-2 text-xs text-slate-300">
                       {workflowsQuery.data?.items.find((workflow) => workflow.id === workflowId)?.title ?? "Choose workflow"}
                     </SelectTrigger>
                     <SelectContent>
+                    <SelectGroup>
                     {workflowsQuery.data?.items.map((workflow) => (
                       <SelectItem key={workflow.id} value={workflow.id}>{workflow.title}</SelectItem>
                     ))}
+                    </SelectGroup>
                     </SelectContent>
                   </Select>
                   <input
@@ -288,7 +307,8 @@ export default function DashboardPage() {
                     <Button
                       variant="ghost"
                       aria-label="Close plan"
-                      onClick={() => setRunDraft(null)}
+                      disabled={busy}
+                      onClick={() => void cancelPlan()}
                     >
                       <X size={15} />
                     </Button>
@@ -328,7 +348,7 @@ export default function DashboardPage() {
                     ))}
                   </ol>
                   <div className="mt-3 flex justify-end gap-2">
-                    <Button variant="secondary" onClick={() => setRunDraft(null)}>
+                    <Button variant="secondary" disabled={busy} onClick={() => void cancelPlan()}>
                       Cancel
                     </Button>
                     <Button disabled={busy} onClick={() => void confirmPlan()}>
@@ -350,10 +370,18 @@ export default function DashboardPage() {
                   aria-label="More pipeline options"
                   variant="ghost"
                   className="[&_svg]:size-4.5 [&_svg]:text-slate-500 hover:[&_svg]:text-slate-300"
+                  aria-expanded={pipelineOptions}
+                  onClick={() => setPipelineOptions(!pipelineOptions)}
                 >
                   <MoreHorizontal size={18} />
                 </Button>
               </div>
+              {pipelineOptions && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={() => router.push("/workflows")}>Manage workflows</Button>
+                  <Button variant="secondary" onClick={() => router.push("/runs")}>View run history</Button>
+                </div>
+              )}
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {agents.map((agent, index) => (
                   <div key={agent.name} className="flex min-w-30.5 flex-1 items-center gap-2">
@@ -386,13 +414,13 @@ export default function DashboardPage() {
                   <i className="size-2 rounded-full bg-emerald-400" />
                   LIVE ORCHESTRATION CONSOLE
                 </h2>
-                <Button variant="ghost">Clear</Button>
+                <Button variant="ghost" onClick={() => setConsoleCleared(true)} disabled={consoleCleared}>Clear</Button>
               </div>
               <div
                 aria-label="Sample orchestration events"
                 className="space-y-3 overflow-auto p-4 font-mono text-[11px] leading-5"
               >
-                {events.map(([time, tag, message, tone]) => (
+                {(consoleCleared ? [] : events).map(([time, tag, message, tone]) => (
                   <div key={time} className="grid grid-cols-[58px_98px_minmax(0,1fr)] gap-2">
                     <span className="text-slate-600">{time}</span>
                     <span
@@ -405,7 +433,7 @@ export default function DashboardPage() {
                 ))}
                 <p className="mt-5 flex items-center gap-2 text-emerald-400">
                   <ArrowDownToLine size={14} />
-                  Live stream running... Listening to orchestrator events
+                  {consoleCleared ? "Sample console cleared." : "Sample orchestration events. Open a run to view live events."}
                 </p>
               </div>
             </section>
@@ -446,10 +474,11 @@ export default function DashboardPage() {
                 <h3 className="text-[10px] font-semibold uppercase text-slate-400">
                   Input context
                 </h3>
-                <Button aria-label="Help about input context" variant="ghost">
+                <Button aria-label="Help about input context" variant="ghost" aria-expanded={contextHelp} onClick={() => setContextHelp(!contextHelp)}>
                   <CircleHelp size={13} />
                 </Button>
               </div>
+              {contextHelp && <p className="mb-2 text-xs text-muted-foreground">Input context contains the task and supporting information passed to an agent. These values are examples.</p>}
               <pre className="overflow-x-auto rounded bg-[#050816] p-2.5 font-mono text-[10px] leading-4 text-cyan-300">
                 {
                   '{\n  "test_target": "auth.ts",\n  "mock_db": true,\n  "depth": "comprehensive",\n  "concurrency": 4\n}'

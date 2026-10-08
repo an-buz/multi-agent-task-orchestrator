@@ -28,14 +28,27 @@ export function waitForRunPlan(id: string): Promise<RunDetails> {
     const close = subscribeToRun(
       id,
       (event) => {
-        if (event.event !== "plan:ready") return;
-        void getRun(id).then(
-          (run) => finish(undefined, run),
-          (error: unknown) => finish(error),
-        );
+        if (["run:snapshot", "plan:ready", "task:failed", "task:cancelled"].includes(event.event)) {
+          checkPlan();
+        }
       },
       () => undefined,
     );
+    function checkPlan() {
+      void getRun(id).then(
+        (run) => {
+          if (run.status === "AWAITING_CONFIRMATION" && run.plan) finish(undefined, run);
+          else if (run.status === "FAILED") {
+            finish(
+              new Error(run.planning_error?.message ?? "Could not generate the execution plan."),
+            );
+          } else if (run.status === "CANCELLED") finish(new Error("Planning was cancelled."));
+        },
+        (error: unknown) => finish(error),
+      );
+    }
+    // A fast worker may finish before EventSource connects; snapshot/GET closes that race.
+    checkPlan();
     function finish(error?: unknown, run?: RunDetails) {
       if (settled) return;
       settled = true;

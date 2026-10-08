@@ -9,6 +9,7 @@ from app.llm.provider import LLMResponse
 from app.llm.providers import MockLLMProvider
 from app.models.run import Run
 from app.orchestrator.executor import DAGExecutor, build_input
+from app.orchestrator.planner import PlannerExecutor
 from app.schemas.run import RunCreate, RunPlanUpdate
 from app.services.runs import RunService
 
@@ -61,6 +62,7 @@ async def make_run(dependencies: list[list[int]]) -> tuple[MemoryRunRepository, 
             workflow_id=repository.saved_workflow.id, task="Analyze", context_text="User context"
         )
     )
+    await PlannerExecutor(repository).execute(repository.runs[created.id])
     for step in repository.saved_steps:
         step.subtask = f"Task {step.step_number}"
     await service.confirm(created.id)
@@ -81,8 +83,12 @@ async def test_execution_order_inputs_and_metrics(dependencies: list[list[int]],
     await DAGExecutor(repository, lambda _: provider).execute(run)
     assert run.status == "COMPLETED"
     assert provider.peak == peak
-    assert run.total_tokens == 28 * len(dependencies)
-    assert run.total_time_ms == sum(step.execution_time_ms for step in repository.saved_steps)
+    assert run.total_tokens == (
+        run.planning_prompt_tokens + run.planning_completion_tokens + 28 * len(dependencies)
+    )
+    assert run.total_time_ms == (
+        run.planning_time_ms + sum(step.execution_time_ms for step in repository.saved_steps)
+    )
     for step in repository.saved_steps:
         assert step.status == "COMPLETED"
         assert step.input and "User context" in step.input
@@ -111,7 +117,7 @@ async def test_failed_branch_does_not_stop_independent_steps() -> None:
         "code": "llm_error",
         "message": "The step could not be completed.",
     }
-    assert run.total_tokens == 56
+    assert run.total_tokens == run.planning_prompt_tokens + run.planning_completion_tokens + 56
 
 
 async def test_parallel_limit_and_resume_skip_completed_steps() -> None:
@@ -126,7 +132,9 @@ async def test_parallel_limit_and_resume_skip_completed_steps() -> None:
     assert provider.peak == 1
     assert len(provider.calls) == 3
     assert first.output == "Already complete"
-    assert run.total_tokens == 7 + 28 * 3
+    assert (
+        run.total_tokens == run.planning_prompt_tokens + run.planning_completion_tokens + 7 + 28 * 3
+    )
 
 
 async def test_worker_cannot_execute_unconfirmed_plan() -> None:
@@ -158,6 +166,9 @@ async def test_snapshot_survives_agent_changes_and_plan_edit() -> None:
     created = await service.create(
         RunCreate(workflow_id=repository.saved_workflow.id, task="Analyze")
     )
+    await PlannerExecutor(repository).execute(repository.runs[created.id])
+    created = await service.read(repository.runs[created.id])
+    assert created.plan is not None
     repository.agent.system_prompt = "Changed"
     repository.agent.max_tokens = 5
     created.plan.steps[0].subtask = "Edited subtask"
@@ -217,7 +228,7 @@ async def test_retry_preserves_completed_steps_and_resumes_dependents() -> None:
     assert completed.attempt == 1
     assert repository.saved_steps[0].attempt == 2
     assert repository.saved_steps[0].input == original_input
-    assert run.total_tokens == 112
+    assert run.total_tokens == run.planning_prompt_tokens + run.planning_completion_tokens + 112
     assert [event for event, _ in repository.saved_events].count("task:failed") == 1
     assert repository.saved_events[-1][0] == "task:finished"
 
@@ -246,6 +257,6 @@ async def test_api_cancel_stops_inflight_provider_and_prevents_results(
     assert closed.is_set()
     assert run.status == "CANCELLED"
     assert all(step.status == "CANCELLED" for step in repository.saved_steps)
-    assert run.total_tokens == 0
+    assert run.total_tokens == run.planning_prompt_tokens + run.planning_completion_tokens
     assert all(step.output is None for step in repository.saved_steps)
     assert repository.saved_events[-1][0] == "task:cancelled"

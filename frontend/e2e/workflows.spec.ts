@@ -53,7 +53,7 @@ test("creates and saves a connected sequential workflow", async ({ page }) => {
   await page.route("**/*", async (route) => {
     const requestUrl = new URL(route.request().url());
     console.log("E2E route", requestUrl.href);
-    const cors = { "access-control-allow-origin": "http://127.0.0.1:3000" };
+    const cors = { "access-control-allow-origin": "http://localhost:3000" };
     if (requestUrl.pathname.startsWith("/api/v1/") && route.request().method() === "OPTIONS") {
       await route.fulfill({
         status: 204,
@@ -104,7 +104,8 @@ test("creates and saves a connected sequential workflow", async ({ page }) => {
   await page.getByPlaceholder("Workflow title").fill("Local E2E workflow");
   await page.getByRole("button", { name: "Developer claude-sonnet" }).click();
   await page.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
-  await page.getByLabel("Arrange preset").selectOption("sequential");
+  await page.getByRole("combobox", { name: "Arrange preset" }).click();
+  await page.getByRole("option", { name: "Sequential chain" }).click();
 
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge-path")).toHaveCount(1);

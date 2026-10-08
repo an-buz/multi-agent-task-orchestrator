@@ -17,7 +17,7 @@ import "@xyflow/react/dist/style.css";
 import { GitBranch, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Sidebar } from "@/components/sidebar";
 import { useAgents } from "@/features/agents/queries";
 import {
@@ -120,6 +120,7 @@ export default function WorkflowsContent() {
   const [editing, setEditing] = useState<Workflow | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [preset, setPreset] = useState<WorkflowType>("hybrid");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [nodes, setNodes, onNodesChange] = useNodesState<AgentNode>([]);
@@ -193,6 +194,7 @@ export default function WorkflowsContent() {
     setEditorOpen(true);
     setEditing(workflow ?? null);
     setTitle(workflow?.title ?? "");
+    setPreset(workflow?.execution_type ?? "hybrid");
     const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
     const nextNodes: AgentNode[] = (workflow?.steps ?? []).map((step, index) => {
       const agent = agentMap.get(step.agent_id);
@@ -429,8 +431,11 @@ export default function WorkflowsContent() {
                     Arrange preset
                   </label>
                   <Select
+                    value={preset}
                     onValueChange={(value) => {
+                      if (!value) return;
                       const kind = value as WorkflowType;
+                      setPreset(kind);
                       rememberGraph();
                       setEdges([]);
                       setNodes((current) =>
@@ -462,11 +467,13 @@ export default function WorkflowsContent() {
                       }
                     }}
                   >
-                    <SelectTrigger id="preset" aria-label="Arrange preset" className="mt-2 w-full rounded-md border border-border bg-slate-950 px-2 py-2 text-xs">Hybrid graph</SelectTrigger>
+                    <SelectTrigger id="preset" aria-label="Arrange preset" className="mt-2 w-full rounded-md border border-border bg-slate-950 px-2 py-2 text-xs">{preset === "sequential" ? "Sequential chain" : preset === "parallel" ? "Parallel + aggregator" : "Hybrid graph"}</SelectTrigger>
                     <SelectContent>
+                      <SelectGroup>
                       <SelectItem value="hybrid">Hybrid graph</SelectItem>
                       <SelectItem value="sequential">Sequential chain</SelectItem>
                       <SelectItem value="parallel">Parallel + aggregator</SelectItem>
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>

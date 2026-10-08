@@ -1,0 +1,4 @@
+{
+  "content": "{\"summary\":\"Review the supplied project using the assigned reviewer\",\"steps\":[{\"step_number\":1,\"agent_id\":\"025010d8-e77f-494b-bb42-e107c903970d\",\"depends_on\":[],\"subtask\":\"Review the project and summarize API contract risks\"}]}",
+  "usage": {"input_tokens": 17, "output_tokens": 11}
+}

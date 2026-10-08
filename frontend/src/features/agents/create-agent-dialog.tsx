@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { apiRequest } from "@/lib/api";
 import { agentsQueryKey, useAgentCatalog, type Agent } from "./queries";
+import { useAppConfig } from "./defaults";
 
 const agentSchema = z.object({
   name: z
@@ -87,6 +88,7 @@ export function CreateAgentDialog({
   const queryClient = useQueryClient();
   const catalog = useAgentCatalog();
   const [open, setOpen] = useState(Boolean(agent));
+  const config = useAppConfig(open && !agent);
   const [advanced, setAdvanced] = useState(false);
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
   const mutation = useMutation({
@@ -122,6 +124,13 @@ export function CreateAgentDialog({
       });
     }
   }, [agent, form]);
+  useEffect(() => {
+    if (open && !agent && config.data) {
+      if (!form.getFieldState("model").isDirty) form.setValue("model", config.data.default_model);
+      if (!form.getFieldState("temperature").isDirty) form.setValue("temperature", config.data.temperature);
+      if (!form.getFieldState("max_tokens").isDirty) form.setValue("max_tokens", config.data.max_tokens);
+    }
+  }, [open, agent, config.data, form]);
   const temperature = form.watch("temperature");
   const selectedTools = form.watch("tools");
   const selectedModel = form.watch("model");
@@ -286,7 +295,7 @@ export function CreateAgentDialog({
                   onValueChange={(model) => {
                     if (!model) return;
                     const modelInfo = models.find((item) => item.key === model);
-                    form.setValue("model", model);
+                    form.setValue("model", model, { shouldDirty: true });
                     if (modelInfo) {
                       form.setValue(
                         "context_window",
@@ -424,7 +433,7 @@ export function CreateAgentDialog({
                           value={temperature}
                           onValueChange={(value) => {
                             const v = Array.isArray(value) ? value[0] : value;
-                            form.setValue("temperature", v);
+                            form.setValue("temperature", v, { shouldDirty: true });
                           }}
                         />
                       </div>
@@ -466,6 +475,9 @@ export function CreateAgentDialog({
                   {mutation.error.message}. Check that the API is available and try again.
                 </p>
               )}
+              {!agent && config.isError && (
+                <p role="alert">Could not load agent defaults. Please reopen the dialog to retry.</p>
+              )}
               <footer className="flex justify-end gap-2 border-t border-border pt-5">
                 <button
                   type="button"
@@ -478,6 +490,7 @@ export function CreateAgentDialog({
                   type="submit"
                   disabled={
                     mutation.isPending ||
+                    (!agent && (config.isPending || config.isError)) ||
                     catalog.isLoading ||
                     catalog.isError ||
                     models.length === 0

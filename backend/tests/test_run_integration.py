@@ -20,7 +20,7 @@ from app.models.run import Run
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.workers.runner import OrchestratorWorker
-from app.workers.tasks import execute_run, recover_runs
+from app.workers.tasks import execute_run, plan_run, recover_runs
 from arq.connections import RedisSettings, create_pool
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -58,7 +58,7 @@ async def test_confirm_queue_execution_and_redelivery(
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     pool = await create_pool(RedisSettings.from_dsn(redis_url))
     worker = OrchestratorWorker(
-        functions=[execute_run],
+        functions=[plan_run, execute_run],
         redis_pool=pool,
         burst=True,
         keep_result=0,
@@ -80,6 +80,7 @@ async def test_confirm_queue_execution_and_redelivery(
             pass
 
         monkeypatch.setattr("app.api.v1.runs.enqueue_run", unavailable)
+        monkeypatch.setattr("app.api.v1.runs.enqueue_plan", unavailable)
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
         async with sessions() as session:
@@ -112,11 +113,24 @@ async def test_confirm_queue_execution_and_redelivery(
             )
             assert created.status_code == 201
             run_id = created.json()["id"]
+            assert created.json()["status"] == "PLANNING"
+            assert created.json()["plan"] is None
+            assert (await client.post(f"/api/v1/runs/{run_id}/confirm")).status_code == 409
             # Even an accidentally delivered job cannot execute before confirmation.
             await execute_run({}, run_id)
+            if deferred_dispatch:
+                await recover_runs({"redis": pool})
+            await worker.async_run()
             before = (await client.get(f"/api/v1/runs/{run_id}")).json()
+            assert before["status"] == "AWAITING_CONFIRMATION"
+            assert before["planning_prompt_tokens"] > 0
             assert before["plan"]["steps"][0]["attempt"] == 0
-            plan = created.json()["plan"]["steps"]
+            # Duplicate planning delivery cannot overwrite an approved draft or add usage.
+            await asyncio.gather(plan_run({}, run_id), plan_run({}, run_id))
+            assert (await client.get(f"/api/v1/runs/{run_id}")).json()["total_tokens"] == before[
+                "total_tokens"
+            ]
+            plan = before["plan"]["steps"]
             plan[0]["subtask"] = "User edited task"
             assert (
                 await client.patch(f"/api/v1/runs/{run_id}/plan", json={"steps": plan})
@@ -143,6 +157,15 @@ async def test_confirm_queue_execution_and_redelivery(
             assert all(step["status"] == "COMPLETED" for step in detail["plan"]["steps"])
             assert detail["total_tokens"] > 0
             assert "User edited task" in detail["final_report"]
+            for format in ("json", "md", "pdf"):
+                exported = await client.get(f"/api/v1/runs/{run_id}/export?format={format}")
+                assert exported.status_code == 200
+                assert exported.content
+            defaults = {"default_model": "claude-haiku", "temperature": 0.4, "max_tokens": 2048}
+            assert (await client.patch("/api/v1/settings/config", json=defaults)).status_code == 200
+            # GET uses a new API session, proving defaults survive beyond the write request.
+            config = (await client.get("/api/v1/settings/config")).json()
+            assert all(config[key] == value for key, value in defaults.items())
             # PostgreSQL ownership protects concurrent delivery and completed steps are skipped.
             await asyncio.gather(execute_run({}, run_id), execute_run({}, run_id))
             async with sessions() as session:
@@ -171,6 +194,7 @@ async def test_confirm_queue_execution_and_redelivery(
                 await stream.aclose()
             if not deferred_dispatch:
                 await check_cancel_retry(client, sessions, workflow.id, monkeypatch)
+                await check_planner_control(client, sessions, workflow.id, monkeypatch)
     finally:
         app.dependency_overrides.clear()
         await worker.close()
@@ -191,6 +215,7 @@ async def check_cancel_retry(
         )
     ).json()
     run_id = created["id"]
+    await plan_run({}, run_id)
     await client.post(f"/api/v1/runs/{run_id}/confirm")
     provider = MockLLMProvider()
     original = provider.complete
@@ -225,6 +250,7 @@ async def check_cancel_retry(
         )
     ).json()
     run_id = created["id"]
+    await plan_run({}, run_id)
     await client.post(f"/api/v1/runs/{run_id}/confirm")
     entered = asyncio.Event()
     released = asyncio.Event()
@@ -271,3 +297,76 @@ async def check_cancel_retry(
         if not job.done():
             job.cancel()
         await asyncio.gather(job, return_exceptions=True)
+
+
+async def check_planner_control(
+    client: AsyncClient,
+    sessions: async_sessionmaker[AsyncSession],
+    workflow_id: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.orchestrator.planner import LLMPlanner, PlannerExecutor
+
+    provider = MockLLMProvider()
+    entered, released = asyncio.Event(), asyncio.Event()
+
+    class TestPlanner(PlannerExecutor):
+        def __init__(self, repository: RunRepository) -> None:
+            super().__init__(repository, LLMPlanner(lambda _: provider))
+
+    monkeypatch.setattr("app.workers.tasks.PlannerExecutor", TestPlanner)
+
+    async def blocked(*args: object, **kwargs: object) -> LLMResponse:
+        entered.set()
+        await released.wait()
+        return LLMResponse(content="invalid", usage={"input_tokens": 10, "output_tokens": 2})
+
+    monkeypatch.setattr(provider, "complete", blocked)
+    created = (
+        await client.post(
+            "/api/v1/runs",
+            json={
+                "workflow_id": str(workflow_id),
+                "task": "Cancel planning",
+            },
+        )
+    ).json()
+    run_id = created["id"]
+    job = asyncio.create_task(plan_run({}, run_id))
+    try:
+        await asyncio.wait_for(entered.wait(), 3)
+        assert (await client.post(f"/api/v1/runs/{run_id}/cancel")).status_code == 200
+        released.set()
+        await asyncio.wait_for(job, 3)
+        detail = (await client.get(f"/api/v1/runs/{run_id}")).json()
+        assert detail["status"] == "CANCELLED"
+        async with sessions() as session:
+            events = await RunRepository(session).events(UUID(run_id), 0)
+            assert all(event.event != "plan:ready" for event in events)
+    finally:
+        released.set()
+        if not job.done():
+            job.cancel()
+        await asyncio.gather(job, return_exceptions=True)
+
+    async def invalid(*args: object, **kwargs: object) -> LLMResponse:
+        return LLMResponse(content="invalid", usage={"input_tokens": 10, "output_tokens": 2})
+
+    monkeypatch.setattr(provider, "complete", invalid)
+    created = (
+        await client.post(
+            "/api/v1/runs",
+            json={
+                "workflow_id": str(workflow_id),
+                "task": "Invalid plan",
+            },
+        )
+    ).json()
+    run_id = created["id"]
+    await plan_run({}, run_id)
+    detail = (await client.get(f"/api/v1/runs/{run_id}")).json()
+    assert detail["status"] == "FAILED"
+    assert detail["plan"] is None
+    assert detail["planning_error"]["code"] == "invalid_plan"
+    assert detail["total_tokens"] == 36
+    assert (await client.post(f"/api/v1/runs/{run_id}/confirm")).status_code == 409

@@ -69,7 +69,11 @@ class RunRead(BaseModel):
     task: str
     context_text: str
     status: RunStatus
-    plan: RunPlan
+    plan: RunPlan | None
+    planning_prompt_tokens: int = 0
+    planning_completion_tokens: int = 0
+    planning_time_ms: int = 0
+    planning_error: dict[str, str] | None = None
     final_report: str | None
     total_tokens: int
     total_time_ms: int

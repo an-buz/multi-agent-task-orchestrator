@@ -4,13 +4,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.run_repository import RunRepository
 from app.db.session import get_session
 from app.schemas.run import RunCreate, RunPlanUpdate, RunRead
+from app.services.export import ExportFormat, export_result
 from app.services.runs import RunService
-from app.workers.queue import enqueue_run
+from app.workers.queue import enqueue_plan, enqueue_run
 
 router = APIRouter()
 
@@ -24,7 +26,9 @@ Service = Annotated[RunService, Depends(get_run_service)]
 
 @router.post("", response_model=RunRead, status_code=status.HTTP_201_CREATED)
 async def create_run(payload: RunCreate, service: Service) -> RunRead:
-    return await service.create(payload)
+    run = await service.create(payload)
+    await enqueue_plan(run.id)
+    return run
 
 
 @router.get("")
@@ -39,6 +43,19 @@ async def list_runs(
 @router.get("/{run_id}", response_model=RunRead)
 async def get_run(run_id: UUID, service: Service) -> RunRead:
     return await service.read(await service.require(run_id))
+
+
+@router.get("/{run_id}/export")
+async def export_run(run_id: UUID, service: Service, format: ExportFormat = "json") -> Response:
+    run = await service.read(await service.require(run_id))
+    content, media_type = await export_result(run, format)
+    return Response(
+        content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="run-{run_id}.{format}"',
+        },
+    )
 
 
 @router.patch("/{run_id}/plan", response_model=RunRead)

@@ -5,8 +5,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/sidebar";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import type { RunStep } from "@/features/runs/types";
 import {
   cancelRun,
+  confirmRun,
+  editRunPlan,
   exportRun,
   getRun,
   retryRunStep,
@@ -23,6 +28,24 @@ export default function RunDetailContent({ id }: { id: string }) {
   });
   const [events, setEvents] = useState<string[]>([]);
   const [streamError, setStreamError] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [pending, setPending] = useState(false);
+  const [planDraft, setPlanDraft] = useState<RunStep[] | null>(null);
+  async function perform(action: () => Promise<unknown>, refresh = true) {
+    setPending(true);
+    setActionError("");
+    try {
+      await action();
+      if (refresh) {
+        setPlanDraft(null);
+        await client.invalidateQueries({ queryKey: runsQueryKey });
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not complete this action.");
+    } finally {
+      setPending(false);
+    }
+  }
   useEffect(
     () =>
       subscribeToRun(
@@ -67,18 +90,20 @@ export default function RunDetailContent({ id }: { id: string }) {
           {run && (
             <div className="flex gap-2">
               <span className="self-center font-mono text-xs">{run.status}</span>
-              {run.status === "IN_PROGRESS" && (
-                <button
-                  className="rounded border border-(--border) px-3 py-2 text-xs"
-                  onClick={() => void cancelRun(id).then(() => query.refetch())}
+              {["PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS"].includes(run.status) && (
+                <Button
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() => void perform(() => cancelRun(id))}
                 >
                   Cancel run
-                </button>
+                </Button>
               )}
             </div>
           )}
         </header>
         <div className="space-y-5 p-6 lg:p-8">
+          {actionError && <p role="alert" className="text-destructive">{actionError}</p>}
           {query.isLoading && <p>Loading run…</p>}
           {query.isError && (
             <p role="alert" className="text-rose-400">
@@ -96,6 +121,28 @@ export default function RunDetailContent({ id }: { id: string }) {
                   </pre>
                 )}
               </section>
+              {run.status === "AWAITING_CONFIRMATION" && (
+                <section aria-label="Plan preview" className="flex flex-col gap-3 rounded-xl border border-border p-5">
+                  <h2 className="text-sm font-semibold">Plan preview</h2>
+                  {(planDraft ?? runSteps).map((step) => (
+                    <label key={step.step_number} className="flex flex-col gap-2">
+                      {step.step_number}. {step.agent_name}
+                      <Textarea
+                        aria-label={`Task for ${step.agent_name}`}
+                        disabled={pending}
+                        value={step.subtask ?? step.input ?? ""}
+                        onChange={(event) => setPlanDraft((planDraft ?? runSteps).map((item) =>
+                          item.step_number === step.step_number ? { ...item, subtask: event.target.value } : item
+                        ))}
+                      />
+                    </label>
+                  ))}
+                  <Button disabled={pending || (planDraft ?? runSteps).some((step) => !(step.subtask ?? step.input ?? "").trim())} onClick={() => void perform(async () => {
+                    if (planDraft) await editRunPlan(id, planDraft);
+                    await confirmRun(id);
+                  })}>Confirm and run</Button>
+                </section>
+              )}
               <section className="rounded-xl border border-(--border) bg-(--surface) p-5">
                 <h2 className="mb-3 text-sm font-semibold">Execution steps</h2>
                 <div className="space-y-3">
@@ -126,9 +173,8 @@ export default function RunDetailContent({ id }: { id: string }) {
                       {step.retryable && (
                         <button
                           className="mt-3 text-xs text-emerald-300 underline"
-                          onClick={() =>
-                            void retryRunStep(id, step.step_number).then(() => query.refetch())
-                          }
+                          disabled={pending}
+                          onClick={() => void perform(() => retryRunStep(id, step.step_number))}
                         >
                           Retry step
                         </button>
@@ -165,7 +211,8 @@ export default function RunDetailContent({ id }: { id: string }) {
                     <button
                       key={format}
                       className="rounded border border-(--border) px-3 py-2 text-xs uppercase"
-                      onClick={() => void download(format)}
+                      disabled={pending}
+                      onClick={() => void perform(() => download(format), false)}
                     >
                       {format === "md"
                         ? "Download MD"
@@ -176,7 +223,8 @@ export default function RunDetailContent({ id }: { id: string }) {
                   ))}
                   <button
                     className="rounded border border-(--border) px-3 py-2 text-xs"
-                    onClick={() => void navigator.clipboard.writeText(run.final_report ?? "")}
+                    disabled={pending}
+                    onClick={() => void perform(() => navigator.clipboard.writeText(run.final_report ?? ""), false)}
                   >
                     Copy Markdown
                   </button>

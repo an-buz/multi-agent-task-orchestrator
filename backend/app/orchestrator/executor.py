@@ -270,5 +270,9 @@ class DAGExecutor:
 
     @staticmethod
     def update_totals(run: Run, steps: list[RunStep]) -> None:
-        run.total_tokens = sum(step.tokens_prompt + step.tokens_completion for step in steps)
-        run.total_time_ms = sum(step.execution_time_ms for step in steps)
+        run.total_tokens = (
+            run.planning_prompt_tokens
+            + run.planning_completion_tokens
+            + sum(step.tokens_prompt + step.tokens_completion for step in steps)
+        )
+        run.total_time_ms = run.planning_time_ms + sum(step.execution_time_ms for step in steps)

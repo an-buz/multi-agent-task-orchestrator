@@ -7,6 +7,7 @@ from alembic import context
 from app.core.config import get_settings
 from app.db.base import Base
 from app.models.agent import Agent  # noqa: F401
+from app.models.app_config import AppConfig  # noqa: F401
 from app.models.run import Run  # noqa: F401
 from app.models.run_event import RunEvent  # noqa: F401
 from app.models.run_step import RunStep  # noqa: F401

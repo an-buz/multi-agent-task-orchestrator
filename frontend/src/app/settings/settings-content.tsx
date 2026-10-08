@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LoaderCircle, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Sidebar } from "@/components/sidebar";
@@ -10,6 +11,7 @@ import { apiRequest } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { configQueryKey, useAppConfig, type AppConfig } from "@/features/agents/defaults";
 
 const settingsSchema = z.object({
   default_model: z.string().min(1, "Default model is required."),
@@ -27,19 +29,16 @@ interface ModelInfo {
   context_window: number;
 }
 
-interface AppConfig {
-  llm_provider_mode: string;
-  code_executor_backend: string;
-  anthropic_key_configured: boolean;
-  openai_key_configured: boolean;
-  tavily_key_configured: boolean;
-}
-
 export default function SettingsContent() {
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const client = useQueryClient();
+  const configQuery = useAppConfig();
+  const modelQuery = useQuery({
+    queryKey: ["models"],
+    queryFn: () => apiRequest<{ items: ModelInfo[] }>("/agents/models"),
+  });
+  const config = configQuery.data;
+  const models = modelQuery.data?.items ?? [];
+  const loadError = configQuery.isError || modelQuery.isError ? "Could not load configuration." : null;
   const [saveNotice, setSaveNotice] = useState("");
 
   const form = useForm<SettingsFormValues>({
@@ -50,59 +49,36 @@ export default function SettingsContent() {
   const selectedDefaultModelInfo = models.find((model) => model.key === selectedDefaultModel);
 
   useEffect(() => {
-    let cancelled = false;
+    if (config) form.reset({
+      default_model: config.default_model,
+      temperature: config.temperature,
+      max_tokens: config.max_tokens,
+    });
+  }, [config, form]);
 
-    Promise.all([
-      apiRequest<AppConfig>("/settings/config"),
-      apiRequest<{ items: ModelInfo[] }>("/agents/models").then((res) => res.items),
-    ])
-      .then(([cfg, mdl]) => {
-        if (cancelled) return;
-        setConfig(cfg);
-        setModels(mdl);
-
-        // Select first model matching the current provider mode.
-        const preferredProvider = cfg.llm_provider_mode === "mock" ? "anthropic" : undefined;
-        let selectedModel =
-          preferredProvider && mdl.find((m) => m.provider === preferredProvider)?.key;
-        if (!selectedModel) selectedModel = mdl[0]?.key ?? "";
-
-        form.setValue("default_model", selectedModel);
-        setLoadError(null);
-      })
-      .catch(() => {
-        setLoadError("Could not load configuration.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function onSubmit(values: SettingsFormValues) {
-    setSaving(true);
-    setSaveNotice("");
-    try {
-      await apiRequest<AppConfig>("/settings/config", {
+  const save = useMutation({
+    mutationFn: (values: SettingsFormValues) => apiRequest<AppConfig>("/settings/config", {
         method: "PATCH",
         body: JSON.stringify(values),
-      });
+    }),
+    onSuccess: (saved) => {
+      client.setQueryData(configQueryKey, saved);
       setSaveNotice("Settings saved successfully.");
-    } catch (error) {
-      setSaveNotice(error instanceof Error ? error.message : "Could not save settings.");
-    } finally {
-      setSaving(false);
-    }
+    },
+    onError: (error) => setSaveNotice(error.message),
+  });
+  const saving = save.isPending;
+  function onSubmit(values: SettingsFormValues) {
+    setSaveNotice("");
+    save.mutate(values);
   }
 
   function handleRetry() {
-    setLoadError(null);
-    // Re-run the effect by toggling a dummy key; React will re-fetch.
-    window.location.reload();
+    void configQuery.refetch();
+    void modelQuery.refetch();
   }
 
-  const saveDisabled = false;
+  const saveDisabled = !config || modelQuery.isPending || Boolean(loadError);
 
   return (
     <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
