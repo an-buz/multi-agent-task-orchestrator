@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     database_url: PostgresDsn = PostgresDsn(
         "postgresql+asyncpg://app:app@localhost:5432/orchestrator"
     )
-    redis_url: RedisDsn = RedisDsn("redis://localhost:6379/0")
+    redis_url: RedisDsn = RedisDsn("redis://localhost:16379/0")
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     # Provider model identifiers stay configurable as providers retire model versions.
@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     context_file_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
     run_context_max_chars: int = Field(default=200000, ge=1)
     llm_provider_mode: Literal["real", "mock"] = "mock"
+    mock_stream_chunk_chars: int = Field(default=12, ge=1, le=10000)
+    mock_stream_delay: float = Field(default=0.2, ge=0, le=5)
     code_executor_backend: Literal["docker", "disabled"] = "disabled"
     max_parallel_steps: int = Field(default=4, ge=1, le=100)
     worker_job_timeout: int = Field(default=600, ge=1)

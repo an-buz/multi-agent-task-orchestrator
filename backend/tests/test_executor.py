@@ -102,6 +102,20 @@ async def test_execution_order_inputs_and_metrics(dependencies: list[list[int]],
     assert len(provider.calls) == len(dependencies)
 
 
+async def test_deleted_run_stops_worker_without_writes() -> None:
+    repository, run = await make_run([[]])
+    # The worker can still hold an old IN_PROGRESS object after deletion in another session.
+    del repository.runs[run.id]
+    saved_events = list(repository.saved_events)
+    provider = RecordingMock()
+    executor = DAGExecutor(repository, lambda _: provider)
+    assert not await executor.still_running(run)
+    await executor.execute(run)
+    await PlannerExecutor(repository).execute(run)
+    assert provider.calls == []
+    assert repository.saved_events == saved_events
+
+
 async def test_failed_branch_does_not_stop_independent_steps() -> None:
     repository, run = await make_run([[], [], [1], [2]])
     provider = RecordingMock(fail="Task 1")

@@ -7,6 +7,7 @@ from app.core.config import get_settings
 @pytest.fixture(autouse=True)
 def mock_llm_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER_MODE", "mock")
+    monkeypatch.setenv("MOCK_STREAM_DELAY", "0")
     get_settings.cache_clear()
 
     def reject_real_client(*args: object, **kwargs: object) -> None:

@@ -19,6 +19,7 @@ export interface RunStep {
   step_number: number;
   agent_id: string;
   agent_name: string;
+  model?: string | null;
   status: RunStatus;
   depends_on: number[];
   input?: string;
@@ -29,6 +30,7 @@ export interface RunStep {
   prompt_tokens?: number;
   completion_tokens?: number;
   duration_ms?: number;
+  attempt?: number;
 }
 
 export interface RunPlan {
@@ -37,6 +39,7 @@ export interface RunPlan {
 }
 
 export interface RunDetails extends RunSummary {
+  total_time_ms?: number;
   token_budget?: number | null;
   files?: import("@/features/files/queries").ContextFile[];
   task: string;
@@ -66,6 +69,7 @@ export interface CreatedRun {
   status: RunStatus;
 }
 export interface RunEvent {
+  id?: string;
   event: string;
   run_id?: string;
   runId?: string;
@@ -80,6 +84,15 @@ export interface ToolCallData {
   stepNumber: number;
   toolName: string;
   input: { argumentNames: string[] };
+}
+
+export interface StreamChunkData {
+  agentId: string;
+  stepNumber: number;
+  textDelta: string;
+  output: string;
+  reset: boolean;
+  attempt: number;
 }
 
 export interface ToolResultData {

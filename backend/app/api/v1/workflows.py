@@ -8,9 +8,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
+from app.db.workflow_repository import WorkflowRepository
 from app.models.agent import Agent
 from app.models.workflow import Workflow
 from app.schemas.workflow import WorkflowRead, WorkflowWrite, validate_workflow_graph
+from app.services.workflows import WorkflowService
 
 router = APIRouter()
 
@@ -100,8 +102,4 @@ async def update_workflow(
 async def delete_workflow(
     workflow_id: UUID, session: Annotated[AsyncSession, Depends(get_session)]
 ) -> None:
-    workflow = await session.get(Workflow, workflow_id)
-    if workflow is None:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    await session.delete(workflow)
-    await session.commit()
+    await WorkflowService(WorkflowRepository(session)).delete(workflow_id)

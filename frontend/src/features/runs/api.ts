@@ -11,6 +11,10 @@ export function getRun(id: string): Promise<RunDetails> {
   return apiRequest<RunDetails>(`/runs/${id}`);
 }
 
+export function deleteRun(id: string): Promise<void> {
+  return apiRequest<void>(`/runs/${id}`, { method: "DELETE" });
+}
+
 export function createRun(input: CreateRunInput): Promise<RunDetails | CreatedRun> {
   return apiRequest<RunDetails | CreatedRun>("/runs", {
     method: "POST",
@@ -92,9 +96,11 @@ export function subscribeToRun(
   id: string,
   onEvent: (event: RunEvent) => void,
   onError: () => void,
+  options?: { after?: number },
 ) {
   const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
-  const source = new EventSource(`${base}/runs/${id}/events`);
+  const replay = options?.after !== undefined ? `?after=${options.after}` : "";
+  const source = new EventSource(`${base}/runs/${id}/events${replay}`);
   const eventNames = [
     "run:snapshot",
     "plan:ready",
@@ -113,7 +119,9 @@ export function subscribeToRun(
   const listeners = eventNames.map((name) => {
     const listener: EventListener = (message) => {
       try {
-        onEvent(JSON.parse((message as MessageEvent<string>).data) as RunEvent);
+        const incoming = message as MessageEvent<string>;
+        const event = JSON.parse(incoming.data) as RunEvent;
+        onEvent({ ...event, id: incoming.lastEventId || undefined });
       } catch {
         /* Ignore malformed mock events. */
       }

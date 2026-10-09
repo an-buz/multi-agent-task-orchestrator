@@ -46,6 +46,11 @@ async def get_run(run_id: UUID, service: Service) -> RunRead:
     return await service.read(await service.require(run_id))
 
 
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_run(run_id: UUID, service: Service) -> None:
+    await service.delete(run_id)
+
+
 @router.get("/{run_id}/export")
 async def export_run(run_id: UUID, service: Service, format: ExportFormat = "json") -> Response:
     run = await service.read(await service.require(run_id))

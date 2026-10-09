@@ -1,6 +1,8 @@
 """Anthropic, OpenAI, and deterministic mock provider implementations."""
 
+import asyncio
 import json
+from collections.abc import AsyncGenerator
 from typing import Any, cast
 
 from anthropic import AsyncAnthropic
@@ -10,7 +12,7 @@ from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolPara
 
 from app.core.config import Settings, get_settings
 from app.llm.planning import PLANNER_SYSTEM_PROMPT
-from app.llm.provider import LLMResponse, LLMUsage, ToolCall
+from app.llm.provider import LLMChunk, LLMResponse, LLMUsage, ToolCall
 from app.llm.registry import get_model_registry
 
 
@@ -216,6 +218,41 @@ class OpenAIProvider:
 
 class MockLLMProvider:
     """Provider-compatible deterministic local response for development without keys."""
+
+    async def stream(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> AsyncGenerator[LLMChunk]:
+        if tools:
+            response = await self.complete_tools(
+                system_prompt,
+                messages,
+                model,
+                tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        else:
+            response = await self.complete(
+                system_prompt,
+                str(messages[-1]["content"]),
+                model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        settings = get_settings()
+        for offset in range(0, len(response.content), settings.mock_stream_chunk_chars):
+            await asyncio.sleep(settings.mock_stream_delay)
+            yield LLMChunk(
+                text_delta=response.content[offset : offset + settings.mock_stream_chunk_chars]
+            )
+        yield LLMChunk(response=response)
 
     async def complete(
         self,

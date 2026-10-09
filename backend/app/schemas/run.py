@@ -37,6 +37,7 @@ class RunPlanStep(BaseModel):
     step_number: int = Field(ge=1)
     agent_id: UUID
     agent_name: str
+    model: str | None = None
     subtask: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     status: StepStatus = "PENDING"
     depends_on: list[int] = Field(default_factory=list)

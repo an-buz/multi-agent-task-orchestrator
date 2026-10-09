@@ -40,6 +40,9 @@ for (const theme of ["dark", "light"]) {
           "access-control-allow-headers": "content-type",
         };
         if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+        if (pathname === "/api/v1/runs" && request.method() === "GET") {
+          return route.fulfill({ json: { items: [], total: 0 }, headers });
+        }
         if (pathname === "/api/v1/agents") {
           return route.fulfill({ json: { items: [], total: 0 }, headers });
         }
@@ -117,7 +120,7 @@ for (const theme of ["dark", "light"]) {
         expect(confirmed).toBe(false);
         await page.getByLabel("Task for Reviewer").fill("Human-approved review task");
         await page.getByRole("button", { name: "Confirm and run" }).click();
-        await expect(page).toHaveURL(new RegExp(`/runs/${runId}`));
+        await expect(page).toHaveURL(new RegExp(`\\?run=${runId}`));
         expect(edited?.steps).toEqual([
           expect.objectContaining({ subtask: "Human-approved review task" }),
         ]);

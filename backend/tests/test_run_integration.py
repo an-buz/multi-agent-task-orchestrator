@@ -16,7 +16,9 @@ from app.llm.provider import LLMResponse
 from app.llm.providers import MockLLMProvider
 from app.main import app
 from app.models.agent import Agent
+from app.models.context_file import ContextFile, RunFile
 from app.models.run import Run
+from app.models.run_event import RunEvent
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.orchestrator.executor import build_input
@@ -42,6 +44,122 @@ def infrastructure() -> Generator[tuple[str, str]]:
         )
         redis_url = f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0"
         yield database_url, redis_url
+
+
+async def test_workflow_deletion_after_agent_deletion(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_url, _ = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_session():
+        async with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            agent = Agent(
+                id=uuid4(),
+                name=f"Deletion reviewer {uuid4()}",
+                role="Review",
+                system_prompt="Be precise",
+                model="claude-sonnet",
+                temperature=0.2,
+                max_tokens=1024,
+                context_window=128000,
+                tools=[],
+            )
+            workflows = [
+                Workflow(
+                    id=uuid4(),
+                    title="Deletion pipeline",
+                    execution_type="sequential",
+                    steps=[{"step_number": 1, "agent_id": str(agent.id), "depends_on": []}],
+                    graph_layout={},
+                )
+                for _ in range(2)
+            ]
+            session.add_all([agent, *workflows])
+            await session.flush()
+            run = Run(
+                id=uuid4(),
+                workflow_id=workflows[1].id,
+                task="Preserve history",
+                plan={"steps": []},
+                status="COMPLETED",
+            )
+            session.add(run)
+            await session.flush()
+            context_file = ContextFile(
+                id=uuid4(),
+                filename="deletion.md",
+                media_type="text/markdown",
+                size_bytes=4,
+                content=b"test",
+                text_content="test",
+            )
+            session.add(context_file)
+            await session.flush()
+            session.add_all(
+                [
+                    RunFile(run_id=run.id, file_id=context_file.id),
+                    RunEvent(run_id=run.id, event="task:finished", data={}),
+                    RunStep(
+                        run_id=run.id,
+                        agent_id=agent.id,
+                        step_number=1,
+                        agent_name=agent.name,
+                        agent_config={},
+                        depends_on=[],
+                        subtask="Test",
+                        status="COMPLETED",
+                    ),
+                ]
+            )
+            await session.commit()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            assert (await client.delete(f"/api/v1/agents/{agent.id}")).status_code == 204
+            path = f"/api/v1/workflows/{workflows[0].id}"
+            assert (await client.delete(path)).status_code == 204
+            assert (await client.get(path)).status_code == 404
+            assert (await client.delete(path)).status_code == 404
+            retained_path = f"/api/v1/workflows/{workflows[1].id}"
+            response = await client.delete(retained_path)
+            assert response.status_code == 409
+            assert response.json()["error"]["code"] == "workflow_has_runs"
+            assert "Runs page" in response.json()["error"]["message"]
+            assert (await client.get(retained_path)).status_code == 200
+            async with sessions() as session:
+                assert await session.get(Run, run.id) is not None
+                persisted = await session.get(Run, run.id)
+                assert persisted is not None
+                persisted.status = "IN_PROGRESS"
+                await session.commit()
+            run_path = f"/api/v1/runs/{run.id}"
+            assert (await client.delete(run_path)).status_code == 409
+            async with sessions() as session:
+                persisted = await session.get(Run, run.id)
+                assert persisted is not None
+                persisted.status = "COMPLETED"
+                await session.commit()
+            assert (await client.delete(run_path)).status_code == 204
+            assert (await client.delete(run_path)).status_code == 404
+            assert (await client.get(run_path)).status_code == 404
+            async with sessions() as session:
+                assert await session.get(Run, run.id) is None
+                for model in (RunStep, RunEvent, RunFile):
+                    assert await session.scalar(select(model).where(model.run_id == run.id)) is None
+                assert await session.get(ContextFile, context_file.id) is not None
+            assert (await client.delete(retained_path)).status_code == 204
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
+        await engine.dispose()
 
 
 async def test_file_upload_run_snapshot_and_deletion(
@@ -371,6 +489,19 @@ async def test_confirm_queue_execution_and_redelivery(
                 events = await RunRepository(session).events(UUID(run_id), 0)
                 assert events[0].event == "plan:ready"
                 assert events[-1].event == "task:finished"
+                chunks = [event for event in events if event.event == "agent:stream_chunk"]
+                assert chunks
+                for event in chunks:
+                    step = next(s for s in steps if s.step_number == event.data["stepNumber"])
+                    assert event.data["attempt"] == step.attempt
+                    if event.data["reset"]:
+                        assert event.data["output"] == ""
+                for step in steps:
+                    streamed = [
+                        event for event in chunks if event.data["stepNumber"] == step.step_number
+                    ]
+                    if streamed:
+                        assert streamed[-1].data["output"] == step.output
                 assert sum(event.event == "agent:completed" for event in events) == (
                     1 if deferred_dispatch else 2
                 )

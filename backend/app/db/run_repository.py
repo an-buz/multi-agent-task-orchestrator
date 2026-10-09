@@ -57,6 +57,10 @@ class RunRepository:
     async def save(self) -> None:
         await self.session.commit()
 
+    async def delete(self, run: Run) -> None:
+        await self.session.delete(run)
+        await self.session.commit()
+
     async def refresh(self, run: Run) -> None:
         await self.session.refresh(run)
 

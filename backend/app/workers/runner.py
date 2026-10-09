@@ -4,6 +4,7 @@ import asyncio
 import signal
 import sys
 
+import structlog
 from arq.worker import Worker
 
 from app.workers.settings import WorkerSettings
@@ -33,5 +34,12 @@ async def main() -> None:
         await worker.close()
 
 
+def run() -> None:
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        structlog.get_logger(__name__).info("worker_stopped", reason="keyboard_interrupt")
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()

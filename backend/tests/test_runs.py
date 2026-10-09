@@ -1,6 +1,6 @@
 """Tests for the run plan review API."""
 
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
 from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -79,8 +79,42 @@ class MemoryRunRepository(RunRepository):
     async def save(self) -> None:
         return None
 
+    async def delete(self, run: Run) -> None:
+        del self.runs[run.id]
+        self.saved_steps = [step for step in self.saved_steps if step.run_id != run.id]
+
     def emit(self, run_id: UUID, event: str, data: dict[str, Any]) -> None:
         self.saved_events.append((event, data))
+
+
+@pytest.mark.parametrize(
+    ("status", "allowed"),
+    [
+        ("AWAITING_CONFIRMATION", True),
+        ("COMPLETED", True),
+        ("FAILED", True),
+        ("CANCELLED", True),
+        ("PLANNING", False),
+        ("IN_PROGRESS", False),
+        ("PENDING", False),
+    ],
+)
+async def test_delete_run_state_rules(status: str, allowed: bool) -> None:
+    repository = MemoryRunRepository()
+    run = Run(id=uuid4(), status=status)
+    repository.add(run)
+    service = RunService(repository)
+    if allowed:
+        await service.delete(run.id)
+        assert await repository.get(run.id) is None
+        with pytest.raises(RunError) as missing:
+            await service.delete(run.id)
+        assert missing.value.status_code == 404
+    else:
+        with pytest.raises(RunError) as active:
+            await service.delete(run.id)
+        assert active.value.status_code == 409
+        assert await repository.get(run.id) is run
 
 
 @pytest.fixture
@@ -206,3 +240,43 @@ def test_sse_checks_run_and_validates_cursor_before_opening(test_client: TestCli
             ).status_code
             == 422
         )
+        assert test_client.get(f"/api/v1/runs/{uuid4()}/events?after={cursor}").status_code == 422
+
+
+def test_sse_query_replay_and_reconnect_header_priority(
+    test_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = test_client.post(
+        "/api/v1/runs",
+        json={
+            "workflow_id": str(WORKFLOW_ID),
+            "task": "Replay QA",
+        },
+    ).json()
+    cursors: list[int | None] = []
+
+    async def fake_stream(
+        sessions: object, run_id: UUID, after: int | None
+    ) -> AsyncIterator[dict[str, str]]:
+        cursors.append(after)
+        yield {"event": "run:snapshot", "data": "{}"}
+
+    monkeypatch.setattr("app.api.v1.events.stream_run", fake_stream)
+    assert test_client.get(f"/api/v1/runs/{created['id']}/events?after=0").status_code == 200
+    assert (
+        test_client.get(
+            f"/api/v1/runs/{created['id']}/events?after=0", headers={"Last-Event-ID": "12"}
+        ).status_code
+        == 200
+    )
+    assert cursors == [0, 12]
+
+
+async def test_run_step_model_comes_from_execution_snapshot() -> None:
+    repository = MemoryRunRepository()
+    service = RunService(repository)
+    created = await service.create(RunCreate(workflow_id=WORKFLOW_ID, task="Snapshot QA"))
+    await PlannerExecutor(repository).execute(repository.runs[created.id])
+    repository.agent.model = "claude-haiku"
+    read = await service.read(repository.runs[created.id])
+    assert read.plan and read.plan.steps[0].model == "claude-sonnet"

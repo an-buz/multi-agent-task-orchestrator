@@ -14,7 +14,7 @@ import structlog
 from app.core.config import get_settings
 from app.db.file_repository import FileRepository
 from app.db.run_repository import RunRepository
-from app.llm.provider import LLMProvider, LLMResponse
+from app.llm.provider import LLMProvider, LLMResponse, StreamingLLMProvider
 from app.llm.providers import create_provider
 from app.llm.retry import llm_retrying
 from app.models.run import Run
@@ -105,7 +105,47 @@ class DAGExecutor:
                 )
                 async for attempt in llm_retrying():
                     with attempt:
-                        if definitions:
+                        if isinstance(provider, StreamingLLMProvider):
+                            identity = {
+                                "agentId": str(step.agent_id),
+                                "stepNumber": step.step_number,
+                                "attempt": step.attempt,
+                            }
+                            if on_tool is not None:
+                                on_tool(
+                                    "agent:stream_chunk",
+                                    {**identity, "textDelta": "", "reset": True},
+                                )
+                            terminal: LLMResponse | None = None
+                            async with asyncio.timeout(get_settings().llm_request_timeout):
+                                stream = provider.stream(
+                                    str(config["system_prompt"]),
+                                    messages,
+                                    str(config["model"]),
+                                    definitions,
+                                    temperature=float(config["temperature"]),
+                                    max_tokens=max_tokens,
+                                )
+                                try:
+                                    async for chunk in stream:
+                                        if terminal is not None:
+                                            raise ValueError("Chunk after terminal response")
+                                        if chunk.text_delta and on_tool is not None:
+                                            on_tool(
+                                                "agent:stream_chunk",
+                                                {
+                                                    **identity,
+                                                    "textDelta": chunk.text_delta,
+                                                    "reset": False,
+                                                },
+                                            )
+                                        terminal = chunk.response
+                                finally:
+                                    await stream.aclose()
+                            if terminal is None:
+                                raise ValueError("Stream ended without response usage")
+                            response = terminal
+                        elif definitions:
                             response = await provider.complete_tools(
                                 str(config["system_prompt"]),
                                 messages,
@@ -205,8 +245,8 @@ class DAGExecutor:
                     )
 
     async def execute(self, run: Run) -> None:
-        await self.repository.get(run.id, lock=True)
-        if run.status != "IN_PROGRESS":
+        current = await self.repository.get(run.id, lock=True)
+        if current is None or current.status != "IN_PROGRESS":
             await self.repository.save()
             return
         steps = await self.repository.steps(run.id)
@@ -233,9 +273,11 @@ class DAGExecutor:
         await self.repository.save()
         active: dict[asyncio.Task[StepResult], RunStep] = {}
         tool_events: list[tuple[EventName, dict[str, Any]]] = []
+        event_ready = asyncio.Event()
 
         def on_tool(name: EventName, data: dict[str, Any]) -> None:
             tool_events.append((name, data))
+            event_ready.set()
 
         async def flush_tool_events() -> bool:
             if not tool_events:
@@ -243,8 +285,14 @@ class DAGExecutor:
             if not await self.still_running(run):
                 return False
             for name, data in tool_events:
+                if name == "agent:stream_chunk":
+                    step = by_number[int(data["stepNumber"])]
+                    output = ("" if data["reset"] else step.output or "") + str(data["textDelta"])
+                    step.output = output or None
+                    data["output"] = output
                 self.repository.emit(run.id, name, data)
             tool_events.clear()
+            event_ready.clear()
             await self.repository.save()
             return True
 
@@ -277,6 +325,7 @@ class DAGExecutor:
                         continue
                     step.status = "IN_PROGRESS"
                     step.error = None
+                    step.output = None
                     self.status_event(run, step)
                     await self.repository.save()
                     self.update_totals(run, steps)
@@ -288,11 +337,17 @@ class DAGExecutor:
                     )
                 if not active:
                     break
-                done, _ = await asyncio.wait(
-                    active,
-                    timeout=get_settings().run_poll_interval,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
+                notification = asyncio.create_task(event_ready.wait())
+                try:
+                    ready, _ = await asyncio.wait(
+                        [*active, notification],
+                        timeout=get_settings().run_poll_interval,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    done = {task for task in active if task in ready}
+                finally:
+                    notification.cancel()
+                    await asyncio.gather(notification, return_exceptions=True)
                 if not await flush_tool_events():
                     return
                 if not done:
@@ -361,8 +416,8 @@ class DAGExecutor:
 
     async def still_running(self, run: Run) -> bool:
         # Serialize checkpoints with cancel/retry; refresh avoids stale ORM status.
-        await self.repository.get(run.id, lock=True)
-        if run.status != "IN_PROGRESS":
+        current = await self.repository.get(run.id, lock=True)
+        if current is None or current.status != "IN_PROGRESS":
             await self.repository.save()
             return False
         return True

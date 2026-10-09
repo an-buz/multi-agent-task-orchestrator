@@ -1,5 +1,6 @@
 import DashboardContent from "./dashboard-content";
+import { Suspense } from "react";
 
 export default function DashboardPage() {
-  return <DashboardContent />;
+  return <Suspense fallback={<p>Loading dashboard…</p>}><DashboardContent /></Suspense>;
 }

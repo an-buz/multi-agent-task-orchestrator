@@ -46,6 +46,7 @@ async function mockApplication(page: Page) {
     ] } });
     if (url.pathname.endsWith("/agents/tools")) return route.fulfill({ headers, json: { items: [] } });
     if (url.pathname.endsWith("/agents")) return route.fulfill({ headers, json: { items: [agent], total: 1 } });
+    if (url.pathname === "/api/v1/runs" && request.method() === "GET") return route.fulfill({ headers, json: { items: [state.run], total: 1 } });
     if (url.pathname.endsWith("/workflows")) return route.fulfill({ headers, json: { items: [{
       id: workflowId, title: "QA workflow", execution_type: "sequential", steps: [],
       graph_layout: {}, created_at: timestamp, updated_at: timestamp,
@@ -90,7 +91,7 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByRole("spinbutton", { name: "Max tokens", exact: true })).toHaveValue("2048");
     });
 
-    test("dashboard selection is controlled and demo controls respond", async ({ page }) => {
+    test("dashboard selection is controlled and monitoring controls respond", async ({ page }) => {
       await mockApplication(page);
       const errors: string[] = [];
       page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
@@ -99,7 +100,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByRole("option", { name: "QA workflow" }).click();
       await expect(page.getByRole("combobox", { name: "Workflow", exact: true })).toContainText("QA workflow");
       await page.getByRole("button", { name: "Clear", exact: true }).click();
-      await expect(page.getByText("Sample console cleared.")).toBeVisible();
+      await expect(page.getByText("Console cleared. Waiting for new events.")).toBeVisible();
       await expect(page.getByText("Cloned repository", { exact: false })).toHaveCount(0);
       await page.getByRole("button", { name: "More pipeline options" }).click();
       await expect(page.getByRole("button", { name: "Manage workflows" })).toBeVisible();

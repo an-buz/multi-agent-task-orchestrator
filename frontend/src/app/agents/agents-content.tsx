@@ -18,6 +18,7 @@ import {
 import { Select, SelectTrigger, SelectContent, SelectItem } from "@/components/ui/select";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { Input } from "@/components/ui/input";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 import { useAgents, useDeleteAgent, type Agent } from "@/features/agents/queries";
@@ -36,6 +37,7 @@ export default function AgentsContent() {
   const [modelFilter, setModelFilter] = useState("all");
   const [selected, setSelected] = useState<Agent | null>(null);
   const [editing, setEditing] = useState<Agent | null>(null);
+  const [deleting, setDeleting] = useState<Agent | null>(null);
   const agents = useMemo(() => agentsQuery.data?.items ?? [], [agentsQuery.data?.items]);
   const models = useMemo(() => [...new Set(agents.map((agent) => agent.model))].sort(), [agents]);
   const filtered = agents.filter((agent) => {
@@ -47,7 +49,6 @@ export default function AgentsContent() {
   });
 
   async function removeAgent(agent: Agent) {
-    if (!window.confirm(`Delete “${agent.name}”? This cannot be undone.`)) return;
     await deleteMutation.mutateAsync(agent.id);
     if (selected?.id === agent.id) setSelected(null);
   }
@@ -196,7 +197,7 @@ export default function AgentsContent() {
                     <Pencil size={18} />
                   </Button>
                   <Button
-                    onClick={() => void removeAgent(agent)}
+                    onClick={() => { deleteMutation.reset(); setDeleting(agent); }}
                     disabled={deleteMutation.isPending}
                     aria-label={`Delete ${agent.name}`}
                     size="icon"
@@ -274,6 +275,9 @@ export default function AgentsContent() {
       {editing && (
         <CreateAgentDialog key={editing.id} agent={editing} onClose={() => setEditing(null)} />
       )}
+      {deleting && <DeleteConfirmationDialog key={deleting.id} name={deleting.name} entity="agent"
+        pending={deleteMutation.isPending} onClose={() => setDeleting(null)}
+        onConfirm={() => removeAgent(deleting)} />}
     </main>
   );
 }

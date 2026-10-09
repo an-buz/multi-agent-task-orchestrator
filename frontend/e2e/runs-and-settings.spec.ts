@@ -24,7 +24,7 @@ const run = {
   ],
 };
 
-test("creates a run, previews the plan, confirms it, and opens run details", async ({ page }) => {
+test("creates a run, previews the plan, confirms it, and monitors it on Dashboard", async ({ page }) => {
   let confirmed = false;
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
@@ -68,6 +68,8 @@ test("creates a run, previews the plan, confirms it, and opens run details", asy
       });
     if (url.pathname === `/api/v1/runs/${runId}/plan`)
       return route.fulfill({ json: run, headers: cors });
+    if (url.pathname === "/api/v1/runs" && route.request().method() === "GET")
+      return route.fulfill({ json: { items: [], total: 0 }, headers: cors });
     if (url.pathname === `/api/v1/runs/${runId}/confirm`) {
       confirmed = true;
       return route.fulfill({ json: { ...run, status: "IN_PROGRESS" }, headers: cors });
@@ -98,9 +100,9 @@ test("creates a run, previews the plan, confirms it, and opens run details", asy
   await page.getByRole("button", { name: /Decompose and Run/ }).click();
   await expect(page.getByRole("heading", { name: "Plan preview" })).toBeVisible();
   await page.getByRole("button", { name: "Confirm and run" }).click();
-  await expect(page).toHaveURL(new RegExp(`/runs/${runId}`));
-  await expect(page.getByRole("heading", { name: "Run details" })).toBeVisible();
-  await expect(page.getByText("Developer", { exact: false })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`\\?run=${runId}`));
+  await expect(page.getByRole("heading", { name: "Orchestration Center" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Inspect step 1: Developer" })).toBeVisible();
 });
 
 test("saves default settings through the settings API", async ({ page }) => {

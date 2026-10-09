@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.schemas.run import RunPlan, RunRead, StepStatus
 
@@ -12,6 +12,7 @@ EventName = Literal[
     "plan:ready",
     "task:started",
     "agent:status_change",
+    "agent:stream_chunk",
     "agent:completed",
     "agent:failed",
     "agent:tool_call",
@@ -46,6 +47,13 @@ class StepIdentity(EventData):
 
 class StatusChanged(StepIdentity):
     status: StepStatus
+
+
+class StreamChunk(StepIdentity):
+    textDelta: str
+    output: str
+    reset: bool = False
+    attempt: int = Field(ge=1)
 
 
 class TokenUsage(EventData):
@@ -103,6 +111,7 @@ PAYLOAD_MODELS: dict[str, type[EventData]] = {
     "plan:ready": PlanReady,
     "task:started": TaskStarted,
     "agent:status_change": StatusChanged,
+    "agent:stream_chunk": StreamChunk,
     "agent:completed": StepCompleted,
     "agent:failed": StepFailed,
     "agent:tool_call": ToolCalled,

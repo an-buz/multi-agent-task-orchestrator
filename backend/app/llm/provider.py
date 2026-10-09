@@ -1,6 +1,7 @@
 """Provider interface shared by LLM backends."""
 
-from typing import Any, Protocol
+from collections.abc import AsyncGenerator
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +26,29 @@ class LLMResponse(BaseModel):
     usage: LLMUsage
     tool_calls: list[ToolCall] = Field(default_factory=list)
     message: dict[str, Any] = Field(default_factory=dict)
+
+
+class LLMChunk(BaseModel):
+    """Text delta or terminal response containing authoritative usage and tool calls."""
+
+    text_delta: str = ""
+    response: LLMResponse | None = None
+
+
+@runtime_checkable
+class StreamingLLMProvider(Protocol):
+    """Optional streaming capability; complete-only providers remain supported."""
+
+    def stream(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> AsyncGenerator[LLMChunk]: ...
 
 
 class LLMProvider(Protocol):

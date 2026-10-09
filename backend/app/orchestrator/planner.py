@@ -159,8 +159,8 @@ class PlannerExecutor:
 
     async def execute(self, run: Run) -> None:
         run_id = run.id
-        await self.repository.get(run_id, lock=True)
-        if run.status != "PLANNING":
+        current = await self.repository.get(run_id, lock=True)
+        if current is None or current.status != "PLANNING":
             await self.repository.save()
             return
         steps: list[RunStep] = await self.repository.steps(run_id)

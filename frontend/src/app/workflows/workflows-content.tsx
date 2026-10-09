@@ -16,6 +16,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { GitBranch, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Sidebar } from "@/components/sidebar";
@@ -117,6 +118,7 @@ export default function WorkflowsContent() {
   const agentsQuery = useAgents();
   const saveMutation = useSaveWorkflow();
   const deleteMutation = useDeleteWorkflow();
+  const [deleting, setDeleting] = useState<Workflow | null>(null);
   const [editing, setEditing] = useState<Workflow | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -358,10 +360,8 @@ export default function WorkflowsContent() {
                     aria-label={`Delete ${workflow.title}`}
                     variant="destructive"
                     size="icon"
-                    onClick={() => {
-                      if (window.confirm(`Delete "${workflow.title}"?`))
-                        void deleteMutation.mutateAsync(workflow.id);
-                    }}
+                    disabled={deleteMutation.isPending}
+                    onClick={() => { deleteMutation.reset(); setDeleting(workflow); }}
                   >
                     <Trash2 size={18} />
                   </Button>
@@ -371,6 +371,9 @@ export default function WorkflowsContent() {
           </div>
         </div>
       </section>
+      {deleting && <DeleteConfirmationDialog key={deleting.id} name={deleting.title} entity="workflow"
+        pending={deleteMutation.isPending} onClose={() => setDeleting(null)}
+        onConfirm={async () => { await deleteMutation.mutateAsync(deleting.id); }} />}
       {editorOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/80 p-3 sm:p-6">
           <section

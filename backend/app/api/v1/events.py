@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, Query
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.v1.runs import Service
@@ -18,11 +18,14 @@ async def run_events(
     run_id: UUID,
     service: Service,
     last_event_id: Annotated[int | None, Header(ge=0, le=9223372036854775807)] = None,
+    after: Annotated[int | None, Query(ge=0, le=9223372036854775807)] = None,
 ) -> EventSourceResponse:
     await service.require(run_id)
     await service.repository.release()
     return EventSourceResponse(
-        stream_run(async_session_factory, run_id, last_event_id),
+        stream_run(
+            async_session_factory, run_id, last_event_id if last_event_id is not None else after
+        ),
         ping=15,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

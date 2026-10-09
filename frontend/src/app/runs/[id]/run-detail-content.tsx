@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { RunStep } from "@/features/runs/types";
+import type { RunDetails, RunStep } from "@/features/runs/types";
 import { contextFileDownloadUrl } from "@/features/files/queries";
 import {
   cancelRun,
@@ -53,6 +53,28 @@ export default function RunDetailContent({ id }: { id: string }) {
         id,
         (event) => {
           setStreamError(false);
+          const data = event.data ?? event.payload;
+          if (event.event === "agent:stream_chunk" && data &&
+              typeof data.stepNumber === "number" && typeof data.output === "string" &&
+              typeof data.attempt === "number") {
+            // Absolute output makes repeated SSE delivery idempotent.
+            void client.cancelQueries({ queryKey: [...runsQueryKey, id] });
+            client.setQueryData<RunDetails>([...runsQueryKey, id], (current) => {
+              if (!current?.plan) return current;
+              const update = (step: RunStep) => {
+                if (step.step_number !== data.stepNumber ||
+                    (step.attempt ?? 0) > (data.attempt as number)) return step;
+                if (["COMPLETED", "FAILED", "CANCELLED"].includes(step.status) &&
+                    (step.attempt ?? 0) >= (data.attempt as number)) return step;
+                return { ...step, status: "IN_PROGRESS" as const,
+                  attempt: data.attempt as number, output: data.output as string };
+              };
+              return { ...current, plan: Array.isArray(current.plan)
+                ? current.plan.map(update)
+                : { ...current.plan, steps: current.plan.steps.map(update) } };
+            });
+            return;
+          }
           setEvents((current) =>
             [
               ...current,
@@ -172,9 +194,12 @@ export default function RunDetailContent({ id }: { id: string }) {
                         <p className="mt-2 text-xs text-slate-400">Input: {step.input}</p>
                       )}
                       {step.output && (
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-slate-300">
+                        <p aria-label={`Output for step ${step.step_number}`} className="mt-2 whitespace-pre-wrap text-sm text-foreground">
                           {step.output}
                         </p>
+                      )}
+                      {step.status === "IN_PROGRESS" && (
+                        <p role="status" className="mt-2 text-xs text-muted-foreground">Generating response…</p>
                       )}
                       {step.error && (
                         <p role="alert" className="mt-2 text-xs text-rose-300">

@@ -40,6 +40,12 @@ class RunService:
             raise RunError("Run not found", 404)
         return run
 
+    async def delete(self, run_id: UUID) -> None:
+        run = await self.require(run_id, lock=True)
+        if run.status not in {"AWAITING_CONFIRMATION", "COMPLETED", "FAILED", "CANCELLED"}:
+            raise RunError("Cancel this run before deleting it; planning or execution is active.")
+        await self.repository.delete(run)
+
     async def read(self, run: Run) -> RunRead:
         workflow = await self.repository.workflow(run.workflow_id)
         if workflow is None:
@@ -50,6 +56,7 @@ class RunService:
             planned = by_number.get(step.step_number)
             if planned is not None:
                 planned.status = cast(StepStatus, step.status)
+                planned.model = str(step.agent_config["model"])
                 planned.input = step.input
                 planned.output = step.output
                 planned.error = step.error

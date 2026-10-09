@@ -41,7 +41,10 @@ async def stream_run(
     yield initial
     while True:
         async with sessions() as session:
-            events = await RunRepository(session).events(run_id, cursor)
+            repository = RunRepository(session)
+            if await repository.get(run_id) is None:
+                return
+            events = await repository.events(run_id, cursor)
         for event in events:
             cursor = event.id
             yield {
