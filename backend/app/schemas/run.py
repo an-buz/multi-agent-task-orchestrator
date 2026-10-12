@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.base import StorageModel
 from app.schemas.context_file import ContextFileRead
 
 RunStatus = Literal[
@@ -19,7 +20,7 @@ RunStatus = Literal[
 StepStatus = Literal["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "CANCELLED"]
 
 
-class RunCreate(BaseModel):
+class RunCreate(StorageModel):
     """Input for a new workflow run."""
 
     model_config = ConfigDict(extra="forbid")
@@ -31,7 +32,7 @@ class RunCreate(BaseModel):
     token_budget: int | None = Field(default=None, ge=1, strict=True)
 
 
-class RunPlanStep(BaseModel):
+class RunPlanStep(StorageModel):
     """A planned workflow step, ready for user review."""
 
     step_number: int = Field(ge=1)

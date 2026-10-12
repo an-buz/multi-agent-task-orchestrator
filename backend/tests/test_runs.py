@@ -64,7 +64,7 @@ class MemoryRunRepository(RunRepository):
     async def get(self, run_id: UUID, *, lock: bool = False) -> Run | None:
         return self.runs.get(run_id)
 
-    async def workflow(self, workflow_id: UUID) -> Workflow | None:
+    async def workflow(self, workflow_id: UUID, *, lock: bool = False) -> Workflow | None:
         return self.saved_workflow if workflow_id == self.saved_workflow.id else None
 
     async def agents(self, agent_ids: set[UUID]) -> dict[UUID, Agent]:

@@ -90,17 +90,18 @@ class LLMPlanner:
                     )
                 async for attempt in llm_retrying():
                     with attempt:
-                        response = await provider.complete(
-                            PLANNER_SYSTEM_PROMPT,
-                            json.dumps(request, ensure_ascii=False),
-                            model,
-                            temperature=float(config["temperature"]),
-                            max_tokens=(
-                                min(int(config["max_tokens"]), remaining)
-                                if remaining is not None
-                                else int(config["max_tokens"])
-                            ),
-                        )
+                        async with asyncio.timeout(get_settings().llm_request_timeout):
+                            response = await provider.complete(
+                                PLANNER_SYSTEM_PROMPT,
+                                json.dumps(request, ensure_ascii=False),
+                                model,
+                                temperature=float(config["temperature"]),
+                                max_tokens=(
+                                    min(int(config["max_tokens"]), remaining)
+                                    if remaining is not None
+                                    else int(config["max_tokens"])
+                                ),
+                            )
                 result.prompt_tokens += response.usage.input_tokens
                 result.completion_tokens += response.usage.output_tokens
                 if budget is not None and result.prompt_tokens + result.completion_tokens > int(

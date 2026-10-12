@@ -6,17 +6,19 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.base import StorageModel
+
 WorkflowType = Literal["sequential", "parallel", "hybrid"]
 
 
-class WorkflowStepInput(BaseModel):
+class WorkflowStepInput(StorageModel):
     step_number: int = Field(ge=1)
     agent_id: UUID
     depends_on: list[int] = Field(default_factory=list)
     input_transform: str = ""
 
 
-class WorkflowWrite(BaseModel):
+class WorkflowWrite(StorageModel):
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]
     execution_type: WorkflowType
     steps: list[WorkflowStepInput] = Field(min_length=1, max_length=100)

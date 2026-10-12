@@ -22,11 +22,14 @@ async def stream_run(
     async with sessions() as session:
         repository = RunRepository(session)
         service = RunService(repository)
-        run = await service.require(run_id, lock=True)
+        run = await repository.get(run_id, lock=True)
+        if run is None:
+            return
         snapshot = await service.read(run)
         watermark = await repository.event_cursor(run_id)
         await repository.release()
-    cursor = watermark if after is None else after
+    # A stale cursor from another run must not suppress this run's future events.
+    cursor = watermark if after is None else min(after, watermark)
     initial = {
         "event": "run:snapshot",
         "data": EventEnvelope(

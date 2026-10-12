@@ -147,11 +147,13 @@ class OpenAIProvider:
         )
         content = response.choices[0].message.content or ""
         usage = response.usage
+        if usage is None:
+            raise ValueError("Provider response has no token usage")
         return LLMResponse(
             content=content,
             usage=LLMUsage(
-                input_tokens=usage.prompt_tokens if usage else 0,
-                output_tokens=usage.completion_tokens if usage else 0,
+                input_tokens=usage.prompt_tokens,
+                output_tokens=usage.completion_tokens,
             ),
         )
 
@@ -194,11 +196,13 @@ class OpenAIProvider:
         message = response.choices[0].message
         calls = [call for call in message.tool_calls or [] if call.type == "function"]
         usage = response.usage
+        if usage is None:
+            raise ValueError("Provider response has no token usage")
         return LLMResponse(
             content=message.content or "",
             usage=LLMUsage(
-                input_tokens=usage.prompt_tokens if usage else 0,
-                output_tokens=usage.completion_tokens if usage else 0,
+                input_tokens=usage.prompt_tokens,
+                output_tokens=usage.completion_tokens,
             ),
             tool_calls=[
                 ToolCall(

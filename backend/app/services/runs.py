@@ -87,7 +87,8 @@ class RunService:
         )
 
     async def create(self, payload: RunCreate) -> RunRead:
-        workflow = await self.repository.workflow(payload.workflow_id)
+        # Protect the source graph from deletion/edits until the snapshot is committed.
+        workflow = await self.repository.workflow(payload.workflow_id, lock=True)
         if workflow is None:
             raise RunError("Workflow not found", 404)
         agent_ids = {UUID(str(step["agent_id"])) for step in workflow.steps}

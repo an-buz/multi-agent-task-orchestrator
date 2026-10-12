@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections.abc import Generator
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -694,3 +695,201 @@ async def check_planner_control(
     assert detail["planning_error"]["code"] == "invalid_plan"
     assert detail["total_tokens"] == 36
     assert (await client.post(f"/api/v1/runs/{run_id}/confirm")).status_code == 409
+
+
+@pytest.mark.parametrize("deletion_first", [False, True])
+async def test_run_creation_serializes_with_workflow_deletion(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch, deletion_first: bool
+) -> None:
+    from app.db.workflow_repository import WorkflowRepository
+    from app.schemas.run import RunCreate
+    from app.services.runs import RunError, RunService
+    from app.services.workflows import WorkflowError, WorkflowService
+
+    database_url, _ = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    owner_locked, contender_started, release_owner = (
+        asyncio.Event(),
+        asyncio.Event(),
+        asyncio.Event(),
+    )
+
+    class CoordinatedRuns(RunRepository):
+        async def workflow(self, workflow_id: UUID, *, lock: bool = False) -> Workflow | None:
+            if lock and deletion_first:
+                contender_started.set()
+            workflow = await super().workflow(workflow_id, lock=lock)
+            if lock and not deletion_first:
+                owner_locked.set()
+                await release_owner.wait()
+            return workflow
+
+    class CoordinatedWorkflows(WorkflowRepository):
+        async def get_for_deletion(self, workflow_id: UUID) -> Workflow | None:
+            if not deletion_first:
+                contender_started.set()
+            workflow = await super().get_for_deletion(workflow_id)
+            if deletion_first:
+                owner_locked.set()
+                await release_owner.wait()
+            return workflow
+
+    tasks = []
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            agent = Agent(
+                id=uuid4(),
+                name=f"Race reviewer {uuid4()}",
+                role="Review",
+                system_prompt="Be precise",
+                model="claude-sonnet",
+                temperature=0.2,
+                max_tokens=1024,
+                context_window=128000,
+                tools=[],
+            )
+            workflow = Workflow(
+                id=uuid4(),
+                title="Race pipeline",
+                execution_type="sequential",
+                steps=[{"step_number": 1, "agent_id": str(agent.id), "depends_on": []}],
+                graph_layout={},
+            )
+            session.add_all([agent, workflow])
+            await session.commit()
+
+        async def create():
+            async with sessions() as session:
+                return await RunService(CoordinatedRuns(session)).create(
+                    RunCreate(workflow_id=workflow.id, task="Review")
+                )
+
+        async def delete():
+            async with sessions() as session:
+                await WorkflowService(CoordinatedWorkflows(session)).delete(workflow.id)
+
+        owner = asyncio.create_task(delete() if deletion_first else create())
+        tasks.append(owner)
+        await asyncio.wait_for(owner_locked.wait(), 3)
+        contender = asyncio.create_task(create() if deletion_first else delete())
+        tasks.append(contender)
+        await asyncio.wait_for(contender_started.wait(), 3)
+        release_owner.set()
+        results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 5)
+        assert not isinstance(results[0], BaseException)
+        error = results[1]
+        if deletion_first:
+            assert isinstance(error, RunError)
+            assert error.status_code == 404
+            async with sessions() as session:
+                assert await session.get(Workflow, workflow.id) is None
+        else:
+            assert isinstance(error, WorkflowError)
+            assert error.code == "workflow_has_runs"
+            async with sessions() as session:
+                assert await session.scalar(select(Run.id).where(Run.workflow_id == workflow.id))
+    finally:
+        release_owner.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await engine.dispose()
+
+
+async def test_catalogue_domain_errors_and_sse_cursor(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_url, _ = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.api.v1.runs.enqueue_plan", AsyncMock())
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_session():
+        async with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            payload = {
+                "name": f"CRUD reviewer {uuid4()}",
+                "role": "Review",
+                "system_prompt": "Be precise",
+                "model": "claude-sonnet",
+            }
+            response = await client.post("/api/v1/agents", json=payload)
+            assert response.status_code == 201
+            agent_id = response.json()["id"]
+            duplicate = await client.post("/api/v1/agents", json=payload)
+            assert duplicate.status_code == 409
+            assert duplicate.json()["error"]["code"] == "duplicate_agent_name"
+            for extra in [{"tools": ["terminal_access"]}, {"context_window": 200001}]:
+                invalid = await client.put(f"/api/v1/agents/{agent_id}", json={**payload, **extra})
+                assert invalid.status_code == 422
+                assert invalid.json()["error"]["code"] == "invalid_agent"
+            assert (await client.get(f"/api/v1/agents/{agent_id}")).json()["tools"] == []
+            definition = {
+                "title": "Review pipeline",
+                "execution_type": "sequential",
+                "steps": [{"step_number": 1, "agent_id": agent_id, "depends_on": []}],
+            }
+            for steps in [
+                [{"step_number": 1, "agent_id": str(uuid4()), "depends_on": []}],
+                [{"step_number": 1, "agent_id": agent_id, "depends_on": [1]}],
+            ]:
+                invalid = await client.post(
+                    "/api/v1/workflows", json={**definition, "steps": steps}
+                )
+                assert invalid.status_code == 422
+                assert invalid.json()["error"]["code"] == "invalid_workflow"
+                assert invalid.json()["error"]["details"]["errors"]
+            created = await client.post("/api/v1/workflows", json=definition)
+            assert created.status_code == 201
+            workflow_id = created.json()["id"]
+            update = await client.put(
+                f"/api/v1/workflows/{workflow_id}", json={**definition, "title": "Updated pipeline"}
+            )
+            assert update.status_code == 200
+            assert update.json()["title"] == "Updated pipeline"
+            assert (await client.get("/api/v1/workflows")).status_code == 200
+            assert (await client.get("/api/v1/agents")).status_code == 200
+            response = await client.post(
+                "/api/v1/runs", json={"workflow_id": workflow_id, "task": "Review"}
+            )
+            assert response.status_code == 201
+            run_id = UUID(response.json()["id"])
+
+        stream = stream_run(sessions, run_id, 9223372036854775807)
+        try:
+            assert (await anext(stream))["event"] == "run:snapshot"
+            async with sessions() as session:
+                repository = RunRepository(session)
+                repository.emit(run_id, "task:cancelled", {"taskId": str(run_id)})
+                await repository.save()
+            event = await asyncio.wait_for(anext(stream), 2)
+            assert event["event"] == "task:cancelled"
+        finally:
+            await stream.aclose()
+
+        # Simulate deletion after route preflight but before generator snapshot.
+        async with sessions() as session:
+            run = await RunRepository(session).get(run_id)
+            assert run is not None
+            await RunRepository(session).delete(run)
+        stream = stream_run(sessions, run_id, None)
+        try:
+            with pytest.raises(StopAsyncIteration):
+                await anext(stream)
+        finally:
+            await stream.aclose()
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()

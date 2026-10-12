@@ -1,5 +1,6 @@
 """Tests for agent creation validation and persistence."""
 
+import json
 from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
 from typing import Any
@@ -89,6 +90,8 @@ def test_create_agent_rejects_unknown_model(test_client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_agent"
+    assert response.json()["error"]["details"] == {"field": "model", "reason": "unknown_model"}
 
 
 def test_models_and_tools_catalogues_are_available(test_client: TestClient) -> None:
@@ -129,3 +132,16 @@ def test_agent_can_be_read_updated_and_deleted(test_client: TestClient) -> None:
     deleted = test_client.delete(f"/api/v1/agents/{agent_id}")
     assert deleted.status_code == 204
     assert test_client.get(f"/api/v1/agents/{agent_id}").status_code == 404
+
+
+@pytest.mark.parametrize("text", ["bad\x00text", "bad\ud800text"])
+def test_invalid_storage_text_returns_422_without_echoing_input(
+    test_client: TestClient, text: str
+) -> None:
+    payload = {"name": "Agent", "role": "Role", "system_prompt": text}
+    response = test_client.post(
+        "/api/v1/agents", content=json.dumps(payload), headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]
+    assert all("input" not in error and "ctx" not in error for error in response.json()["detail"])

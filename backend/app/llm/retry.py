@@ -1,12 +1,23 @@
 """Shared retry policy for transient LLM failures."""
 
+import httpx
+from anthropic import APIConnectionError as AnthropicConnectionError
+from openai import APIConnectionError as OpenAIConnectionError
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 
 def _is_retryable_llm_error(exception: BaseException) -> bool:
     """Recognize transient network errors and provider HTTP 429/5xx responses."""
-    exception_name = type(exception).__name__.casefold()
-    if isinstance(exception, (TimeoutError, ConnectionError)) or "timeout" in exception_name:
+    if isinstance(
+        exception,
+        (
+            TimeoutError,
+            ConnectionError,
+            httpx.TransportError,
+            AnthropicConnectionError,
+            OpenAIConnectionError,
+        ),
+    ):
         return True
     status_code = getattr(exception, "status_code", None)
     return status_code == 429 or (isinstance(status_code, int) and 500 <= status_code <= 599)

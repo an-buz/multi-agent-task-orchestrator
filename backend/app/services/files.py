@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db.file_repository import FileRepository
 from app.models.context_file import ContextFile
+from app.schemas.base import validate_storage_text
 from app.schemas.context_file import ContextFileRead
 
 
@@ -80,6 +81,7 @@ def extract_pdf(content: bytes) -> str:
                 raise FileError("PDF text exceeds the context limit.", 413)
             parts.append(text)
         decoded = "\n\n".join(parts)
+        validate_storage_text(decoded)
         if not decoded.strip():
             raise FileError("PDF has no extractable text; OCR is not supported.")
         return decoded

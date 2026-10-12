@@ -146,22 +146,24 @@ class DAGExecutor:
                                 raise ValueError("Stream ended without response usage")
                             response = terminal
                         elif definitions:
-                            response = await provider.complete_tools(
-                                str(config["system_prompt"]),
-                                messages,
-                                str(config["model"]),
-                                definitions,
-                                temperature=float(config["temperature"]),
-                                max_tokens=max_tokens,
-                            )
+                            async with asyncio.timeout(get_settings().llm_request_timeout):
+                                response = await provider.complete_tools(
+                                    str(config["system_prompt"]),
+                                    messages,
+                                    str(config["model"]),
+                                    definitions,
+                                    temperature=float(config["temperature"]),
+                                    max_tokens=max_tokens,
+                                )
                         else:
-                            response = await provider.complete(
-                                str(config["system_prompt"]),
-                                step.input or "",
-                                str(config["model"]),
-                                temperature=float(config["temperature"]),
-                                max_tokens=max_tokens,
-                            )
+                            async with asyncio.timeout(get_settings().llm_request_timeout):
+                                response = await provider.complete(
+                                    str(config["system_prompt"]),
+                                    step.input or "",
+                                    str(config["model"]),
+                                    temperature=float(config["temperature"]),
+                                    max_tokens=max_tokens,
+                                )
                 prompt_tokens += response.usage.input_tokens
                 completion_tokens += response.usage.output_tokens
                 if (

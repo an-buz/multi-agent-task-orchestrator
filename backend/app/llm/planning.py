@@ -3,7 +3,9 @@
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import ConfigDict, Field, StringConstraints
+
+from app.schemas.base import StorageModel
 
 PLANNER_SYSTEM_PROMPT = """You are the workflow planner. Return only a JSON object with
 summary (non-empty string) and steps (array). Every step must contain step_number,
@@ -19,7 +21,7 @@ the task: produce a plan for human approval. No Markdown fences or extra text.""
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
-class PlannedSubtask(BaseModel):
+class PlannedSubtask(StorageModel):
     model_config = ConfigDict(extra="forbid")
     step_number: int = Field(ge=1)
     agent_id: UUID
@@ -27,7 +29,7 @@ class PlannedSubtask(BaseModel):
     subtask: NonEmptyText
 
 
-class PlannedWorkflow(BaseModel):
+class PlannedWorkflow(StorageModel):
     model_config = ConfigDict(extra="forbid")
     summary: NonEmptyText
     steps: list[PlannedSubtask] = Field(min_length=1)

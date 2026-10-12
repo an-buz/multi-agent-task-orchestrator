@@ -1,9 +1,11 @@
 """Public configuration and validated default agent parameters."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+
+from app.schemas.base import StorageModel
 
 
-class AgentDefaults(BaseModel):
+class AgentDefaults(StorageModel):
     model_config = ConfigDict(extra="forbid")
 
     default_model: str

@@ -5,8 +5,10 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+from app.schemas.base import StorageModel
 
-class ToolCall(BaseModel):
+
+class ToolCall(StorageModel):
     id: str
     name: str
     arguments: dict[str, Any]
@@ -15,11 +17,11 @@ class ToolCall(BaseModel):
 class LLMUsage(BaseModel):
     """Token usage reported by an LLM provider."""
 
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
 
 
-class LLMResponse(BaseModel):
+class LLMResponse(StorageModel):
     """Normalized text response and provider-reported usage."""
 
     content: str
@@ -28,7 +30,7 @@ class LLMResponse(BaseModel):
     message: dict[str, Any] = Field(default_factory=dict)
 
 
-class LLMChunk(BaseModel):
+class LLMChunk(StorageModel):
     """Text delta or terminal response containing authoritative usage and tool calls."""
 
     text_delta: str = ""

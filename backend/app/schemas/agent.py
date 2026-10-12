@@ -6,10 +6,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.base import StorageModel
+
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
-class AgentCreate(BaseModel):
+class AgentCreate(StorageModel):
     """Validated agent creation input."""
 
     name: Annotated[NonBlank, Field(max_length=100)]

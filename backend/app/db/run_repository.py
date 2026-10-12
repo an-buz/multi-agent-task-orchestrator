@@ -30,11 +30,24 @@ class RunRepository:
             )
         return await self.session.get(Run, run_id)
 
-    async def workflow(self, workflow_id: UUID) -> Workflow | None:
+    async def workflow(self, workflow_id: UUID, *, lock: bool = False) -> Workflow | None:
+        if lock:
+            return await self.session.scalar(
+                select(Workflow)
+                .where(Workflow.id == workflow_id)
+                .with_for_update(read=True)
+                .execution_options(populate_existing=True)
+            )
         return await self.session.get(Workflow, workflow_id)
 
     async def agents(self, agent_ids: set[UUID]) -> dict[UUID, Agent]:
-        values = await self.session.scalars(select(Agent).where(Agent.id.in_(agent_ids)))
+        values = await self.session.scalars(
+            select(Agent)
+            .where(Agent.id.in_(agent_ids))
+            .order_by(Agent.id)
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        )
         return {agent.id: agent for agent in values}
 
     async def steps(self, run_id: UUID) -> list[RunStep]:
