@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     planner_temperature: float = Field(default=0.2, ge=0, le=1)
     planner_max_repairs: int = Field(default=2, ge=0, le=5)
     llm_request_timeout: float = Field(default=60.0, gt=0)
+    context_safety_margin_tokens: int = Field(default=256, ge=0)
+    openai_encoding: str = "o200k_base"
     cors_origins: list[AnyHttpUrl] = Field(
         default_factory=lambda: [AnyHttpUrl("http://localhost:3000")]
     )

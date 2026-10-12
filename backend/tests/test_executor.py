@@ -17,11 +17,16 @@ from test_runs import MemoryRunRepository
 
 
 class RecordingMock(MockLLMProvider):
-    def __init__(self, fail: str | None = None) -> None:
+    def __init__(
+        self, fail: str | None = None, overlap: int = 1, overlap_tasks: set[str] | None = None
+    ) -> None:
         self.calls: list[str] = []
         self.active = 0
         self.peak = 0
         self.fail = fail
+        self.overlap = overlap
+        self.overlapped = asyncio.Event()
+        self.overlap_tasks = overlap_tasks or set()
 
     async def complete(
         self,
@@ -38,8 +43,13 @@ class RecordingMock(MockLLMProvider):
         self.calls.append(user_prompt)
         self.active += 1
         self.peak = max(self.peak, self.active)
+        if self.active >= self.overlap:
+            self.overlapped.set()
         try:
-            await asyncio.sleep(0)
+            if user_prompt.split("\n", 1)[0] in self.overlap_tasks:
+                await asyncio.wait_for(self.overlapped.wait(), 2)
+            else:
+                await asyncio.sleep(0)
             if self.fail and user_prompt.startswith(self.fail):
                 raise ValueError("private provider details")
             fixture = json.loads(
@@ -79,7 +89,15 @@ async def make_run(dependencies: list[list[int]]) -> tuple[MemoryRunRepository, 
 )
 async def test_execution_order_inputs_and_metrics(dependencies: list[list[int]], peak: int) -> None:
     repository, run = await make_run(dependencies)
-    provider = RecordingMock()
+    overlap_tasks = next(
+        (
+            {f"Task {number}" for number, values in enumerate(dependencies, 1) if values == group}
+            for group in dependencies
+            if sum(values == group for values in dependencies) >= peak
+        ),
+        set(),
+    )
+    provider = RecordingMock(overlap=peak, overlap_tasks=overlap_tasks)
     await DAGExecutor(repository, lambda _: provider).execute(run)
     assert run.status == "COMPLETED"
     assert provider.peak == peak

@@ -5,6 +5,7 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
+import tiktoken
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam, ToolParam
 from openai import AsyncOpenAI
@@ -14,6 +15,64 @@ from app.core.config import Settings, get_settings
 from app.llm.planning import PLANNER_SYSTEM_PROMPT
 from app.llm.provider import LLMChunk, LLMResponse, LLMUsage, ToolCall
 from app.llm.registry import get_model_registry
+
+
+def anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Use the same native representation for counting and generation."""
+    native: list[dict[str, Any]] = []
+    for message in messages:
+        if message["role"] == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": message["tool_call_id"],
+                "content": message["content"],
+            }
+            if native and native[-1]["role"] == "user" and isinstance(native[-1]["content"], list):
+                native[-1]["content"].append(block)
+            else:
+                native.append({"role": "user", "content": [block]})
+        elif message["role"] == "assistant":
+            native.append({"role": "assistant", "content": message["blocks"]})
+        else:
+            native.append(
+                {
+                    **message,
+                    "content": list(message["content"])
+                    if isinstance(message["content"], list)
+                    else message["content"],
+                }
+            )
+    return native
+
+
+def openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool["description"],
+                "parameters": tool["input_schema"],
+            },
+        }
+        for tool in tools
+    ]
+
+
+def openai_input_size(
+    system_prompt: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    encoding_name: str,
+) -> int:
+    """Local Chat Completions admission estimate; never authoritative usage."""
+    payload = {
+        "messages": [{"role": "system", "content": system_prompt}, *messages],
+        "tools": openai_tools(tools),
+    }
+    encoding = tiktoken.get_encoding(encoding_name)
+    # Treat special-looking user text as ordinary content, not tokenizer instructions.
+    return len(encoding.encode(json.dumps(payload, ensure_ascii=False), disallowed_special=()))
 
 
 def parse_tool_arguments(raw: str) -> dict[str, Any]:
@@ -63,6 +122,21 @@ class AnthropicProvider:
     async def aclose(self) -> None:
         await self._client.close()
 
+    async def count_input_tokens(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+    ) -> int:
+        response = await self._client.messages.count_tokens(
+            model=get_model_registry()[model].model_id,
+            system=system_prompt,
+            messages=cast(list[MessageParam], anthropic_messages(messages)),
+            tools=cast(list[ToolParam], tools),
+        )
+        return response.input_tokens
+
     async def complete_tools(
         self,
         system_prompt: str,
@@ -73,26 +147,7 @@ class AnthropicProvider:
         temperature: float,
         max_tokens: int,
     ) -> LLMResponse:
-        native: list[dict[str, Any]] = []
-        for message in messages:
-            if message["role"] == "tool":
-                block = {
-                    "type": "tool_result",
-                    "tool_use_id": message["tool_call_id"],
-                    "content": message["content"],
-                }
-                if (
-                    native
-                    and native[-1]["role"] == "user"
-                    and isinstance(native[-1]["content"], list)
-                ):
-                    native[-1]["content"].append(block)
-                else:
-                    native.append({"role": "user", "content": [block]})
-            elif message["role"] == "assistant":
-                native.append({"role": "assistant", "content": message["blocks"]})
-            else:
-                native.append(message)
+        native = anthropic_messages(messages)
         response = await self._client.messages.create(
             model=get_model_registry()[model].model_id,
             system=system_prompt,
@@ -160,6 +215,22 @@ class OpenAIProvider:
     async def aclose(self) -> None:
         await self._client.close()
 
+    async def count_input_tokens(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+    ) -> int:
+        del model
+        return await asyncio.to_thread(
+            openai_input_size,
+            system_prompt,
+            messages,
+            tools,
+            get_settings().openai_encoding,
+        )
+
     async def complete_tools(
         self,
         system_prompt: str,
@@ -178,17 +249,7 @@ class OpenAIProvider:
             ),
             tools=cast(
                 list[ChatCompletionToolParam],
-                [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": tool["name"],
-                            "description": tool["description"],
-                            "parameters": tool["input_schema"],
-                        },
-                    }
-                    for tool in tools
-                ],
+                openai_tools(tools),
             ),
             temperature=temperature,
             max_tokens=max_tokens,

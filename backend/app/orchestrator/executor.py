@@ -14,6 +14,7 @@ import structlog
 from app.core.config import get_settings
 from app.db.file_repository import FileRepository
 from app.db.run_repository import RunRepository
+from app.llm.context import ContextTooLarge, check_context
 from app.llm.provider import LLMProvider, LLMResponse, StreamingLLMProvider
 from app.llm.providers import create_provider
 from app.llm.retry import llm_retrying
@@ -105,6 +106,15 @@ class DAGExecutor:
                 )
                 async for attempt in llm_retrying():
                     with attempt:
+                        await check_context(
+                            provider,
+                            str(config["system_prompt"]),
+                            messages,
+                            str(config["model"]),
+                            definitions,
+                            max_tokens,
+                            config.get("context_window"),
+                        )
                         if isinstance(provider, StreamingLLMProvider):
                             identity = {
                                 "agentId": str(step.agent_id),
@@ -220,6 +230,8 @@ class DAGExecutor:
                     )
             raise ValueError("Tool loop did not finish")
         except Exception as exception:
+            if isinstance(exception, ContextTooLarge):
+                error_code = "context_too_large"
             # Provider exception strings may contain prompts/keys; persist a safe message.
             logger.warning(
                 "step_failed",
@@ -231,7 +243,15 @@ class DAGExecutor:
             return StepResult(
                 None,
                 round((perf_counter() - started) * 1000),
-                {"code": error_code, "message": "The step could not be completed."},
+                {
+                    "code": error_code,
+                    "message": (
+                        "Input and reserved response exceed the context window. "
+                        "Reduce context or max tokens, or increase the agent context window."
+                        if error_code == "context_too_large"
+                        else "The step could not be completed."
+                    ),
+                },
                 prompt_tokens,
                 completion_tokens,
             )

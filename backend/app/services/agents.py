@@ -33,6 +33,8 @@ class AgentService:
             details = {"field": "max_tokens", "reason": "exceeds_model_context_window"}
         elif payload.context_window > model.context_window:
             details = {"field": "context_window", "reason": "exceeds_model_context_window"}
+        elif payload.max_tokens >= payload.context_window:
+            details = {"field": "max_tokens", "reason": "must_leave_room_for_input"}
         else:
             invalid_tools = sorted(set(payload.tools) - TOOLS.keys())
             if invalid_tools:

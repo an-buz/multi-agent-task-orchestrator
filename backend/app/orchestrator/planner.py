@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.db.run_repository import RunRepository
+from app.llm.context import ContextTooLarge, check_context
 from app.llm.planning import PLANNER_SYSTEM_PROMPT, PlannedWorkflow
 from app.llm.provider import LLMProvider
 from app.llm.providers import create_provider
@@ -90,17 +91,27 @@ class LLMPlanner:
                     )
                 async for attempt in llm_retrying():
                     with attempt:
+                        user_prompt = json.dumps(request, ensure_ascii=False)
+                        max_tokens = (
+                            min(int(config["max_tokens"]), remaining)
+                            if remaining is not None
+                            else int(config["max_tokens"])
+                        )
+                        await check_context(
+                            provider,
+                            PLANNER_SYSTEM_PROMPT,
+                            [{"role": "user", "content": user_prompt}],
+                            model,
+                            [],
+                            max_tokens,
+                        )
                         async with asyncio.timeout(get_settings().llm_request_timeout):
                             response = await provider.complete(
                                 PLANNER_SYSTEM_PROMPT,
-                                json.dumps(request, ensure_ascii=False),
+                                user_prompt,
                                 model,
                                 temperature=float(config["temperature"]),
-                                max_tokens=(
-                                    min(int(config["max_tokens"]), remaining)
-                                    if remaining is not None
-                                    else int(config["max_tokens"])
-                                ),
+                                max_tokens=max_tokens,
                             )
                 result.prompt_tokens += response.usage.input_tokens
                 result.completion_tokens += response.usage.output_tokens
@@ -142,7 +153,17 @@ class LLMPlanner:
             logger.warning(
                 "planning_failed", run_id=str(run_id), error_type=type(exception).__name__
             )
-            result.error = {"code": "planning_error", "message": "The plan could not be generated."}
+            result.error = (
+                {
+                    "code": "context_too_large",
+                    "message": (
+                        "Planning input and reserved response exceed the model context window. "
+                        "Reduce the task or attached context."
+                    ),
+                }
+                if isinstance(exception, ContextTooLarge)
+                else {"code": "planning_error", "message": "The plan could not be generated."}
+            )
         finally:
             if provider is not None:
                 try:
