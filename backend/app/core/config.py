@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     code_executor_backend: Literal["docker", "disabled"] = "disabled"
     max_parallel_steps: int = Field(default=4, ge=1, le=100)
     worker_job_timeout: int = Field(default=600, ge=1)
+    recovery_batch_size: int = Field(default=100, ge=1, le=1000)
+    cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
+    unused_file_retention_days: int = Field(default=7, ge=1)
+    terminal_event_retention_days: int = Field(default=30, ge=1)
+    code_executor_scope: str = Field(default="local", pattern=r"^[a-zA-Z0-9_.-]+$")
+    code_executor_orphan_age_seconds: int = Field(default=3600, ge=1)
+    cleanup_docker_timeout: float = Field(default=10, gt=0)
     run_poll_interval: float = Field(default=0.5, gt=0)
     planner_model: str = "claude-sonnet"
     default_agent_model: str = "claude-sonnet"

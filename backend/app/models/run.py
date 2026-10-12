@@ -30,6 +30,9 @@ class Run(Base):
     planning_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     planning_time_ms: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     planning_error: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)
+    planning_checkpoint: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
     final_report: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_tokens: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")

@@ -218,9 +218,11 @@ class RunService:
         if run.status not in {"PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS"}:
             raise RunError("Run cannot be cancelled in its current state")
         run.status = "CANCELLED"
+        run.planning_checkpoint = {}
         run.finished_at = datetime.now(UTC)
         for step in await self.repository.steps(run.id):
             if step.status in {"PENDING", "IN_PROGRESS"}:
+                step.checkpoint = {}
                 step.status = "CANCELLED"
                 self.repository.emit(
                     run.id,
@@ -253,6 +255,7 @@ class RunService:
             raise RunError("Only failed steps can be retried")
         step.status = "PENDING"
         step.error = None
+        step.checkpoint = {}
         run.status = "IN_PROGRESS"
         run.finished_at = None
         run.final_report = None

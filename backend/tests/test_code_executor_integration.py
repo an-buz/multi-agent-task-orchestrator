@@ -81,3 +81,52 @@ print(json.dumps(result))
             await asyncio.to_thread(client.containers.get, f"orchestrator-{identifier.hex}")
     finally:
         client.close()
+
+
+async def test_real_orphan_sweeper_only_removes_expired_owned_containers(
+    executor_image: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.tools.containers import EXPIRES_LABEL, MANAGED_LABEL, SCOPE_LABEL, cleanup_containers
+
+    scope = f"test-{uuid4().hex}"
+    monkeypatch.setenv("CODE_EXECUTOR_BACKEND", "docker")
+    monkeypatch.setenv("CODE_EXECUTOR_SCOPE", scope)
+    monkeypatch.setenv("CODE_EXECUTOR_ORPHAN_AGE_SECONDS", "1")
+    get_settings.cache_clear()
+    now = datetime.now(UTC)
+    labels = {MANAGED_LABEL: "code", SCOPE_LABEL: scope, EXPIRES_LABEL: str(now.timestamp() - 1)}
+    client = docker.from_env()
+    containers = []
+    try:
+        for metadata in [
+            labels,
+            {**labels, EXPIRES_LABEL: str(now.timestamp() + 3600)},
+            {**labels, SCOPE_LABEL: f"other-{scope}"},
+            {},
+        ]:
+            container = await asyncio.to_thread(
+                client.containers.create,
+                executor_image,
+                command=["python", "-c", "import time; time.sleep(300)"],
+                labels=metadata,
+                network_disabled=True,
+                read_only=True,
+                user="65534:65534",
+            )
+            containers.append(container)
+            await asyncio.to_thread(container.start)
+        assert await cleanup_containers(datetime.now(UTC) + timedelta(seconds=2)) == 1
+        with pytest.raises(docker.errors.NotFound):
+            await asyncio.to_thread(containers[0].reload)
+        for container in containers[1:]:
+            await asyncio.to_thread(container.reload)
+            assert container.status == "running"
+    finally:
+        for container in containers:
+            try:
+                await asyncio.to_thread(container.remove, force=True)
+            except docker.errors.NotFound:
+                pass
+        await asyncio.to_thread(client.close)

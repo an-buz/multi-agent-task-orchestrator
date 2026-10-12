@@ -5,6 +5,7 @@ import asyncio
 import json
 import math
 import operator
+from time import time
 from typing import Any, cast
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import get_settings
 from app.llm.provider import ToolCall
+from app.tools.containers import EXPIRES_LABEL, MANAGED_LABEL, SCOPE_LABEL
 
 
 class ToolError(Exception):
@@ -91,6 +93,7 @@ async def docker_code(code: str) -> str:
         raise ToolError("Code executor is disabled.")
     name = f"orchestrator-{uuid4().hex}"
     process: asyncio.subprocess.Process | None = None
+    expires_at = time() + 2 * settings.tool_timeout + settings.cleanup_docker_timeout
 
     async def provision() -> None:
         creation = await asyncio.create_subprocess_exec(
@@ -98,6 +101,12 @@ async def docker_code(code: str) -> str:
             "create",
             "--name",
             name,
+            "--label",
+            f"{MANAGED_LABEL}=code",
+            "--label",
+            f"{SCOPE_LABEL}={settings.code_executor_scope}",
+            "--label",
+            f"{EXPIRES_LABEL}={expires_at}",
             "--pull=never",
             "--network=none",
             "--read-only",

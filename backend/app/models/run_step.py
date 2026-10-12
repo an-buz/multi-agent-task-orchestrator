@@ -34,3 +34,4 @@ class RunStep(Base):
     tokens_completion: Mapped[int] = mapped_column(Integer, default=0)
     execution_time_ms: Mapped[int] = mapped_column(Integer, default=0)
     attempt: Mapped[int] = mapped_column(Integer, default=0)
+    checkpoint: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")

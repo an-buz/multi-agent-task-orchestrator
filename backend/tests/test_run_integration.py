@@ -893,3 +893,255 @@ async def test_catalogue_domain_errors_and_sse_cursor(
     finally:
         app.dependency_overrides.clear()
         await engine.dispose()
+
+
+async def test_checkpoint_recovery_bypasses_stale_arq_keys_and_live_owner(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from app.orchestrator.executor import DAGExecutor
+    from app.schemas.run import RunCreate
+    from app.services.runs import RunService
+    from app.workers.ownership import run_lock_key
+    from sqlalchemy import text
+
+    from test_tools import FixtureTools
+
+    database_url, redis_url = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    pool = await create_pool(RedisSettings.from_dsn(redis_url))
+    worker = OrchestratorWorker(
+        functions=[plan_run, execute_run],
+        redis_pool=pool,
+        burst=True,
+        keep_result=0,
+        handle_signals=False,
+        poll_delay=0.01,
+    )
+    monkeypatch.setattr("app.workers.tasks.engine", engine)
+    monkeypatch.setattr("app.workers.tasks.async_session_factory", sessions)
+    execute_tool = AsyncMock(return_value=json.dumps({"value": 20.0}))
+    monkeypatch.setattr("app.orchestrator.executor.ToolRuntime.execute", execute_tool)
+    owned_id = None
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            agent = Agent(
+                id=uuid4(),
+                name=f"Checkpoint reviewer {uuid4()}",
+                role="Review",
+                system_prompt="Be precise",
+                model="claude-sonnet",
+                temperature=0.2,
+                max_tokens=1024,
+                context_window=128000,
+                tools=["calculator"],
+            )
+            workflow = Workflow(
+                id=uuid4(),
+                title="Checkpoint pipeline",
+                execution_type="sequential",
+                steps=[{"step_number": 1, "agent_id": str(agent.id), "depends_on": []}],
+                graph_layout={},
+            )
+            session.add_all([agent, workflow])
+            await session.commit()
+            repository = RunRepository(session)
+            service = RunService(repository)
+            ids = []
+            for task in ["Interrupt tool result", "Live worker owns this run"]:
+                created = await service.create(RunCreate(workflow_id=workflow.id, task=task))
+                run = await service.require(created.id)
+                await PlannerExecutor(repository).execute(run)
+                await service.confirm(run.id)
+                ids.append(run.id)
+            interrupted_id, owned_id = ids
+            interrupted = await service.require(interrupted_id)
+            step = (await repository.steps(interrupted_id))[0]
+            original_save = repository.save
+
+            async def crash_after_commit():
+                await original_save()
+                turns = (step.checkpoint or {}).get("turns", [])
+                if turns and turns[0]["tools"].get("0", {}).get("state") == "done":
+                    raise asyncio.CancelledError
+
+            repository.save = crash_after_commit
+            with pytest.raises(asyncio.CancelledError):
+                await DAGExecutor(repository, lambda _: FixtureTools()).execute(interrupted)
+        async with sessions() as session:
+            step = (await RunRepository(session).steps(interrupted_id))[0]
+            assert step.checkpoint["turns"][0]["tools"]["0"]["state"] == "done"
+            assert step.tokens_prompt == 10 and step.tokens_completion == 4
+        execute_tool.assert_awaited_once()
+
+        resumed = FixtureTools()
+        resumed.calls = 1
+
+        class ResumingExecutor(DAGExecutor):
+            def __init__(self, repository):
+                super().__init__(repository, lambda _: resumed)
+
+        monkeypatch.setattr("app.workers.tasks.DAGExecutor", ResumingExecutor)
+        # These keys would reject dispatch using the original fixed run job ID.
+        await pool.set(f"arq:job:run:{interrupted_id}", b"stale", ex=600)
+        await pool.set(f"arq:in-progress:run:{interrupted_id}", b"stale", ex=600)
+        async with engine.connect() as ownership:
+            key = run_lock_key(owned_id)
+            await ownership.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
+            try:
+                await recover_runs({"redis": pool})
+                queued = await pool.queued_jobs()
+                assert any(str(interrupted_id) in str(job.args) for job in queued)
+                assert not any(str(owned_id) in str(job.args) for job in queued)
+                await worker.async_run()
+            finally:
+                await ownership.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+        async with sessions() as session:
+            repository = RunRepository(session)
+            run = await repository.get(interrupted_id)
+            step = (await repository.steps(interrupted_id))[0]
+            assert run.status == "COMPLETED"
+            assert not step.checkpoint
+            assert step.tokens_prompt == 28 and step.tokens_completion == 10
+            assert (
+                run.total_tokens == run.planning_prompt_tokens + run.planning_completion_tokens + 38
+            )
+            assert (await repository.get(owned_id)).status == "IN_PROGRESS"
+        execute_tool.assert_awaited_once()
+    finally:
+        # Leave no intentionally active runs for another test's recovery sweep.
+        if owned_id is not None:
+            async with sessions() as session:
+                await RunService(RunRepository(session)).cancel(owned_id)
+        await worker.close()
+        await pool.aclose()
+        await engine.dispose()
+
+
+async def test_retention_cleanup_preserves_attachments_results_and_locked_runs(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.cleanup_repository import CleanupRepository
+    from app.services.cleanup import CleanupService
+
+    database_url, _ = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("CLEANUP_BATCH_SIZE", "1")
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime.now(UTC)
+    old_file, old_event = now - timedelta(days=8), now - timedelta(days=31)
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            workflow = Workflow(
+                id=uuid4(),
+                title="Retention",
+                execution_type="sequential",
+                steps=[],
+                graph_layout={},
+            )
+            session.add(workflow)
+            await session.flush()
+            completed = Run(
+                id=uuid4(),
+                workflow_id=workflow.id,
+                task="Complete",
+                context_text="",
+                plan={"summary": "Done", "steps": []},
+                status="COMPLETED",
+                final_report="Preserved result",
+                finished_at=old_event,
+                total_tokens=12,
+            )
+            active = Run(
+                id=uuid4(),
+                workflow_id=workflow.id,
+                task="Active",
+                context_text="",
+                plan={"summary": "Active", "steps": []},
+                status="IN_PROGRESS",
+                finished_at=old_event,
+            )
+            locked = Run(
+                id=uuid4(),
+                workflow_id=workflow.id,
+                task="Retry race",
+                context_text="",
+                plan={"summary": "Failed", "steps": []},
+                status="FAILED",
+                finished_at=old_event,
+            )
+            files = [
+                ContextFile(
+                    id=uuid4(),
+                    filename="test.txt",
+                    media_type="text/plain",
+                    size_bytes=4,
+                    content=b"test",
+                    text_content="test",
+                    created_at=created,
+                )
+                for created in [old_file, old_file, old_file, now]
+            ]
+            session.add_all([completed, active, locked, *files])
+            await session.flush()
+            session.add(RunFile(run_id=completed.id, file_id=files[1].id))
+            events = [
+                RunEvent(
+                    run_id=run.id,
+                    event="task:cancelled",
+                    data={"taskId": str(run.id)},
+                    created_at=created,
+                )
+                for run, created in [
+                    (completed, old_event),
+                    (completed, now),
+                    (active, old_event),
+                    (locked, old_event),
+                ]
+            ]
+            session.add_all(events)
+            await session.commit()
+        async with sessions() as owner:
+            repository = RunRepository(owner)
+            await repository.get(locked.id, lock=True)
+            # An uploader attaching this file holds the same lock as cleanup.
+            await owner.scalar(
+                select(ContextFile).where(ContextFile.id == files[2].id).with_for_update()
+            )
+            async with sessions() as session:
+                counts = await CleanupService(CleanupRepository(session)).execute(now)
+                assert counts == {"files": 1, "events": 1}
+            owner.add(RunFile(run_id=completed.id, file_id=files[2].id))
+            pending = await repository.get(locked.id)
+            pending.status = "IN_PROGRESS"
+            pending.finished_at = None
+            await owner.commit()
+        async with sessions() as session:
+            counts = await CleanupService(CleanupRepository(session)).execute(now)
+            assert counts == {"files": 0, "events": 0}
+            assert await session.get(ContextFile, files[0].id) is None
+            for file in files[1:]:
+                assert await session.get(ContextFile, file.id) is not None
+            assert await session.get(RunEvent, events[0].id) is None
+            for event in events[1:]:
+                assert await session.get(RunEvent, event.id) is not None
+            assert (await session.get(Run, completed.id)).final_report == "Preserved result"
+        # Keep intentionally active rows from participating in later sweeps.
+        async with sessions() as session:
+            for identifier in [active.id, locked.id]:
+                run = await session.get(Run, identifier)
+                run.status = "CANCELLED"
+                run.finished_at = now
+            await session.commit()
+    finally:
+        await engine.dispose()

@@ -3,9 +3,11 @@
 import asyncio
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from time import perf_counter
 from typing import Any
 
@@ -78,14 +80,32 @@ class DAGExecutor:
         files: dict[str, str] | None = None,
         token_allowance: int | None = None,
         on_tool: Callable[[EventName, dict[str, Any]], None] | None = None,
+        on_checkpoint: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> StepResult:
         started = perf_counter()
         provider: LLMProvider | None = None
         prompt_tokens = completion_tokens = 0
+        checkpoint = deepcopy(step.checkpoint or {})
+        turns: list[dict[str, Any]] = checkpoint.get("turns", [])
+        previous_duration = int(checkpoint.get("duration_ms", 0))
+
+        def duration() -> int:
+            return previous_duration + round((perf_counter() - started) * 1000)
+
+        async def persist() -> None:
+            if on_checkpoint is not None:
+                await on_checkpoint(
+                    {
+                        "turns": deepcopy(turns),
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "duration_ms": duration(),
+                    }
+                )
+
         error_code = "llm_error"
         try:
             config = step.agent_config
-            provider = self.provider_factory(str(config["model"]))
             runtime = ToolRuntime(config.get("tools", []), files)
             definitions = runtime.definitions()
             messages: list[dict[str, Any]] = [{"role": "user", "content": step.input or ""}]
@@ -96,7 +116,7 @@ class DAGExecutor:
                     if token_allowance is not None
                     else None
                 )
-                if remaining is not None and remaining <= 0:
+                if remaining is not None and remaining <= 0 and round_number >= len(turns):
                     error_code = "token_budget_exceeded"
                     raise ValueError("Budget exhausted")
                 max_tokens = (
@@ -104,78 +124,86 @@ class DAGExecutor:
                     if remaining is not None
                     else int(config["max_tokens"])
                 )
-                async for attempt in llm_retrying():
-                    with attempt:
-                        await check_context(
-                            provider,
-                            str(config["system_prompt"]),
-                            messages,
-                            str(config["model"]),
-                            definitions,
-                            max_tokens,
-                            config.get("context_window"),
-                        )
-                        if isinstance(provider, StreamingLLMProvider):
-                            identity = {
-                                "agentId": str(step.agent_id),
-                                "stepNumber": step.step_number,
-                                "attempt": step.attempt,
-                            }
-                            if on_tool is not None:
-                                on_tool(
-                                    "agent:stream_chunk",
-                                    {**identity, "textDelta": "", "reset": True},
-                                )
-                            terminal: LLMResponse | None = None
-                            async with asyncio.timeout(get_settings().llm_request_timeout):
-                                stream = provider.stream(
-                                    str(config["system_prompt"]),
-                                    messages,
-                                    str(config["model"]),
-                                    definitions,
-                                    temperature=float(config["temperature"]),
-                                    max_tokens=max_tokens,
-                                )
-                                try:
-                                    async for chunk in stream:
-                                        if terminal is not None:
-                                            raise ValueError("Chunk after terminal response")
-                                        if chunk.text_delta and on_tool is not None:
-                                            on_tool(
-                                                "agent:stream_chunk",
-                                                {
-                                                    **identity,
-                                                    "textDelta": chunk.text_delta,
-                                                    "reset": False,
-                                                },
-                                            )
-                                        terminal = chunk.response
-                                finally:
-                                    await stream.aclose()
-                            if terminal is None:
-                                raise ValueError("Stream ended without response usage")
-                            response = terminal
-                        elif definitions:
-                            async with asyncio.timeout(get_settings().llm_request_timeout):
-                                response = await provider.complete_tools(
-                                    str(config["system_prompt"]),
-                                    messages,
-                                    str(config["model"]),
-                                    definitions,
-                                    temperature=float(config["temperature"]),
-                                    max_tokens=max_tokens,
-                                )
-                        else:
-                            async with asyncio.timeout(get_settings().llm_request_timeout):
-                                response = await provider.complete(
-                                    str(config["system_prompt"]),
-                                    step.input or "",
-                                    str(config["model"]),
-                                    temperature=float(config["temperature"]),
-                                    max_tokens=max_tokens,
-                                )
+                if round_number < len(turns):
+                    response = LLMResponse.model_validate(turns[round_number]["response"])
+                else:
+                    if provider is None:
+                        provider = self.provider_factory(str(config["model"]))
+                    async for attempt in llm_retrying():
+                        with attempt:
+                            await check_context(
+                                provider,
+                                str(config["system_prompt"]),
+                                messages,
+                                str(config["model"]),
+                                definitions,
+                                max_tokens,
+                                config.get("context_window"),
+                            )
+                            if isinstance(provider, StreamingLLMProvider):
+                                identity = {
+                                    "agentId": str(step.agent_id),
+                                    "stepNumber": step.step_number,
+                                    "attempt": step.attempt,
+                                }
+                                if on_tool is not None:
+                                    on_tool(
+                                        "agent:stream_chunk",
+                                        {**identity, "textDelta": "", "reset": True},
+                                    )
+                                terminal: LLMResponse | None = None
+                                async with asyncio.timeout(get_settings().llm_request_timeout):
+                                    stream = provider.stream(
+                                        str(config["system_prompt"]),
+                                        messages,
+                                        str(config["model"]),
+                                        definitions,
+                                        temperature=float(config["temperature"]),
+                                        max_tokens=max_tokens,
+                                    )
+                                    try:
+                                        async for chunk in stream:
+                                            if terminal is not None:
+                                                raise ValueError("Chunk after terminal response")
+                                            if chunk.text_delta and on_tool is not None:
+                                                on_tool(
+                                                    "agent:stream_chunk",
+                                                    {
+                                                        **identity,
+                                                        "textDelta": chunk.text_delta,
+                                                        "reset": False,
+                                                    },
+                                                )
+                                            terminal = chunk.response
+                                    finally:
+                                        await stream.aclose()
+                                if terminal is None:
+                                    raise ValueError("Stream ended without response usage")
+                                response = terminal
+                            elif definitions:
+                                async with asyncio.timeout(get_settings().llm_request_timeout):
+                                    response = await provider.complete_tools(
+                                        str(config["system_prompt"]),
+                                        messages,
+                                        str(config["model"]),
+                                        definitions,
+                                        temperature=float(config["temperature"]),
+                                        max_tokens=max_tokens,
+                                    )
+                            else:
+                                async with asyncio.timeout(get_settings().llm_request_timeout):
+                                    response = await provider.complete(
+                                        str(config["system_prompt"]),
+                                        step.input or "",
+                                        str(config["model"]),
+                                        temperature=float(config["temperature"]),
+                                        max_tokens=max_tokens,
+                                    )
                 prompt_tokens += response.usage.input_tokens
                 completion_tokens += response.usage.output_tokens
+                if round_number == len(turns):
+                    turns.append({"response": response.model_dump(mode="json"), "tools": {}})
+                    await persist()
                 if (
                     token_allowance is not None
                     and prompt_tokens + completion_tokens > token_allowance
@@ -185,7 +213,7 @@ class DAGExecutor:
                 if not response.tool_calls:
                     return StepResult(
                         response,
-                        round((perf_counter() - started) * 1000),
+                        duration(),
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
                     )
@@ -199,19 +227,30 @@ class DAGExecutor:
                     error_code = "tool_limit_exceeded"
                     raise ValueError("Tool loop limit exceeded")
                 messages.append(response.message)
-                for call in response.tool_calls:
+                receipts = turns[round_number]["tools"]
+                for index, call in enumerate(response.tool_calls):
+                    receipt = receipts.get(str(index))
+                    if receipt is not None and receipt["state"] == "started":
+                        error_code = "tool_execution_interrupted"
+                        raise ValueError("Tool outcome is unknown; explicit retry is required")
                     identity = {
                         "agentId": str(step.agent_id),
                         "stepNumber": step.step_number,
                         "toolName": call.name,
                     }
-                    if on_tool is not None:
+                    if receipt is None and on_tool is not None:
                         on_tool(
                             "agent:tool_call",
                             {**identity, "input": {"argumentNames": sorted(call.arguments)}},
                         )
-                    tool_result = await runtime.execute(call)
-                    if on_tool is not None:
+                    if receipt is None:
+                        receipts[str(index)] = {"state": "started"}
+                        await persist()
+                        tool_result = await runtime.execute(call)
+                        receipts[str(index)] = {"state": "done", "result": tool_result}
+                    else:
+                        tool_result = str(receipt["result"])
+                    if receipt is None and on_tool is not None:
                         ok = "error" not in json.loads(tool_result)
                         on_tool(
                             "agent:tool_result",
@@ -221,6 +260,9 @@ class DAGExecutor:
                                 "summary": "Tool completed." if ok else "Tool failed.",
                             },
                         )
+                    if receipt is None:
+                        # Commit the receipt and its public result event together.
+                        await persist()
                     messages.append(
                         {
                             "role": "tool",
@@ -242,13 +284,15 @@ class DAGExecutor:
             )
             return StepResult(
                 None,
-                round((perf_counter() - started) * 1000),
+                duration(),
                 {
                     "code": error_code,
                     "message": (
                         "Input and reserved response exceed the context window. "
                         "Reduce context or max tokens, or increase the agent context window."
                         if error_code == "context_too_large"
+                        else "Tool outcome is unknown. Retry the step explicitly."
+                        if error_code == "tool_execution_interrupted"
                         else "The step could not be completed."
                     ),
                 },
@@ -295,14 +339,21 @@ class DAGExecutor:
         await self.repository.save()
         active: dict[asyncio.Task[StepResult], RunStep] = {}
         tool_events: list[tuple[EventName, dict[str, Any]]] = []
+        checkpoints: list[tuple[int, dict[str, Any], asyncio.Future[None]]] = []
         event_ready = asyncio.Event()
+
+        async def on_checkpoint(number: int, value: dict[str, Any]) -> None:
+            receipt: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+            checkpoints.append((number, value, receipt))
+            event_ready.set()
+            await receipt
 
         def on_tool(name: EventName, data: dict[str, Any]) -> None:
             tool_events.append((name, data))
             event_ready.set()
 
         async def flush_tool_events() -> bool:
-            if not tool_events:
+            if not tool_events and not checkpoints:
                 return True
             if not await self.still_running(run):
                 return False
@@ -313,9 +364,24 @@ class DAGExecutor:
                     step.output = output or None
                     data["output"] = output
                 self.repository.emit(run.id, name, data)
+            acknowledged = list(checkpoints)
+            for number, value, _ in acknowledged:
+                step = by_number[number]
+                previous = step.checkpoint or {}
+                step.tokens_prompt += value["prompt_tokens"] - previous.get("prompt_tokens", 0)
+                step.tokens_completion += value["completion_tokens"] - previous.get(
+                    "completion_tokens", 0
+                )
+                step.execution_time_ms += value["duration_ms"] - previous.get("duration_ms", 0)
+                step.checkpoint = value
+            self.update_totals(run, steps)
+            checkpoints.clear()
             tool_events.clear()
             event_ready.clear()
             await self.repository.save()
+            for _, _, receipt in acknowledged:
+                if not receipt.done():
+                    receipt.set_result(None)
             return True
 
         try:
@@ -352,11 +418,27 @@ class DAGExecutor:
                     await self.repository.save()
                     self.update_totals(run, steps)
                     allowance = (
-                        max(0, int(budget) - run.total_tokens) if budget is not None else None
+                        max(
+                            0,
+                            int(budget)
+                            - run.total_tokens
+                            + (step.checkpoint or {}).get("prompt_tokens", 0)
+                            + (step.checkpoint or {}).get("completion_tokens", 0),
+                        )
+                        if budget is not None
+                        else None
                     )
-                    active[asyncio.create_task(self.complete(step, files, allowance, on_tool))] = (
-                        step
-                    )
+                    active[
+                        asyncio.create_task(
+                            self.complete(
+                                step,
+                                files,
+                                allowance,
+                                on_tool,
+                                partial(on_checkpoint, step.step_number),
+                            )
+                        )
+                    ] = step
                 if not active:
                     break
                 notification = asyncio.create_task(event_ready.wait())
@@ -382,10 +464,14 @@ class DAGExecutor:
                         return
                     step = active.pop(task)
                     result = task.result()
-                    step.execution_time_ms += result.duration_ms
+                    previous = step.checkpoint or {}
+                    step.execution_time_ms += result.duration_ms - previous.get("duration_ms", 0)
                     step.error = result.error
-                    step.tokens_prompt += result.prompt_tokens
-                    step.tokens_completion += result.completion_tokens
+                    step.tokens_prompt += result.prompt_tokens - previous.get("prompt_tokens", 0)
+                    step.tokens_completion += result.completion_tokens - previous.get(
+                        "completion_tokens", 0
+                    )
+                    step.checkpoint = {}
                     if result.response is None:
                         step.status = "FAILED"
                     else:
