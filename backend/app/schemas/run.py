@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from app.schemas.base import StorageModel
+from app.schemas.base import StepNumber, StorageModel
 from app.schemas.context_file import ContextFileRead
 
 RunStatus = Literal[
@@ -35,13 +35,13 @@ class RunCreate(StorageModel):
 class RunPlanStep(StorageModel):
     """A planned workflow step, ready for user review."""
 
-    step_number: int = Field(ge=1)
+    step_number: StepNumber
     agent_id: UUID
     agent_name: str
     model: str | None = None
     subtask: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     status: StepStatus = "PENDING"
-    depends_on: list[int] = Field(default_factory=list)
+    depends_on: list[StepNumber] = Field(default_factory=list)
     input: str | None = None
     output: str | None = None
     error: dict[str, str] | None = None

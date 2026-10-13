@@ -1,6 +1,7 @@
 """Persistence operations shared by the run service and worker."""
 
 import builtins
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -17,8 +18,11 @@ from app.schemas.event import EventEnvelope, EventName
 
 
 class RunRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self, session: AsyncSession, ownership_check: Callable[[], None] | None = None
+    ) -> None:
         self.session = session
+        self.ownership_check = ownership_check
 
     async def get(self, run_id: UUID, *, lock: bool = False) -> Run | None:
         if lock:
@@ -68,6 +72,8 @@ class RunRepository:
         self.session.add(value)
 
     async def save(self) -> None:
+        if self.ownership_check is not None:
+            self.ownership_check()
         await self.session.commit()
 
     async def delete(self, run: Run) -> None:

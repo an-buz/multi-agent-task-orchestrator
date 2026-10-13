@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, StringConstraints
 
-from app.schemas.base import StorageModel
+from app.schemas.base import StepNumber, StorageModel
 
 PLANNER_SYSTEM_PROMPT = """You are the workflow planner. Return only a JSON object with
 summary (non-empty string) and steps (array). Every step must contain step_number,
@@ -23,9 +23,9 @@ NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_lengt
 
 class PlannedSubtask(StorageModel):
     model_config = ConfigDict(extra="forbid")
-    step_number: int = Field(ge=1)
+    step_number: StepNumber
     agent_id: UUID
-    depends_on: list[int]
+    depends_on: list[StepNumber]
     subtask: NonEmptyText
 
 

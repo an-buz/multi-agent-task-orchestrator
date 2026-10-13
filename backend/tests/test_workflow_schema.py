@@ -2,7 +2,11 @@
 
 from uuid import uuid4
 
+import pytest
+from app.llm.planning import PlannedSubtask
+from app.schemas.run import RunPlanStep
 from app.schemas.workflow import WorkflowWrite, validate_workflow_graph
+from pydantic import ValidationError
 
 
 def test_valid_hybrid_dag_passes() -> None:
@@ -52,3 +56,26 @@ def test_sequential_requires_a_single_chain() -> None:
     assert "sequential workflows must form a single ordered chain" in validate_workflow_graph(
         payload
     )
+
+
+@pytest.mark.parametrize("schema", [RunPlanStep, PlannedSubtask])
+@pytest.mark.parametrize("field", ["step_number", "depends_on"])
+@pytest.mark.parametrize("number", [0, 2147483648])
+def test_plan_identifiers_match_postgres_range(schema, field: str, number: int) -> None:
+    payload = {"step_number": 1, "depends_on": [], "agent_id": uuid4(), "subtask": "Review"}
+    if schema is RunPlanStep:
+        payload["agent_name"] = "Reviewer"
+    payload[field] = number if field == "step_number" else [number]
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["step_number", "depends_on"])
+@pytest.mark.parametrize("number", [0, 2147483648])
+def test_workflow_identifiers_match_postgres_range(field: str, number: int) -> None:
+    step = {"step_number": 1, "agent_id": uuid4(), "depends_on": []}
+    step[field] = number if field == "step_number" else [number]
+    with pytest.raises(ValidationError):
+        WorkflowWrite.model_validate(
+            {"title": "Bounds", "execution_type": "hybrid", "steps": [step]}
+        )

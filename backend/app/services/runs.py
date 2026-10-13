@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
+from pydantic import TypeAdapter, ValidationError
+
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db.file_repository import FileRepository
@@ -13,6 +15,7 @@ from app.models.run import Run
 from app.models.run_step import RunStep
 from app.schemas.context_file import ContextFileRead
 from app.schemas.run import RunCreate, RunPlan, RunPlanStep, RunPlanUpdate, RunRead, StepStatus
+from app.schemas.workflow import WorkflowStepInput
 from app.services.files import FileError, FileService
 
 
@@ -91,6 +94,12 @@ class RunService:
         workflow = await self.repository.workflow(payload.workflow_id, lock=True)
         if workflow is None:
             raise RunError("Workflow not found", 404)
+        try:
+            TypeAdapter(list[WorkflowStepInput]).validate_python(workflow.steps)
+        except ValidationError as exception:
+            raise RunError(
+                "Stored workflow steps are invalid; edit the workflow before running it.", 422
+            ) from exception
         agent_ids = {UUID(str(step["agent_id"])) for step in workflow.steps}
         agents = await self.repository.agents(agent_ids)
         if set(agents) != agent_ids:

@@ -1,11 +1,13 @@
 """ARQ jobs with PostgreSQL ownership locks and recovery dispatch."""
 
+import asyncio
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.cleanup_repository import CleanupRepository
@@ -16,9 +18,13 @@ from app.orchestrator.executor import DAGExecutor
 from app.orchestrator.planner import PlannerExecutor
 from app.services.cleanup import CleanupService
 from app.tools.containers import cleanup_containers
-from app.workers.ownership import run_lock_key
+from app.workers.ownership import OwnershipLost, run_lock_key
 
 logger = structlog.get_logger()
+
+
+class DriverConnection(Protocol):
+    def is_closed(self) -> bool: ...
 
 
 async def execute_run(ctx: dict[str, Any], run_id: str) -> None:
@@ -33,30 +39,70 @@ async def plan_run(ctx: dict[str, Any], run_id: str) -> None:
 
 async def run_job(run_id: str, *, planning: bool) -> None:
     parsed_id = UUID(run_id)
-    # A dedicated connection retains a session advisory lock across checkpoint commits.
+    # Bind persistence to the lock's connection: a disconnected owner cannot write
+    # through another pooled connection after recovery has acquired the lock.
     lock_id = run_lock_key(parsed_id)
     async with engine.connect() as ownership:
-        acquired = await ownership.scalar(
-            text("SELECT pg_try_advisory_lock(:key)"), {"key": lock_id}
-        )
-        if not acquired:
-            return
         try:
-            async with async_session_factory() as session:
-                repository = RunRepository(session)
+            acquired = await ownership.scalar(
+                text("SELECT pg_try_advisory_lock(:key)"), {"key": lock_id}
+            )
+        except BaseException:
+            # Acquisition may have reached PostgreSQL before cancellation was seen.
+            await ownership.invalidate()
+            raise
+        if not acquired:
+            await ownership.rollback()
+            return
+        driver: DriverConnection | None = None
+
+        def check_ownership() -> None:
+            if driver is None or ownership.closed or ownership.invalidated or driver.is_closed():
+                raise OwnershipLost("Execution ownership connection was lost")
+
+        async def watch_ownership() -> None:
+            while True:
+                check_ownership()
+                await asyncio.sleep(get_settings().run_poll_interval)
+
+        execution: asyncio.Task[None] | None = None
+        watcher: asyncio.Task[None] | None = None
+        try:
+            await ownership.commit()
+            raw = await ownership.get_raw_connection()
+            driver = cast(DriverConnection, raw.driver_connection)
+            async with AsyncSession(bind=ownership, expire_on_commit=False) as session:
+                repository = RunRepository(session, check_ownership)
                 run = await repository.get(parsed_id)
                 if run is not None:
-                    if planning:
-                        await PlannerExecutor(repository).execute(run)
-                    else:
-                        await DAGExecutor(repository).execute(run)
+                    executor = PlannerExecutor(repository) if planning else DAGExecutor(repository)
+                    execution = asyncio.create_task(executor.execute(run))
+                    watcher = asyncio.create_task(watch_ownership())
+                    try:
+                        done, _ = await asyncio.wait(
+                            {execution, watcher}, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        if watcher in done:
+                            await watcher
+                        await execution
+                    finally:
+                        execution.cancel()
+                        watcher.cancel()
+                        await asyncio.gather(execution, watcher, return_exceptions=True)
         finally:
-            try:
-                await ownership.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": lock_id})
-            except BaseException:
-                # Never return a connection retaining a session lock to the pool.
+            if driver is None or ownership.invalidated or driver.is_closed():
                 await ownership.invalidate()
-                raise
+            else:
+                try:
+                    await ownership.rollback()
+                    await ownership.execute(
+                        text("SELECT pg_advisory_unlock(:key)"), {"key": lock_id}
+                    )
+                    await ownership.commit()
+                except BaseException:
+                    # Never return a connection retaining a session lock to the pool.
+                    await ownership.invalidate()
+                    raise
 
 
 async def recover_runs(ctx: dict[str, Any]) -> None:

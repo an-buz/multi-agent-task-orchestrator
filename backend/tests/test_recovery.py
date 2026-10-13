@@ -43,7 +43,10 @@ async def test_terminal_response_checkpoint_survives_interruption_without_repeat
     provider.complete = complete
     executor = DAGExecutor(repository, lambda _: provider)
     await interrupt_after_save(
-        repository, executor, run, lambda: bool(repository.saved_steps[0].checkpoint)
+        repository,
+        executor,
+        run,
+        lambda: bool((repository.saved_steps[0].checkpoint or {}).get("turns")),
     )
     first = repository.saved_steps[0]
     assert first.tokens_prompt == 12 and first.tokens_completion == 4
@@ -69,7 +72,7 @@ async def test_tool_checkpoint_recovery(monkeypatch: pytest.MonkeyPatch, boundar
 
     def reached():
         checkpoint = step.checkpoint or {}
-        if not checkpoint:
+        if not checkpoint.get("turns"):
             return False
         receipts = checkpoint["turns"][0]["tools"]
         return (
@@ -109,7 +112,7 @@ async def test_planner_response_checkpoint_and_repair_resume(invalid_first: bool
         repository,
         PlannerExecutor(repository, LLMPlanner(lambda _: provider)),
         run,
-        lambda: bool(run.planning_checkpoint),
+        lambda: bool((run.planning_checkpoint or {}).get("turns")),
     )
     assert run.status == "PLANNING"
     assert run.total_tokens == 28
@@ -144,6 +147,34 @@ async def test_recovery_cannot_bypass_an_already_exceeded_budget() -> None:
     assert step.error["code"] == "token_budget_exceeded"
     assert step.tokens_prompt == 10
     factory.assert_not_called()
+
+
+@pytest.mark.parametrize("after_tool", [False, True])
+async def test_pending_provider_requires_retry_without_losing_saved_usage(after_tool: bool) -> None:
+    repository, run = await make_run([[]])
+    step = repository.saved_steps[0]
+    step.agent_config["tools"] = ["calculator"]
+    provider = FixtureTools()
+
+    def reached():
+        checkpoint = step.checkpoint or {}
+        return checkpoint.get("provider_pending") and bool(checkpoint.get("turns")) == after_tool
+
+    await interrupt_after_save(
+        repository, DAGExecutor(repository, lambda _: provider), run, reached
+    )
+    saved_usage = (step.tokens_prompt, step.tokens_completion)
+    assert saved_usage == ((10, 4) if after_tool else (0, 0))
+    factory = Mock(side_effect=AssertionError("Unknown provider requests must not repeat"))
+    await DAGExecutor(repository, factory).execute(run)
+    assert step.error["code"] == "llm_execution_interrupted"
+    assert (step.tokens_prompt, step.tokens_completion) == saved_usage
+    factory.assert_not_called()
+    await RunService(repository).retry(run.id, 1)
+    await DAGExecutor(repository, lambda _: FixtureTools()).execute(run)
+    assert run.status == "COMPLETED"
+    assert step.tokens_prompt == saved_usage[0] + 28
+    assert step.tokens_completion == saved_usage[1] + 10
 
 
 async def test_container_sweeper_preserves_live_foreign_and_unlabelled_containers(

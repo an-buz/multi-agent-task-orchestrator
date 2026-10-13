@@ -60,6 +60,14 @@ class LLMPlanner:
         previous_duration = int(saved.get("duration_ms", 0))
         provider: LLMProvider | None = None
         try:
+            if saved.get("provider_pending"):
+                result.prompt_tokens = int(saved.get("prompt_tokens", 0))
+                result.completion_tokens = int(saved.get("completion_tokens", 0))
+                result.error = {
+                    "code": "llm_execution_interrupted",
+                    "message": "Planning provider outcome is unknown. Create a new run explicitly.",
+                }
+                return result
             model = str(config["model"])
             request = {
                 "task": task,
@@ -115,6 +123,17 @@ class LLMPlanner:
                                 [],
                                 max_tokens,
                             )
+                            if on_checkpoint is not None:
+                                await on_checkpoint(
+                                    {
+                                        "turns": deepcopy(turns),
+                                        "prompt_tokens": result.prompt_tokens,
+                                        "completion_tokens": result.completion_tokens,
+                                        "duration_ms": previous_duration
+                                        + round((perf_counter() - started) * 1000),
+                                        "provider_pending": True,
+                                    }
+                                )
                             async with asyncio.timeout(get_settings().llm_request_timeout):
                                 response = await provider.complete(
                                     PLANNER_SYSTEM_PROMPT,
@@ -135,6 +154,7 @@ class LLMPlanner:
                                 "completion_tokens": result.completion_tokens,
                                 "duration_ms": previous_duration
                                 + round((perf_counter() - started) * 1000),
+                                "provider_pending": False,
                             }
                         )
                 if budget is not None and result.prompt_tokens + result.completion_tokens > int(

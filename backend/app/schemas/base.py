@@ -1,6 +1,11 @@
 """Reject text that PostgreSQL cannot store before it reaches persistence."""
 
-from pydantic import BaseModel, model_validator
+from typing import Annotated
+
+from pydantic import BaseModel, Field, model_validator
+
+# RunStep.step_number is stored as a PostgreSQL signed INTEGER.
+StepNumber = Annotated[int, Field(ge=1, le=2147483647)]
 
 
 def validate_storage_text(value: object) -> object:

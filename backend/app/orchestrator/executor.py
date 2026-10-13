@@ -88,6 +88,7 @@ class DAGExecutor:
         checkpoint = deepcopy(step.checkpoint or {})
         turns: list[dict[str, Any]] = checkpoint.get("turns", [])
         previous_duration = int(checkpoint.get("duration_ms", 0))
+        provider_pending = bool(checkpoint.get("provider_pending", False))
 
         def duration() -> int:
             return previous_duration + round((perf_counter() - started) * 1000)
@@ -100,11 +101,17 @@ class DAGExecutor:
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,
                         "duration_ms": duration(),
+                        "provider_pending": provider_pending,
                     }
                 )
 
         error_code = "llm_error"
         try:
+            if provider_pending:
+                prompt_tokens = int(checkpoint.get("prompt_tokens", 0))
+                completion_tokens = int(checkpoint.get("completion_tokens", 0))
+                error_code = "llm_execution_interrupted"
+                raise ValueError("Provider outcome is unknown; explicit retry is required")
             config = step.agent_config
             runtime = ToolRuntime(config.get("tools", []), files)
             definitions = runtime.definitions()
@@ -140,6 +147,8 @@ class DAGExecutor:
                                 max_tokens,
                                 config.get("context_window"),
                             )
+                            provider_pending = True
+                            await persist()
                             if isinstance(provider, StreamingLLMProvider):
                                 identity = {
                                     "agentId": str(step.agent_id),
@@ -202,6 +211,7 @@ class DAGExecutor:
                 prompt_tokens += response.usage.input_tokens
                 completion_tokens += response.usage.output_tokens
                 if round_number == len(turns):
+                    provider_pending = False
                     turns.append({"response": response.model_dump(mode="json"), "tools": {}})
                     await persist()
                 if (
@@ -293,6 +303,8 @@ class DAGExecutor:
                         if error_code == "context_too_large"
                         else "Tool outcome is unknown. Retry the step explicitly."
                         if error_code == "tool_execution_interrupted"
+                        else "Provider outcome is unknown. Retry the step explicitly."
+                        if error_code == "llm_execution_interrupted"
                         else "The step could not be completed."
                     ),
                 },

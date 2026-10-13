@@ -204,10 +204,10 @@ async def test_unregistered_planner_model_is_rejected(monkeypatch: pytest.Monkey
     assert error.value.status_code == 422
 
 
-async def test_worker_interruption_leaves_planning_recoverable(
+async def test_worker_interruption_requires_explicit_new_planning_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repository, _, run = await planning_run()
+    repository, service, run = await planning_run()
     entered = asyncio.Event()
     provider = ScriptedMock([])
 
@@ -228,9 +228,16 @@ async def test_worker_interruption_leaves_planning_recoverable(
     assert provider.closed
     recovered = ScriptedMock([])
     await PlannerExecutor(repository, LLMPlanner(lambda _: recovered)).execute(run)
-    assert run.status == "AWAITING_CONFIRMATION"
-    assert run.total_tokens == 28
+    assert run.status == "FAILED"
+    assert run.planning_error["code"] == "llm_execution_interrupted"
+    assert recovered.requests == []
+    assert run.total_tokens == 0
     assert repository.saved_steps[0].attempt == 0
+    created = await service.create(RunCreate(workflow_id=run.workflow_id, task=run.task))
+    replacement = await service.require(created.id)
+    await PlannerExecutor(repository, LLMPlanner(lambda _: recovered)).execute(replacement)
+    assert replacement.status == "AWAITING_CONFIRMATION"
+    assert replacement.total_tokens == 28
 
 
 async def test_transient_planner_error_uses_shared_retry(monkeypatch: pytest.MonkeyPatch) -> None:

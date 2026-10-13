@@ -6,15 +6,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from app.schemas.base import StorageModel
+from app.schemas.base import StepNumber, StorageModel
 
 WorkflowType = Literal["sequential", "parallel", "hybrid"]
 
 
 class WorkflowStepInput(StorageModel):
-    step_number: int = Field(ge=1)
+    step_number: StepNumber
     agent_id: UUID
-    depends_on: list[int] = Field(default_factory=list)
+    depends_on: list[StepNumber] = Field(default_factory=list)
     input_transform: str = ""
 
 
