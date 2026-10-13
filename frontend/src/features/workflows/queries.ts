@@ -1,33 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 
-export type WorkflowType = "sequential" | "parallel" | "hybrid";
-export interface WorkflowStep {
-  step_number: number;
-  agent_id: string;
-  depends_on: number[];
-  input_transform: string;
-}
-export interface Workflow {
-  id: string;
-  title: string;
-  execution_type: WorkflowType;
-  steps: WorkflowStep[];
-  graph_layout: Record<string, { x: number; y: number }>;
-  created_at: string;
-  updated_at: string;
-}
-export interface WorkflowInput {
-  title: string;
-  execution_type: WorkflowType;
-  steps: WorkflowStep[];
-  graph_layout: Record<string, { x: number; y: number }>;
-}
+import type { Workflow, WorkflowInput } from "./types";
+
 export const workflowsQueryKey = ["workflows"] as const;
 export function useWorkflows() {
   return useQuery({
     queryKey: workflowsQueryKey,
-    queryFn: () => apiRequest<{ items: Workflow[]; total: number }>("/workflows"),
+    queryFn: ({ signal }) =>
+      apiRequest<{ items: Workflow[]; total: number }>("/workflows", { signal }),
   });
 }
 export function useSaveWorkflow() {

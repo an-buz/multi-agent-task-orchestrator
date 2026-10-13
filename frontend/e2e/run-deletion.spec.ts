@@ -12,35 +12,61 @@ for (const theme of ["dark", "light"]) {
       { id: completedId, task: "Finished review", status: "COMPLETED" },
       { id: activeId, task: "Active review", status: "IN_PROGRESS" },
     ].map((run) => ({
-      ...run, workflow_id: "00000000-0000-4000-8000-000000000010",
-      workflow_title: "Review workflow", created_at: "2026-10-09T12:00:00Z", total_tokens: 10,
+      ...run,
+      workflow_id: "00000000-0000-4000-8000-000000000010",
+      workflow_title: "Review workflow",
+      created_at: "2026-10-09T12:00:00Z",
+      total_tokens: 10,
     }));
     await page.route("**/api/v1/**", async (route) => {
       const request = route.request();
       const headers = { "access-control-allow-origin": "http://localhost:3000" };
       if (request.method() === "OPTIONS") {
-        return route.fulfill({ status: 204, headers: {
-          ...headers, "access-control-allow-methods": "GET,DELETE,OPTIONS",
-          "access-control-allow-headers": "content-type",
-        } });
+        return route.fulfill({
+          status: 204,
+          headers: {
+            ...headers,
+            "access-control-allow-methods": "GET,DELETE,OPTIONS",
+            "access-control-allow-headers": "content-type",
+          },
+        });
       }
       if (request.method() === "DELETE") {
         expect(new URL(request.url()).pathname).toBe(`/api/v1/runs/${completedId}`);
         deletes += 1;
-        if (deletes === 1) return route.fulfill({ status: 409, headers,
-          json: { error: { code: "invalid_run_state", message: "Cancel this run before deleting it." } },
+        if (deletes === 1)
+          return route.fulfill({
+            status: 409,
+            headers,
+            json: {
+              error: { code: "invalid_run_state", message: "Cancel this run before deleting it." },
+            },
+          });
+        await new Promise<void>((resolve) => {
+          finishDeletion = resolve;
         });
-        await new Promise<void>((resolve) => { finishDeletion = resolve; });
         deleted = true;
         return route.fulfill({ status: 204, headers });
       }
-      return route.fulfill({ headers, json: {
-        items: deleted ? summaries.slice(1) : summaries, total: deleted ? 1 : 2,
-      } });
+      if (new URL(request.url()).pathname !== "/api/v1/runs") {
+        return route.fulfill({ headers, json: { items: [], total: 0 } });
+      }
+      return route.fulfill({
+        headers,
+        json: {
+          items: deleted ? summaries.slice(1) : summaries,
+          total: deleted ? 1 : 2,
+        },
+      });
     });
     await page.goto("/runs");
-    const deleteButton = page.getByRole("button", { name: `Delete run ${completedId}`, exact: true });
-    await expect(page.getByRole("button", { name: `Delete run ${activeId}`, exact: true })).toBeDisabled();
+    const deleteButton = page.getByRole("button", {
+      name: `Delete run ${completedId}`,
+      exact: true,
+    });
+    await expect(
+      page.getByRole("button", { name: `Delete run ${activeId}`, exact: true }),
+    ).toBeDisabled();
     await deleteButton.click();
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toContainText("results, steps, and event history");

@@ -22,10 +22,10 @@ export interface RunStep {
   model?: string | null;
   status: RunStatus;
   depends_on: number[];
-  input?: string;
+  input?: string | null;
   subtask?: string;
-  output?: string;
-  error?: { code: string; message: string };
+  output?: string | null;
+  error?: { code: string; message: string } | null;
   retryable?: boolean;
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -41,7 +41,7 @@ export interface RunPlan {
 export interface RunDetails extends RunSummary {
   total_time_ms?: number;
   token_budget?: number | null;
-  files?: import("@/features/files/queries").ContextFile[];
+  files?: import("@/features/files/types").ContextFile[];
   task: string;
   context_text?: string;
   plan?: RunPlan | RunStep[] | null;

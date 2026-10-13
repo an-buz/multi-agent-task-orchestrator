@@ -6,16 +6,18 @@
 @plugin "@tailwindcss/typography";
 
 :root {
-  color-scheme: dark;
-  --surface: #0b1220;
-  --surface-raised: #101a2b;
+  color-scheme: light;
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(0.97 0 0);
   --border: oklch(0.922 0 0);
   --muted: oklch(0.97 0 0);
   --accent: oklch(0.97 0 0);
   --status-pending: #64748b;
-  --status-progress: #38bdf8;
-  --status-completed: #10b981;
-  --status-failed: #f87171;
+  --status-progress: #0284c7;
+  --status-warning: #a16207;
+  --status-highlight: #7c3aed;
+  --status-completed: #047857;
+  --status-failed: #dc2626;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -93,8 +95,11 @@ a {
   --xy-minimap-node-background-color: var(--surface-raised);
   --xy-minimap-node-stroke-color: var(--accent);
   --xy-controls-button-background-color: var(--surface-raised);
-  --xy-controls-button-background-color-hover:
-    color-mix(in srgb, var(--accent) 18%, var(--surface-raised));
+  --xy-controls-button-background-color-hover: color-mix(
+    in srgb,
+    var(--accent) 18%,
+    var(--surface-raised)
+  );
   --xy-controls-button-color: var(--foreground);
   --xy-controls-button-color-hover: var(--accent);
   --xy-controls-button-border-color: var(--border);
@@ -133,6 +138,11 @@ a {
 }
 
 @theme inline {
+  --color-status-progress: var(--status-progress);
+  --color-status-warning: var(--status-warning);
+  --color-status-highlight: var(--status-highlight);
+  --color-status-completed: var(--status-completed);
+  --color-status-pending: var(--status-pending);
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -176,6 +186,14 @@ a {
 }
 
 .dark {
+  --status-progress: #38bdf8;
+  --status-warning: #fcd34d;
+  --status-highlight: #c4b5fd;
+  --status-completed: #10b981;
+  --status-failed: #f87171;
+  color-scheme: dark;
+  --surface: #0b1220;
+  --surface-raised: #101a2b;
   --background: #050816;
   --foreground: #e6edf5;
   --card: #0b1220;

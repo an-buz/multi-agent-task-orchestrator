@@ -5,26 +5,53 @@ const workflowId = "00000000-0000-4000-8000-000000000010";
 const runId = "00000000-0000-4000-8000-000000000020";
 const timestamp = "2026-10-08T08:00:00.000Z";
 const agent = {
-  id: agentId, name: "Reviewer", role: "Review", system_prompt: "Be precise",
-  model: "claude-sonnet", temperature: 0.7, max_tokens: 4096, context_window: 128000,
-  tools: [], created_at: timestamp, updated_at: timestamp,
+  id: agentId,
+  name: "Reviewer",
+  role: "Review",
+  system_prompt: "Be precise",
+  model: "claude-sonnet",
+  temperature: 0.7,
+  max_tokens: 4096,
+  context_window: 128000,
+  tools: [],
+  created_at: timestamp,
+  updated_at: timestamp,
 };
 
 async function mockApplication(page: Page) {
   const state = {
     config: {
-      default_model: "claude-sonnet", temperature: 0.7, max_tokens: 4096,
-      llm_provider_mode: "mock", code_executor_backend: "disabled",
-      anthropic_key_configured: false, openai_key_configured: false, tavily_key_configured: false,
+      default_model: "claude-sonnet",
+      temperature: 0.7,
+      max_tokens: 4096,
+      llm_provider_mode: "mock",
+      code_executor_backend: "disabled",
+      anthropic_key_configured: false,
+      openai_key_configured: false,
+      tavily_key_configured: false,
     },
     run: {
-      id: runId, workflow_id: workflowId, workflow_title: "QA workflow",
-      task: "Synthetic review", status: "AWAITING_CONFIRMATION", created_at: timestamp,
-      total_tokens: 12, final_report: null as string | null,
-      plan: { summary: "Review", steps: [{
-        step_number: 1, agent_id: agentId, agent_name: "Reviewer", status: "PENDING",
-        depends_on: [], subtask: "Review the change",
-      }] },
+      id: runId,
+      workflow_id: workflowId,
+      workflow_title: "QA workflow",
+      task: "Synthetic review",
+      status: "AWAITING_CONFIRMATION",
+      created_at: timestamp,
+      total_tokens: 12,
+      final_report: null as string | null,
+      plan: {
+        summary: "Review",
+        steps: [
+          {
+            step_number: 1,
+            agent_id: agentId,
+            agent_name: "Reviewer",
+            status: "PENDING",
+            depends_on: [],
+            subtask: "Review the change",
+          },
+        ],
+      },
     },
     exportFailure: false,
   };
@@ -32,29 +59,77 @@ async function mockApplication(page: Page) {
     const request = route.request();
     const url = new URL(request.url());
     const headers = { "access-control-allow-origin": "http://localhost:3000" };
-    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: {
-      ...headers, "access-control-allow-methods": "GET,POST,PATCH,PUT,OPTIONS",
-      "access-control-allow-headers": "content-type",
-    } });
+    if (request.method() === "OPTIONS")
+      return route.fulfill({
+        status: 204,
+        headers: {
+          ...headers,
+          "access-control-allow-methods": "GET,POST,PATCH,PUT,OPTIONS",
+          "access-control-allow-headers": "content-type",
+        },
+      });
     if (url.pathname.endsWith("/settings/config")) {
       if (request.method() === "PATCH") Object.assign(state.config, request.postDataJSON());
       return route.fulfill({ json: state.config, headers });
     }
-    if (url.pathname.endsWith("/agents/models")) return route.fulfill({ headers, json: { items: [
-      { key: "claude-sonnet", provider: "anthropic", tier: "balanced", context_window: 200000 },
-      { key: "claude-haiku", provider: "anthropic", tier: "fast", context_window: 200000 },
-    ] } });
-    if (url.pathname.endsWith("/agents/tools")) return route.fulfill({ headers, json: { items: [] } });
-    if (url.pathname.endsWith("/agents")) return route.fulfill({ headers, json: { items: [agent], total: 1 } });
-    if (url.pathname === "/api/v1/runs" && request.method() === "GET") return route.fulfill({ headers, json: { items: [state.run], total: 1 } });
-    if (url.pathname.endsWith("/workflows")) return route.fulfill({ headers, json: { items: [{
-      id: workflowId, title: "QA workflow", execution_type: "sequential", steps: [],
-      graph_layout: {}, created_at: timestamp, updated_at: timestamp,
-    }], total: 1 } });
-    if (url.pathname.endsWith("/events")) return route.fulfill({ headers, contentType: "text/event-stream", body: `event: run:snapshot\ndata: ${JSON.stringify({ event: "run:snapshot", ts: timestamp, run_id: runId, data: {} })}\n\n` });
-    if (url.pathname.endsWith("/export")) return route.fulfill(state.exportFailure
-      ? { status: 503, headers, body: "Temporary failure" }
-      : { headers: { ...headers, "content-disposition": `attachment; filename="run.${url.searchParams.get("format")}"` }, contentType: "text/plain", body: "QA result" });
+    if (url.pathname.endsWith("/agents/models"))
+      return route.fulfill({
+        headers,
+        json: {
+          items: [
+            {
+              key: "claude-sonnet",
+              provider: "anthropic",
+              tier: "balanced",
+              context_window: 200000,
+            },
+            { key: "claude-haiku", provider: "anthropic", tier: "fast", context_window: 200000 },
+          ],
+        },
+      });
+    if (url.pathname.endsWith("/agents/tools"))
+      return route.fulfill({ headers, json: { items: [] } });
+    if (url.pathname.endsWith("/agents"))
+      return route.fulfill({ headers, json: { items: [agent], total: 1 } });
+    if (url.pathname === "/api/v1/runs" && request.method() === "GET")
+      return route.fulfill({ headers, json: { items: [state.run], total: 1 } });
+    if (url.pathname.endsWith("/workflows"))
+      return route.fulfill({
+        headers,
+        json: {
+          items: [
+            {
+              id: workflowId,
+              title: "QA workflow",
+              execution_type: "sequential",
+              steps: [],
+              graph_layout: {},
+              created_at: timestamp,
+              updated_at: timestamp,
+            },
+          ],
+          total: 1,
+        },
+      });
+    if (url.pathname.endsWith("/events"))
+      return route.fulfill({
+        headers,
+        contentType: "text/event-stream",
+        body: `event: run:snapshot\ndata: ${JSON.stringify({ event: "run:snapshot", ts: timestamp, run_id: runId, data: {} })}\n\n`,
+      });
+    if (url.pathname.endsWith("/export"))
+      return route.fulfill(
+        state.exportFailure
+          ? { status: 503, headers, body: "Temporary failure" }
+          : {
+              headers: {
+                ...headers,
+                "content-disposition": `attachment; filename="run.${url.searchParams.get("format")}"`,
+              },
+              contentType: "text/plain",
+              body: "QA result",
+            },
+      );
     if (url.pathname.endsWith("/plan")) {
       state.run.plan.steps = request.postDataJSON().steps;
       return route.fulfill({ headers, json: state.run });
@@ -72,10 +147,65 @@ for (const theme of ["dark", "light"] as const) {
       await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
     });
 
+    test("modals contain keyboard focus, close with Escape, and render both themes", async ({
+      page,
+    }, testInfo) => {
+      await mockApplication(page);
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.goto("/settings");
+      await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("settings.png"), fullPage: true });
+      const trigger = page.getByRole("button", { name: "Create Agent", exact: true });
+      await trigger.click();
+      const agentDialog = page.getByRole("dialog", { name: "Create New Agent" });
+      await expect(agentDialog).toBeVisible();
+      const model = agentDialog.getByRole("combobox", { name: "AI model", exact: true });
+      await expect(model).toContainText("Claude Sonnet");
+      const modelColors = await model.evaluate((element) => ({
+        background: getComputedStyle(element).backgroundColor,
+        page: getComputedStyle(document.body).backgroundColor,
+      }));
+      expect(modelColors.background).toBe(modelColors.page);
+      await model.click();
+      await expect(page.getByRole("option", { name: /Claude Haiku/ })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(agentDialog).toBeVisible();
+      await expect(page.getByRole("listbox")).not.toBeVisible();
+      await expect(model).toBeFocused();
+      for (let index = 0; index < 12; index += 1) {
+        await page.keyboard.press("Tab");
+        await expect
+          .poll(() => agentDialog.evaluate((element) => element.contains(document.activeElement)))
+          .toBe(true);
+      }
+      await page.screenshot({ path: testInfo.outputPath("agent-dialog.png") });
+      await page.keyboard.press("Escape");
+      await expect(agentDialog).not.toBeVisible();
+      await expect(trigger).toBeFocused();
+
+      await page.goto("/workflows");
+      await page.getByRole("button", { name: "New workflow" }).click();
+      const editor = page.getByRole("dialog", { name: "Workflow editor" });
+      await expect(editor).toBeVisible();
+      await editor.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
+      await page.screenshot({ path: testInfo.outputPath("workflow-editor.png") });
+      await page.keyboard.press("Escape");
+      await expect(editor).not.toBeVisible();
+
+      await page.goto("/");
+      await expect(page.getByRole("heading", { name: "Orchestration Center" })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("dashboard.png"), fullPage: true });
+      await page.goto(`/runs/${runId}`);
+      await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("run-details.png"), fullPage: true });
+    });
+
     test("saved defaults survive reload and populate a new agent", async ({ page }) => {
       await mockApplication(page);
       await page.goto("/settings");
-      await expect(page.getByRole("combobox", { name: "Default model" })).toContainText("Claude Sonnet");
+      await expect(page.getByRole("combobox", { name: "Default model" })).toContainText(
+        "Claude Sonnet",
+      );
       await page.getByRole("combobox", { name: "Default model" }).click();
       await page.getByRole("option", { name: /Claude Haiku/ }).click();
       await page.getByLabel("Default temperature (0.0–1.0)").fill("0.3");
@@ -83,22 +213,32 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByRole("button", { name: "Save changes" }).click();
       await expect(page.getByText("Settings saved successfully.")).toBeVisible();
       await page.reload();
-      await expect(page.getByRole("combobox", { name: "Default model" })).toContainText("Claude Haiku");
+      await expect(page.getByRole("combobox", { name: "Default model" })).toContainText(
+        "Claude Haiku",
+      );
       await expect(page.getByLabel("Default temperature (0.0–1.0)")).toHaveValue("0.3");
       await page.getByRole("button", { name: "Create Agent", exact: true }).click();
-      await expect(page.getByRole("combobox", { name: "AI model", exact: true })).toContainText("Claude Haiku");
+      await expect(page.getByRole("combobox", { name: "AI model", exact: true })).toContainText(
+        "Claude Haiku",
+      );
       await page.getByRole("button", { name: "Advanced Settings" }).click();
-      await expect(page.getByRole("spinbutton", { name: "Max tokens", exact: true })).toHaveValue("2048");
+      await expect(page.getByRole("spinbutton", { name: "Max tokens", exact: true })).toHaveValue(
+        "2048",
+      );
     });
 
     test("dashboard selection is controlled and monitoring controls respond", async ({ page }) => {
       await mockApplication(page);
       const errors: string[] = [];
-      page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+      page.on("console", (message) => {
+        if (message.type() === "error") errors.push(message.text());
+      });
       await page.goto("/");
       await page.getByRole("combobox", { name: "Workflow", exact: true }).click();
       await page.getByRole("option", { name: "QA workflow" }).click();
-      await expect(page.getByRole("combobox", { name: "Workflow", exact: true })).toContainText("QA workflow");
+      await expect(page.getByRole("combobox", { name: "Workflow", exact: true })).toContainText(
+        "QA workflow",
+      );
       await page.getByRole("button", { name: "Clear", exact: true }).click();
       await expect(page.getByText("Console cleared. Waiting for new events.")).toBeVisible();
       await expect(page.getByText("Cloned repository", { exact: false })).toHaveCount(0);
@@ -115,16 +255,18 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByRole("combobox", { name: "Workflow", exact: true }).click();
       await page.getByRole("option", { name: "QA workflow" }).click();
       await page.getByRole("button", { name: "Decompose and Run" }).click();
-      await expect(page.getByRole("dialog", { name: "Plan preview" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Plan preview" })).toBeVisible();
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Plan preview" })).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Plan preview" })).toHaveCount(0);
       expect(state.run.status).toBe("CANCELLED");
     });
 
     test("existing unconfirmed run can be edited, confirmed, or cancelled", async ({ page }) => {
       const state = await mockApplication(page);
       await page.goto(`/runs/${runId}`);
-      await page.getByRole("textbox", { name: "Task for Reviewer" }).fill("Edited from run details");
+      await page
+        .getByRole("textbox", { name: "Task for Reviewer" })
+        .fill("Edited from run details");
       await page.getByRole("button", { name: "Confirm and run" }).click();
       await expect(page.getByText("IN_PROGRESS", { exact: true })).toBeVisible();
       expect(state.run.plan.steps[0].subtask).toBe("Edited from run details");
@@ -143,12 +285,16 @@ for (const theme of ["dark", "light"] as const) {
       page.on("pageerror", (error) => pageErrors.push(error.message));
       await page.goto(`/runs/${runId}`);
       await page.getByRole("button", { name: "Download JSON" }).click();
-      await expect(page.locator("main").getByRole("alert")).toHaveText("Export failed (503)");
+      await expect(page.locator("main").getByRole("alert")).toHaveText(
+        "API request failed with status 503",
+      );
       state.exportFailure = false;
       for (const format of ["JSON", "MD", "PDF"]) {
         const download = page.waitForEvent("download");
         await page.getByRole("button", { name: `Download ${format}` }).click();
-        expect((await download).suggestedFilename()).toMatch(new RegExp(`\\.${format.toLowerCase()}$`));
+        expect((await download).suggestedFilename()).toMatch(
+          new RegExp(`\\.${format.toLowerCase()}$`),
+        );
       }
       expect(pageErrors).toEqual([]);
     });

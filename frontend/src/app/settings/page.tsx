@@ -1,4 +1,4 @@
-import SettingsContent from "./settings-content";
+import SettingsContent from "@/features/settings/settings-content";
 
 export default function SettingsPage() {
   return <SettingsContent />;

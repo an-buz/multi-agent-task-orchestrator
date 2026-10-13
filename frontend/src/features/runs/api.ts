@@ -1,14 +1,12 @@
-import { apiRequest } from "@/lib/api";
+import { apiRequest, apiResponse, apiUrl } from "@/lib/api";
 import type { CreateRunInput, CreatedRun, RunDetails, RunEvent, RunListResponse } from "./types";
 
-export const runsQueryKey = ["runs"] as const;
-
-export function listRuns(): Promise<RunListResponse> {
-  return apiRequest<RunListResponse>("/runs");
+export function listRuns(signal?: AbortSignal): Promise<RunListResponse> {
+  return apiRequest<RunListResponse>("/runs", { signal });
 }
 
-export function getRun(id: string): Promise<RunDetails> {
-  return apiRequest<RunDetails>(`/runs/${id}`);
+export function getRun(id: string, signal?: AbortSignal): Promise<RunDetails> {
+  return apiRequest<RunDetails>(`/runs/${id}`, { signal });
 }
 
 export function deleteRun(id: string): Promise<void> {
@@ -22,9 +20,17 @@ export function createRun(input: CreateRunInput): Promise<RunDetails | CreatedRu
   });
 }
 
-export function waitForRunPlan(id: string): Promise<RunDetails> {
+export function waitForRunPlan(id: string, signal?: AbortSignal): Promise<RunDetails> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
     let settled = false;
+    let checking = false;
+    const controller = new AbortController();
+    const onAbort = () =>
+      finish(signal?.reason ?? new DOMException("Planning wait cancelled.", "AbortError"));
     const timer = window.setTimeout(
       () => finish(new Error("Timed out waiting for the execution plan.")),
       60_000,
@@ -38,18 +44,27 @@ export function waitForRunPlan(id: string): Promise<RunDetails> {
       },
       () => undefined,
     );
+    // Polling is a fallback when SSE cannot connect or an event is lost.
+    const poll = window.setInterval(checkPlan, 2000);
+    signal?.addEventListener("abort", onAbort, { once: true });
     function checkPlan() {
-      void getRun(id).then(
-        (run) => {
-          if (run.status === "AWAITING_CONFIRMATION" && run.plan) finish(undefined, run);
-          else if (run.status === "FAILED") {
-            finish(
-              new Error(run.planning_error?.message ?? "Could not generate the execution plan."),
-            );
-          } else if (run.status === "CANCELLED") finish(new Error("Planning was cancelled."));
-        },
-        (error: unknown) => finish(error),
-      );
+      if (settled || checking) return;
+      checking = true;
+      void getRun(id, controller.signal)
+        .then(
+          (run) => {
+            if (run.status === "AWAITING_CONFIRMATION" && run.plan) finish(undefined, run);
+            else if (run.status === "FAILED") {
+              finish(
+                new Error(run.planning_error?.message ?? "Could not generate the execution plan."),
+              );
+            } else if (run.status === "CANCELLED") finish(new Error("Planning was cancelled."));
+          },
+          (error: unknown) => finish(error),
+        )
+        .finally(() => {
+          checking = false;
+        });
     }
     // A fast worker may finish before EventSource connects; snapshot/GET closes that race.
     checkPlan();
@@ -57,6 +72,9 @@ export function waitForRunPlan(id: string): Promise<RunDetails> {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
+      window.clearInterval(poll);
+      signal?.removeEventListener("abort", onAbort);
+      controller.abort();
       close();
       if (error) reject(error);
       else if (run) resolve(run);
@@ -88,8 +106,7 @@ export function retryRunStep(id: string, step: number): Promise<RunDetails> {
 }
 
 export function exportRun(id: string, format: "json" | "md" | "pdf"): Promise<Response> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
-  return fetch(`${base}/runs/${id}/export?format=${format}`);
+  return apiResponse(`/runs/${id}/export?format=${format}`);
 }
 
 export function subscribeToRun(
@@ -98,9 +115,8 @@ export function subscribeToRun(
   onError: () => void,
   options?: { after?: number },
 ) {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
   const replay = options?.after !== undefined ? `?after=${options.after}` : "";
-  const source = new EventSource(`${base}/runs/${id}/events${replay}`);
+  const source = new EventSource(apiUrl(`/runs/${id}/events${replay}`));
   const eventNames = [
     "run:snapshot",
     "plan:ready",
@@ -118,13 +134,17 @@ export function subscribeToRun(
   ];
   const listeners = eventNames.map((name) => {
     const listener: EventListener = (message) => {
+      const incoming = message as MessageEvent<string>;
+      let parsed: unknown;
       try {
-        const incoming = message as MessageEvent<string>;
-        const event = JSON.parse(incoming.data) as RunEvent;
-        onEvent({ ...event, id: incoming.lastEventId || undefined });
+        parsed = JSON.parse(incoming.data);
       } catch {
-        /* Ignore malformed mock events. */
+        return;
       }
+      if (!parsed || typeof parsed !== "object" || !("event" in parsed) || parsed.event !== name)
+        return;
+      const event = parsed as RunEvent;
+      onEvent({ ...event, id: incoming.lastEventId || undefined });
     };
     source.addEventListener(name, listener);
     return [name, listener] as const;

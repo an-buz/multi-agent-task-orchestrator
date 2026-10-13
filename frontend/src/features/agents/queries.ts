@@ -1,56 +1,64 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
+import { removeItem, upsertItem } from "@/lib/collection";
 
 export const agentsQueryKey = ["agents"] as const;
-export const agentCatalogQueryKey = ["agent-catalog"] as const;
+export const agentModelsQueryKey = ["agent-catalog", "models"] as const;
+export const agentToolsQueryKey = ["agent-catalog", "tools"] as const;
 
-export interface Agent {
-  id: string;
-  name: string;
-  role: string;
-  system_prompt: string;
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  context_window: number;
-  tools: string[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AgentModel {
-  key: string;
-  provider: "anthropic" | "openai";
-  model_id: string;
-  tier: "fast" | "balanced" | "powerful";
-  context_window: number;
-}
-
-export interface AgentTool {
-  key: string;
-  name: string;
-  description: string;
-}
+import type { Agent, AgentModel, AgentTool } from "./types";
 
 export function useAgents() {
   return useQuery({
     queryKey: agentsQueryKey,
-    queryFn: () => apiRequest<{ items: Agent[]; total: number }>("/agents"),
+    queryFn: ({ signal }) => apiRequest<{ items: Agent[]; total: number }>("/agents", { signal }),
     staleTime: 30_000,
   });
 }
 
-export function useAgentCatalog() {
+export function useAgentModels() {
   return useQuery({
-    queryKey: agentCatalogQueryKey,
-    queryFn: async () => {
-      const [models, tools] = await Promise.all([
-        apiRequest<{ items: AgentModel[] }>("/agents/models"),
-        apiRequest<{ items: AgentTool[] }>("/agents/tools"),
-      ]);
-      return { models: models.items, tools: tools.items };
-    },
+    queryKey: agentModelsQueryKey,
+    queryFn: ({ signal }) => apiRequest<{ items: AgentModel[] }>("/agents/models", { signal }),
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useAgentCatalog() {
+  const models = useAgentModels();
+  const tools = useQuery({
+    queryKey: agentToolsQueryKey,
+    queryFn: ({ signal }) => apiRequest<{ items: AgentTool[] }>("/agents/tools", { signal }),
+    staleTime: 5 * 60_000,
+  });
+  return {
+    data:
+      models.data && tools.data
+        ? { models: models.data.items, tools: tools.data.items }
+        : undefined,
+    isPending: models.isPending || tools.isPending,
+    isLoading: models.isLoading || tools.isLoading,
+    isError: models.isError || tools.isError,
+    error: models.error ?? tools.error,
+    refetch: () => Promise.all([models.refetch(), tools.refetch()]),
+  };
+}
+
+export function useSaveAgent(id?: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (values: Omit<Agent, "id" | "created_at" | "updated_at">) =>
+      apiRequest<Agent>(id ? `/agents/${id}` : "/agents", {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify(values),
+      }),
+    onSuccess: async (agent) => {
+      await client.cancelQueries({ queryKey: agentsQueryKey });
+      client.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) =>
+        upsertItem(current, agent),
+      );
+      await client.invalidateQueries({ queryKey: agentsQueryKey });
+    },
   });
 }
 
@@ -59,10 +67,10 @@ export function useDeleteAgent() {
   return useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/agents/${id}`, { method: "DELETE" }),
     onSuccess: async (_result, id) => {
-      queryClient.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) => ({
-        items: (current?.items ?? []).filter((agent) => agent.id !== id),
-        total: Math.max(0, (current?.total ?? 1) - 1),
-      }));
+      await queryClient.cancelQueries({ queryKey: agentsQueryKey });
+      queryClient.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) =>
+        removeItem(current, id),
+      );
       await queryClient.invalidateQueries({ queryKey: agentsQueryKey });
     },
   });

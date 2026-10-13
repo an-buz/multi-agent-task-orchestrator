@@ -3,15 +3,21 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LoaderCircle, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { Sidebar } from "@/components/sidebar";
-import { apiRequest } from "@/lib/api";
+import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import { configQueryKey, useAppConfig, type AppConfig } from "@/features/agents/defaults";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+import { useAppConfig, useSaveAppConfig } from "./queries";
+import { useAgentModels } from "@/features/agents/queries";
+import type { AgentModel } from "@/features/agents/types";
 
 const settingsSchema = z.object({
   default_model: z.string().min(1, "Default model is required."),
@@ -21,24 +27,13 @@ const settingsSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsSchema>;
 
-interface ModelInfo {
-  key: string;
-  provider: string;
-  model_id: string;
-  tier: string;
-  context_window: number;
-}
-
 export default function SettingsContent() {
-  const client = useQueryClient();
   const configQuery = useAppConfig();
-  const modelQuery = useQuery({
-    queryKey: ["models"],
-    queryFn: () => apiRequest<{ items: ModelInfo[] }>("/agents/models"),
-  });
+  const modelQuery = useAgentModels();
   const config = configQuery.data;
   const models = modelQuery.data?.items ?? [];
-  const loadError = configQuery.isError || modelQuery.isError ? "Could not load configuration." : null;
+  const loadError =
+    configQuery.isError || modelQuery.isError ? "Could not load configuration." : null;
   const [saveNotice, setSaveNotice] = useState("");
 
   const form = useForm<SettingsFormValues>({
@@ -49,28 +44,22 @@ export default function SettingsContent() {
   const selectedDefaultModelInfo = models.find((model) => model.key === selectedDefaultModel);
 
   useEffect(() => {
-    if (config) form.reset({
-      default_model: config.default_model,
-      temperature: config.temperature,
-      max_tokens: config.max_tokens,
-    });
+    if (config)
+      form.reset({
+        default_model: config.default_model,
+        temperature: config.temperature,
+        max_tokens: config.max_tokens,
+      });
   }, [config, form]);
 
-  const save = useMutation({
-    mutationFn: (values: SettingsFormValues) => apiRequest<AppConfig>("/settings/config", {
-        method: "PATCH",
-        body: JSON.stringify(values),
-    }),
-    onSuccess: (saved) => {
-      client.setQueryData(configQueryKey, saved);
-      setSaveNotice("Settings saved successfully.");
-    },
-    onError: (error) => setSaveNotice(error.message),
-  });
+  const save = useSaveAppConfig();
   const saving = save.isPending;
   function onSubmit(values: SettingsFormValues) {
     setSaveNotice("");
-    save.mutate(values);
+    save.mutate(values, {
+      onSuccess: () => setSaveNotice("Settings saved successfully."),
+      onError: (error) => setSaveNotice(error.message),
+    });
   }
 
   function handleRetry() {
@@ -81,13 +70,12 @@ export default function SettingsContent() {
   const saveDisabled = !config || modelQuery.isPending || Boolean(loadError);
 
   return (
-    <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-      <Sidebar />
+    <AppShell>
       <section className="min-w-0">
         <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               API keys, default agent parameters, and system configuration.
             </p>
           </div>
@@ -97,7 +85,7 @@ export default function SettingsContent() {
           {loadError && (
             <div
               role="alert"
-              className="mb-5 rounded-lg border border-rose-900/60 bg-rose-950/20 p-4 text-sm text-rose-300"
+              className="mb-5 rounded-lg border border-destructive/60 bg-destructive/20 p-4 text-sm text-destructive"
             >
               {loadError}{" "}
               <Button variant="ghost" onClick={handleRetry} className="underline">
@@ -108,11 +96,11 @@ export default function SettingsContent() {
 
           {/* Loading state */}
           {!config && !loadError && (
-            <div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-(--border) bg-(--surface) p-8 text-center">
+            <div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-(--border) bg-card p-8 text-center">
               <div>
-                <LoaderCircle size={24} className="mx-auto animate-spin text-slate-400" />
+                <LoaderCircle size={24} className="mx-auto animate-spin text-muted-foreground" />
                 <h2 className="mt-4 font-semibold">Loading settings…</h2>
-                <p className="mt-2 text-sm text-slate-400">
+                <p className="mt-2 text-sm text-muted-foreground">
                   Loading configuration and model catalog from the server.
                 </p>
               </div>
@@ -123,9 +111,9 @@ export default function SettingsContent() {
           {config && !loadError && (
             <section className="space-y-6">
               {/* API Keys Section */}
-              <article className="rounded-xl border border-(--border) bg-(--surface) p-5">
+              <article className="rounded-xl border border-(--border) bg-card p-5">
                 <h2 className="text-sm font-semibold">API keys</h2>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   API keys are configured on the server side. Keys must be set in environment
                   variables and never committed to version control.
                 </p>
@@ -137,12 +125,14 @@ export default function SettingsContent() {
               </article>
 
               {/* LLM Provider Mode */}
-              <article className="rounded-xl border border-(--border) bg-(--surface) p-5">
+              <article className="rounded-xl border border-(--border) bg-card p-5">
                 <h2 className="text-sm font-semibold">LLM provider mode</h2>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   When set to{" "}
-                  <span className="font-mono text-emerald-300">{config.llm_provider_mode}</span>,
-                  the orchestrator uses{" "}
+                  <span className="font-mono text-status-completed">
+                    {config.llm_provider_mode}
+                  </span>
+                  , the orchestrator uses{" "}
                   {config.llm_provider_mode === "mock"
                     ? "deterministic mock responses"
                     : "real model APIs"}
@@ -151,11 +141,13 @@ export default function SettingsContent() {
               </article>
 
               {/* Code Executor */}
-              <article className="rounded-xl border border-(--border) bg-(--surface) p-5">
+              <article className="rounded-xl border border-(--border) bg-card p-5">
                 <h2 className="text-sm font-semibold">Code executor</h2>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   The code executor backend is{" "}
-                  <span className="font-mono text-emerald-300">{config.code_executor_backend}</span>
+                  <span className="font-mono text-status-completed">
+                    {config.code_executor_backend}
+                  </span>
                   .
                 </p>
               </article>
@@ -166,9 +158,9 @@ export default function SettingsContent() {
                   role="alert"
                   className={`rounded-lg border p-4 text-sm ${
                     saveNotice.startsWith("Settings saved")
-                      ? "border-emerald-900/60 bg-emerald-950/20 text-emerald-300"
+                      ? "border-status-completed/60 bg-status-completed/20 text-status-completed"
                       : saveNotice
-                        ? "border-rose-900/60 bg-rose-950/20 text-rose-300"
+                        ? "border-destructive/60 bg-destructive/20 text-destructive"
                         : ""
                   }`}
                 >
@@ -177,32 +169,41 @@ export default function SettingsContent() {
               )}
 
               {/* Default Agent Parameters */}
-              <article className="rounded-xl border border-(--border) bg-(--surface) p-5">
+              <article className="rounded-xl border border-(--border) bg-card p-5">
                 <h2 className="text-sm font-semibold">Default agent parameters</h2>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Values applied when creating a new agent. Adjusted values can be overridden in the
                   agent creation form. Values are saved through the settings API.
                 </p>
 
                 <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-5">
                   <fieldset>
-                    <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Default model
                     </legend>
                     <div id="model-error" aria-live="polite" />
                     <Select
                       value={selectedDefaultModel}
-                      onValueChange={(value) => value && form.setValue("default_model", value, { shouldValidate: true })}
+                      onValueChange={(value) =>
+                        value && form.setValue("default_model", value, { shouldValidate: true })
+                      }
                       disabled={saveDisabled}
                     >
-                      <SelectTrigger aria-label="Default model" className={form.formState.errors.default_model ? "border-rose-500" : "border-(--border)"}>
+                      <SelectTrigger
+                        aria-label="Default model"
+                        className={
+                          form.formState.errors.default_model
+                            ? "border-destructive"
+                            : "border-(--border)"
+                        }
+                      >
                         {selectedDefaultModelInfo ? (
                           <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <Sparkles size={15} className="shrink-0 text-emerald-400" />
-                            <span className="truncate text-sm text-slate-200">
+                            <Sparkles size={15} className="shrink-0 text-status-completed" />
+                            <span className="truncate text-sm text-foreground">
                               {formatModelLabel(selectedDefaultModelInfo)}
                             </span>
-                            <span className="ml-auto shrink-0 text-xs text-slate-500">
+                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                               {formatTierLabel(selectedDefaultModelInfo.tier)}
                             </span>
                           </div>
@@ -211,34 +212,36 @@ export default function SettingsContent() {
                         )}
                       </SelectTrigger>
                       <SelectContent>
-                        {models.map((model) => (
-                          <SelectItem
-                            key={model.key}
-                            value={model.key}
-                            className="px-3 py-2.5 text-slate-300 focus:bg-slate-800 focus:text-white"
-                          >
-                            <div className="flex w-full min-w-0 items-center gap-2">
-                              <Sparkles size={15} className="shrink-0 text-emerald-400" />
-                              <span className="min-w-0 flex-1 truncate">
-                                {formatModelLabel(model)}
-                              </span>
-                              <span className="ml-auto shrink-0 text-xs text-slate-500">
-                                {formatTierLabel(model.tier)}
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          {models.map((model) => (
+                            <SelectItem
+                              key={model.key}
+                              value={model.key}
+                              className="px-3 py-2.5 text-foreground focus:bg-accent focus:text-foreground"
+                            >
+                              <div className="flex w-full min-w-0 items-center gap-2">
+                                <Sparkles size={15} className="shrink-0 text-status-completed" />
+                                <span className="min-w-0 flex-1 truncate">
+                                  {formatModelLabel(model)}
+                                </span>
+                                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                                  {formatTierLabel(model.tier)}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     {form.formState.errors.default_model && (
-                      <p className="mt-1.5 text-xs text-rose-400" aria-hidden="false">
+                      <p className="mt-1.5 text-xs text-destructive" aria-hidden="false">
                         {form.formState.errors.default_model.message}
                       </p>
                     )}
                   </fieldset>
 
                   <div className="grid gap-5 sm:grid-cols-2">
-                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Default temperature (0.0–1.0)
                       <Input
                         {...form.register("temperature", { valueAsNumber: true })}
@@ -248,16 +251,16 @@ export default function SettingsContent() {
                         max={1}
                         aria-describedby="temp-error"
                         disabled={saveDisabled}
-                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-emerald-500 ${form.formState.errors.temperature ? "border-rose-500" : "border-(--border)"}`}
+                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-status-completed ${form.formState.errors.temperature ? "border-destructive" : "border-(--border)"}`}
                       />
                       {form.formState.errors.temperature && (
-                        <p id="temp-error" className="mt-1.5 text-xs text-rose-400">
+                        <p id="temp-error" className="mt-1.5 text-xs text-destructive">
                           {form.formState.errors.temperature.message}
                         </p>
                       )}
                     </label>
 
-                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Default max tokens (1–8192)
                       <Input
                         {...form.register("max_tokens", { valueAsNumber: true })}
@@ -266,10 +269,10 @@ export default function SettingsContent() {
                         max={8192}
                         aria-describedby="tokens-error"
                         disabled={saveDisabled}
-                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-emerald-500 ${form.formState.errors.max_tokens ? "border-rose-500" : "border-(--border)"}`}
+                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-status-completed ${form.formState.errors.max_tokens ? "border-destructive" : "border-(--border)"}`}
                       />
                       {form.formState.errors.max_tokens && (
-                        <p id="tokens-error" className="mt-1.5 text-xs text-rose-400">
+                        <p id="tokens-error" className="mt-1.5 text-xs text-destructive">
                           {form.formState.errors.max_tokens.message}
                         </p>
                       )}
@@ -300,11 +303,11 @@ export default function SettingsContent() {
           )}
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }
 
-function formatModelLabel(model: ModelInfo): string {
+function formatModelLabel(model: AgentModel): string {
   const modelLabels: Record<string, string> = {
     "claude-haiku": "Claude Haiku",
     "claude-sonnet": "Claude Sonnet",
@@ -332,11 +335,13 @@ function ApiKeyStatus({ label, configured }: { label: string; configured: boolea
   return (
     <div className="flex items-center gap-3 rounded-lg border border-(--border) px-4 py-2.5">
       <span
-        className={`size-2 shrink-0 rounded-full ${configured ? "bg-emerald-400" : "bg-slate-600"}`}
+        className={`size-2 shrink-0 rounded-full ${configured ? "bg-status-completed" : "bg-status-pending"}`}
       />
       <div>
-        <dt className="text-xs font-medium text-slate-300">{label}</dt>
-        <dd className={`text-[11px] ${configured ? "text-emerald-400" : "text-slate-500"}`}>
+        <dt className="text-xs font-medium text-foreground">{label}</dt>
+        <dd
+          className={`text-[11px] ${configured ? "text-status-completed" : "text-muted-foreground"}`}
+        >
           {configured ? "Configured" : "Not configured"}
         </dd>
       </div>

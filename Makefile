@@ -24,6 +24,7 @@ lint:
 
 test:
 	cd backend && uv run pytest
+	cd frontend && pnpm test
 
 test-e2e:
 	cd frontend && pnpm test:e2e

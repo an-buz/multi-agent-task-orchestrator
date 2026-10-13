@@ -1,7 +1,6 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import {
   Bot,
@@ -18,37 +17,24 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import remarkGfm from "remark-gfm";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
+import { useForm, useWatch } from "react-hook-form";
+import { agentSchema, type AgentFormValues } from "./form-schema";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectTrigger,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import { apiRequest } from "@/lib/api";
-import { agentsQueryKey, useAgentCatalog, type Agent } from "./queries";
-import { useAppConfig } from "./defaults";
-
-const agentSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "Agent name is required.")
-    .max(100, "Use 100 characters or fewer."),
-  role: z.string().trim().min(1, "Role is required.").max(500, "Use 500 characters or fewer."),
-  system_prompt: z.string().trim().min(1, "System prompt is required."),
-  model: z.string().min(1),
-  temperature: z.number().min(0).max(1),
-  max_tokens: z.number().int().min(1),
-  context_window: z.number().int().min(1),
-  tools: z.array(z.string()),
-});
-
-type AgentFormValues = z.infer<typeof agentSchema>;
+import type { Agent } from "./types";
+import { useSaveAgent, useAgentCatalog } from "./queries";
+import { useAppConfig } from "@/features/settings/queries";
 
 const defaultValues: AgentFormValues = {
   name: "",
@@ -85,30 +71,12 @@ export function CreateAgentDialog({
   onClose?: () => void;
   trigger?: boolean;
 }) {
-  const queryClient = useQueryClient();
   const catalog = useAgentCatalog();
   const [open, setOpen] = useState(Boolean(agent));
   const config = useAppConfig(open && !agent);
   const [advanced, setAdvanced] = useState(false);
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
-  const mutation = useMutation({
-    mutationFn: (values: AgentFormValues) =>
-      apiRequest<Agent>(agent ? `/agents/${agent.id}` : "/agents", {
-        method: agent ? "PUT" : "POST",
-        body: JSON.stringify(values),
-      }),
-    onSuccess: async (savedAgent) => {
-      queryClient.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) => ({
-        items: [savedAgent, ...(current?.items ?? []).filter((item) => item.id !== savedAgent.id)],
-        total: current?.total ?? 1,
-      }));
-      await queryClient.invalidateQueries({ queryKey: agentsQueryKey });
-      setOpen(false);
-      onClose?.();
-      form.reset(defaultValues);
-      setPromptView("write");
-    },
-  });
+  const mutation = useSaveAgent(agent?.id);
   const form = useForm<AgentFormValues>({ resolver: zodResolver(agentSchema), defaultValues });
   useEffect(() => {
     if (agent) {
@@ -127,18 +95,23 @@ export function CreateAgentDialog({
   useEffect(() => {
     if (open && !agent && config.data) {
       if (!form.getFieldState("model").isDirty) form.setValue("model", config.data.default_model);
-      if (!form.getFieldState("temperature").isDirty) form.setValue("temperature", config.data.temperature);
-      if (!form.getFieldState("max_tokens").isDirty) form.setValue("max_tokens", config.data.max_tokens);
+      if (!form.getFieldState("temperature").isDirty)
+        form.setValue("temperature", config.data.temperature);
+      if (!form.getFieldState("max_tokens").isDirty)
+        form.setValue("max_tokens", config.data.max_tokens);
     }
   }, [open, agent, config.data, form]);
-  const temperature = form.watch("temperature");
-  const selectedTools = form.watch("tools");
-  const selectedModel = form.watch("model");
+  const systemPrompt = useWatch({ control: form.control, name: "system_prompt" });
+  const contextWindow = useWatch({ control: form.control, name: "context_window" });
+  const temperature = useWatch({ control: form.control, name: "temperature" });
+  const selectedTools = useWatch({ control: form.control, name: "tools" });
+  const selectedModel = useWatch({ control: form.control, name: "model" });
   const models = catalog.data?.models ?? [];
   const tools = catalog.data?.tools ?? [];
   const selectedModelInfo = models.find((model) => model.key === selectedModel);
 
   function close() {
+    if (mutation.isPending) return;
     setOpen(false);
     form.reset(defaultValues);
     setPromptView("write");
@@ -147,368 +120,380 @@ export function CreateAgentDialog({
   }
 
   return (
-    <>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) setOpen(true);
+        else close();
+      }}
+    >
       {trigger && (
-        <button
+        <DialogTrigger
           type="button"
-          onClick={() => setOpen(true)}
-          className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-xs text-slate-200 transition hover:border-emerald-500/60 hover:text-emerald-300"
+          className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 px-3 py-2.5 text-xs text-foreground transition hover:border-status-completed/60 hover:text-status-completed"
         >
           <Plus size={14} /> Create Agent
-        </button>
+        </DialogTrigger>
       )}
-      {open && (
-        <div
-          className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) close();
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-agent-title"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") close();
-            }}
-            className="my-auto w-full max-w-2xl rounded-2xl border border-border bg-(--surface) p-5 shadow-2xl sm:p-7"
+      <DialogContent showCloseButton={false} className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <header className="mb-6 flex items-start justify-between border-b border-border pb-5">
+          <div>
+            <DialogTitle id="create-agent-title">
+              {agent ? "Edit Agent" : "Create New Agent"}
+            </DialogTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Configure your AI agent with a custom role, model, and toolset.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={close}
+            aria-label="Close dialog"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
           >
-            <header className="mb-6 flex items-start justify-between border-b border-border pb-5">
-              <div>
-                <h2 id="create-agent-title" className="text-lg font-semibold">
-                  {agent ? "Edit Agent" : "Create New Agent"}
-                </h2>
-                <p className="mt-1 text-xs text-slate-400">
-                  Configure your AI agent with a custom role, model, and toolset.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={close}
-                aria-label="Close dialog"
-                className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white"
-              >
-                <X size={17} />
-              </button>
-            </header>
+            <X size={17} />
+          </button>
+        </header>
 
-            <form
-              onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
-              className="space-y-5"
-            >
-              <div className="flex items-center gap-4">
-                <span className="grid size-14 shrink-0 place-items-center rounded-full bg-slate-800 text-emerald-400">
-                  <Bot size={25} />
+        <form
+          onSubmit={form.handleSubmit((values) =>
+            mutation.mutate(values, {
+              onSuccess: () => {
+                setOpen(false);
+                onClose?.();
+                form.reset(defaultValues);
+                setPromptView("write");
+              },
+            }),
+          )}
+          className="space-y-5"
+        >
+          <div className="flex items-center gap-4">
+            <span className="grid size-14 shrink-0 place-items-center rounded-full bg-secondary text-status-completed">
+              <Bot size={25} />
+            </span>
+            <label className="min-w-0 flex-1 tracking-wide text-muted-foreground">
+              <span className="text-[11px] font-semibold uppercase">Agent name</span>
+              <Input
+                {...form.register("name")}
+                autoFocus
+                placeholder="e.g., Senior Code Reviewer"
+                className="mt-1.5 block w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-normal normal-case tracking-normal text-foreground outline-none placeholder:text-muted-foreground focus:border-status-completed"
+              />
+              <span className="mt-1.5 block text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
+                Choose a unique identifier for this agent in your workflows
+              </span>
+              {form.formState.errors.name && (
+                <span className="mt-1 block text-destructive">
+                  {form.formState.errors.name.message}
                 </span>
-                <label className="min-w-0 flex-1 tracking-wide text-slate-400">
-                  <span className="text-[11px] font-semibold uppercase">Agent name</span>
-                  <Input
-                    {...form.register("name")}
-                    autoFocus
-                    placeholder="e.g., Senior Code Reviewer"
-                    className="mt-1.5 block w-full rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
-                  />
-                  <span className="mt-1.5 block text-[11px] font-normal normal-case tracking-normal text-slate-500">
-                    Choose a unique identifier for this agent in your workflows
-                  </span>
-                  {form.formState.errors.name && (
-                    <span className="mt-1 block text-rose-400">
-                      {form.formState.errors.name.message}
-                    </span>
-                  )}
-                </label>
-              </div>
+              )}
+            </label>
+          </div>
 
-              <label className="block tracking-wide text-slate-400">
-                <span className="text-[11px] font-semibold uppercase">Role</span>
-                <Input
-                  {...form.register("role")}
-                  placeholder="e.g., Reviews code for bugs, security, and performance"
-                  className="mt-1.5 block w-full rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-base font-normal normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-500 focus:border-emerald-500"
-                />
-                {form.formState.errors.role && (
-                  <span className="mt-1 block normal-case text-rose-400">
-                    {form.formState.errors.role.message}
-                  </span>
-                )}
-              </label>
+          <label className="block tracking-wide text-muted-foreground">
+            <span className="text-[11px] font-semibold uppercase">Role</span>
+            <Input
+              {...form.register("role")}
+              placeholder="e.g., Reviews code for bugs, security, and performance"
+              className="mt-1.5 block w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-normal normal-case tracking-normal text-foreground outline-none placeholder:text-muted-foreground focus:border-status-completed"
+            />
+            {form.formState.errors.role && (
+              <span className="mt-1 block normal-case text-destructive">
+                {form.formState.errors.role.message}
+              </span>
+            )}
+          </label>
 
-              <div className="block tracking-wide text-slate-400">
-                <span className="text-[11px] font-semibold uppercase">System prompt</span>
-                <div className="mt-1.5 overflow-hidden rounded-lg border border-border bg-slate-950 focus-within:border-emerald-500">
-                  <div
-                    className="flex border-b border-border px-2 pt-2"
-                    role="tablist"
-                    aria-label="System prompt view"
+          <div className="block tracking-wide text-muted-foreground">
+            <span className="text-[11px] font-semibold uppercase">System prompt</span>
+            <div className="mt-1.5 overflow-hidden rounded-lg border border-border bg-background focus-within:border-status-completed">
+              <div
+                className="flex border-b border-border px-2 pt-2"
+                role="tablist"
+                aria-label="System prompt view"
+              >
+                {(["write", "preview"] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    role="tab"
+                    aria-selected={promptView === view}
+                    onClick={() => setPromptView(view)}
+                    className={`rounded-t-md px-3 py-1.5 text-xs capitalize ${promptView === view ? "border border-b-0 border-border bg-background text-status-completed" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    {(["write", "preview"] as const).map((view) => (
-                      <button
-                        key={view}
-                        type="button"
-                        role="tab"
-                        aria-selected={promptView === view}
-                        onClick={() => setPromptView(view)}
-                        className={`rounded-t-md px-3 py-1.5 text-xs capitalize ${promptView === view ? "border border-b-0 border-border bg-slate-900 text-emerald-300" : "text-slate-500 hover:text-slate-300"}`}
-                      >
-                        {view}
-                      </button>
-                    ))}
-                  </div>
-                  {promptView === "write" ? (
-                    <textarea
-                      {...form.register("system_prompt")}
-                      aria-label="System prompt Markdown source"
-                      rows={6}
-                      placeholder={
-                        "# Role\nDescribe how this agent should behave...\n\n## Guidelines\n- Be concise\n- Explain your reasoning"
-                      }
-                      className="block w-full resize-y bg-transparent p-3 font-mono text-base leading-6 normal-case tracking-normal text-slate-300 outline-none placeholder:text-slate-600"
-                    />
+                    {view}
+                  </button>
+                ))}
+              </div>
+              {promptView === "write" ? (
+                <Textarea
+                  {...form.register("system_prompt")}
+                  aria-label="System prompt Markdown source"
+                  rows={6}
+                  placeholder={
+                    "# Role\nDescribe how this agent should behave...\n\n## Guidelines\n- Be concise\n- Explain your reasoning"
+                  }
+                  className="block w-full resize-y bg-transparent p-3 font-mono text-base leading-6 normal-case tracking-normal text-foreground outline-none placeholder:text-muted-foreground"
+                />
+              ) : (
+                <div
+                  role="tabpanel"
+                  className="prose dark:prose-invert min-h-36 max-w-none overflow-auto p-3 text-sm prose-headings:text-foreground prose-p:text-foreground prose-a:text-status-completed prose-code:text-status-completed prose-pre:bg-background prose-li:text-foreground prose-strong:text-foreground prose-th:text-foreground prose-td:text-foreground"
+                >
+                  {systemPrompt.trim() ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{systemPrompt}</ReactMarkdown>
                   ) : (
-                    <div
-                      role="tabpanel"
-                      className="prose prose-invert min-h-36 max-w-none overflow-auto p-3 text-sm prose-headings:text-slate-100 prose-p:text-slate-300 prose-a:text-emerald-300 prose-code:text-emerald-200 prose-pre:bg-slate-900 prose-li:text-slate-300 prose-strong:text-slate-100 prose-th:text-slate-200 prose-td:text-slate-300"
-                    >
-                      {form.watch("system_prompt").trim() ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {form.watch("system_prompt")}
-                        </ReactMarkdown>
-                      ) : (
-                        <p className="m-0 text-slate-500">Markdown preview will appear here.</p>
-                      )}
-                    </div>
+                    <p className="m-0 text-muted-foreground">Markdown preview will appear here.</p>
                   )}
                 </div>
-                {form.formState.errors.system_prompt && (
-                  <span className="mt-1 block normal-case text-rose-400">
-                    {form.formState.errors.system_prompt.message}
-                  </span>
+              )}
+            </div>
+            {form.formState.errors.system_prompt && (
+              <span className="mt-1 block normal-case text-destructive">
+                {form.formState.errors.system_prompt.message}
+              </span>
+            )}
+          </div>
+
+          <fieldset>
+            <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              AI model
+            </legend>
+            <Select
+              value={selectedModel}
+              onValueChange={(model) => {
+                if (!model) return;
+                const modelInfo = models.find((item) => item.key === model);
+                form.setValue("model", model, { shouldDirty: true });
+                if (modelInfo) {
+                  form.setValue(
+                    "context_window",
+                    Math.min(form.getValues("context_window"), modelInfo.context_window),
+                  );
+                  form.setValue(
+                    "max_tokens",
+                    Math.min(form.getValues("max_tokens"), modelInfo.context_window),
+                  );
+                }
+              }}
+              disabled={catalog.isLoading || models.length === 0}
+            >
+              <SelectTrigger aria-label="AI model">
+                {selectedModelInfo ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <Sparkles size={15} className="shrink-0 text-status-completed" />
+
+                    <span className="truncate text-sm text-foreground">
+                      {modelLabels[selectedModelInfo.key] ?? selectedModelInfo.key}
+                    </span>
+
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                      {tierLabels[selectedModelInfo.tier as keyof typeof tierLabels]}
+                    </span>
+                  </div>
+                ) : (
+                  <SelectValue />
                 )}
-              </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {models.map((model) => {
+                    const tier = tierLabels[model.tier as keyof typeof tierLabels];
 
-              <fieldset>
-                <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  AI model
-                </legend>
-                <Select
-                  value={selectedModel}
-                  onValueChange={(model) => {
-                    if (!model) return;
-                    const modelInfo = models.find((item) => item.key === model);
-                    form.setValue("model", model, { shouldDirty: true });
-                    if (modelInfo) {
-                      form.setValue(
-                        "context_window",
-                        Math.min(form.getValues("context_window"), modelInfo.context_window),
-                      );
-                      form.setValue(
-                        "max_tokens",
-                        Math.min(form.getValues("max_tokens"), modelInfo.context_window),
-                      );
-                    }
-                  }}
-                  disabled={catalog.isLoading || models.length === 0}
-                >
-                  <SelectTrigger aria-label="AI model">
-                    {selectedModelInfo ? (
-                      <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <Sparkles size={15} className="shrink-0 text-emerald-400" />
-
-                        <span className="truncate text-sm text-slate-200">
-                          {modelLabels[selectedModelInfo.key] ?? selectedModelInfo.key}
-                        </span>
-
-                        <span className="ml-auto shrink-0 text-xs text-slate-500">
-                          {tierLabels[selectedModelInfo.tier as keyof typeof tierLabels]}
-                        </span>
-                      </div>
-                    ) : (
-                      <SelectValue />
-                    )}
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((model) => {
-                      const tier = tierLabels[model.tier as keyof typeof tierLabels];
-
-                      return (
-                        <SelectItem
-                          key={model.key}
-                          value={model.key}
-                          className="px-3 py-2.5 text-slate-300 focus:bg-slate-800 focus:text-white"
-                        >
-                          <div className="flex w-full min-w-0 items-center gap-2">
-                            <Sparkles size={15} className="shrink-0 text-emerald-400" />
-
-                            <span className="min-w-0 flex-1 truncate">
-                              {modelLabels[model.key] ?? model.key}
-                            </span>
-
-                            <span className="ml-auto shrink-0 text-xs text-slate-500">{tier}</span>
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                {selectedModelInfo && (
-                  <p className="mt-2 text-xs text-slate-500">
-                    {selectedModelInfo.provider} ·{" "}
-                    {selectedModelInfo.context_window.toLocaleString()} token context
-                  </p>
-                )}
-                {catalog.isError && (
-                  <p role="alert" className="mt-2 text-xs text-rose-400">
-                    Unable to load model catalogue: {catalog.error.message}
-                  </p>
-                )}
-              </fieldset>
-
-              <fieldset>
-                <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  Available tools
-                </legend>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {tools.map((tool) => {
-                    const selected = selectedTools.includes(tool.key);
-                    const Icon = toolIcons[tool.key as keyof typeof toolIcons] ?? Terminal;
                     return (
-                      <button
-                        key={tool.key}
-                        type="button"
-                        role="switch"
-                        aria-checked={selected}
-                        aria-label={tool.name}
-                        title={tool.description}
-                        onClick={() =>
-                          form.setValue(
-                            "tools",
-                            selected
-                              ? selectedTools.filter((key) => key !== tool.key)
-                              : [...selectedTools, tool.key],
-                          )
-                        }
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${selected ? "border-emerald-500/70 bg-emerald-500/10 text-white" : "border-border bg-slate-950 text-slate-400 hover:border-slate-600"}`}
+                      <SelectItem
+                        key={model.key}
+                        value={model.key}
+                        className="px-3 py-2.5 text-foreground focus:bg-accent focus:text-foreground"
                       >
-                        <Icon size={14} className={selected ? "text-emerald-400" : ""} />
-                        <span>{tool.name}</span>
-                        <span
-                          className={`ml-auto flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${selected ? "bg-emerald-500" : "bg-slate-700"}`}
-                        >
-                          <span
-                            className={`size-4 rounded-full bg-slate-100 shadow transition-transform ${selected ? "translate-x-4" : "translate-x-0"}`}
-                          />
-                        </span>
-                      </button>
+                        <div className="flex w-full min-w-0 items-center gap-2">
+                          <Sparkles size={15} className="shrink-0 text-status-completed" />
+
+                          <span className="min-w-0 flex-1 truncate">
+                            {modelLabels[model.key] ?? model.key}
+                          </span>
+
+                          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                            {tier}
+                          </span>
+                        </div>
+                      </SelectItem>
                     );
                   })}
-                </div>
-                {catalog.isError && (
-                  <p role="alert" className="mt-2 text-xs text-rose-400">
-                    Unable to load tool catalogue: {catalog.error.message}
-                  </p>
-                )}
-              </fieldset>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            {selectedModelInfo && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {selectedModelInfo.provider} · {selectedModelInfo.context_window.toLocaleString()}{" "}
+                token context
+              </p>
+            )}
+            {catalog.isError && (
+              <p role="alert" className="mt-2 text-xs text-destructive">
+                Unable to load model catalogue: {catalog.error?.message}
+              </p>
+            )}
+          </fieldset>
 
-              <div>
-                <button
-                  type="button"
-                  aria-expanded={advanced}
-                  onClick={() => setAdvanced(!advanced)}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-300 hover:text-white"
-                >
-                  Advanced Settings{" "}
-                  <ChevronDown size={14} className={advanced ? "rotate-180" : ""} />
-                </button>
-                {advanced && (
-                  <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                    <label className="text-[11px] text-slate-400">
-                      Temperature{" "}
-                      <span className="float-right text-emerald-400">{temperature.toFixed(1)}</span>
-                      <div className="mt-3 flex h-5 items-center">
-                        <Slider
-                          aria-label="Temperature"
-                          min={0}
-                          max={1}
-                          step={0.1}
-                          value={temperature}
-                          onValueChange={(value) => {
-                            const v = Array.isArray(value) ? value[0] : value;
-                            form.setValue("temperature", v, { shouldDirty: true });
-                          }}
-                        />
-                      </div>
-                    </label>
-                    <label className="text-[11px] text-slate-400">
-                      Max tokens
-                      <Input
-                        {...form.register("max_tokens", { valueAsNumber: true })}
-                        type="number"
-                        min="1"
-                        className="mt-2 block w-full rounded-md border border-border bg-slate-950 px-2 py-2 text-[16px] text-slate-300"
+          <fieldset>
+            <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Available tools
+            </legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {tools.map((tool) => {
+                const selected = selectedTools.includes(tool.key);
+                const Icon = toolIcons[tool.key as keyof typeof toolIcons] ?? Terminal;
+                return (
+                  <button
+                    key={tool.key}
+                    type="button"
+                    role="switch"
+                    aria-checked={selected}
+                    aria-label={tool.name}
+                    title={tool.description}
+                    onClick={() =>
+                      form.setValue(
+                        "tools",
+                        selected
+                          ? selectedTools.filter((key) => key !== tool.key)
+                          : [...selectedTools, tool.key],
+                      )
+                    }
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${selected ? "border-status-completed/70 bg-status-completed/10 text-foreground" : "border-border bg-background text-muted-foreground hover:border-slate-600"}`}
+                  >
+                    <Icon size={14} className={selected ? "text-status-completed" : ""} />
+                    <span>{tool.name}</span>
+                    <span
+                      className={`ml-auto flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${selected ? "bg-status-completed" : "bg-secondary"}`}
+                    >
+                      <span
+                        className={`size-4 rounded-full bg-slate-100 shadow transition-transform ${selected ? "translate-x-4" : "translate-x-0"}`}
                       />
-                    </label>
-                    <label className="text-[11px] text-slate-400">
-                      Context window
-                      <span className="relative mt-2 block">
-                        <Select
-                          value={String(form.watch("context_window"))}
-                          onValueChange={(value) => value && form.setValue("context_window", Number(value))}
-                        >
-                          <SelectTrigger aria-label="Context window" className="block w-full appearance-none rounded-md border border-border bg-slate-950 px-2 py-2 pr-9 text-[16px] text-slate-300">
-                            {Number(form.watch("context_window")) / 1000}K tokens
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="8000">8K tokens</SelectItem>
-                            <SelectItem value="32000">32K tokens</SelectItem>
-                            <SelectItem value="128000">128K tokens</SelectItem>
-                            <SelectItem value="200000" disabled={(selectedModelInfo?.context_window ?? 0) < 200000}>200K tokens</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </span>
-                    </label>
-                  </div>
-                )}
-              </div>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {catalog.isError && (
+              <p role="alert" className="mt-2 text-xs text-destructive">
+                Unable to load tool catalogue: {catalog.error?.message}
+              </p>
+            )}
+          </fieldset>
 
-              {mutation.isError && (
-                <p role="alert" className="text-xs text-rose-400">
-                  {mutation.error.message}. Check that the API is available and try again.
-                </p>
-              )}
-              {!agent && config.isError && (
-                <p role="alert">Could not load agent defaults. Please reopen the dialog to retry.</p>
-              )}
-              <footer className="flex justify-end gap-2 border-t border-border pt-5">
-                <button
-                  type="button"
-                  onClick={close}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-slate-400 hover:bg-white/5"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    mutation.isPending ||
-                    (!agent && (config.isPending || config.isError)) ||
-                    catalog.isLoading ||
-                    catalog.isError ||
-                    models.length === 0
-                  }
-                  className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-100 transition hover:bg-emerald-400 disabled:cursor-wait disabled:opacity-70"
-                >
-                  {mutation.isPending ? (
-                    <LoaderCircle size={14} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={14} />
-                  )}{" "}
-                  {agent ? "Save Changes" : "Create Agent"}
-                </button>
-              </footer>
-            </form>
-          </section>
-        </div>
-      )}
-    </>
+          <div>
+            <button
+              type="button"
+              aria-expanded={advanced}
+              onClick={() => setAdvanced(!advanced)}
+              className="flex items-center gap-1 text-xs font-medium text-foreground hover:text-foreground"
+            >
+              Advanced Settings <ChevronDown size={14} className={advanced ? "rotate-180" : ""} />
+            </button>
+            {advanced && (
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <label className="text-[11px] text-muted-foreground">
+                  Temperature{" "}
+                  <span className="float-right text-status-completed">
+                    {temperature.toFixed(1)}
+                  </span>
+                  <div className="mt-3 flex h-5 items-center">
+                    <Slider
+                      aria-label="Temperature"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={temperature}
+                      onValueChange={(value) => {
+                        const v = Array.isArray(value) ? value[0] : value;
+                        form.setValue("temperature", v, { shouldDirty: true });
+                      }}
+                    />
+                  </div>
+                </label>
+                <label className="text-[11px] text-muted-foreground">
+                  Max tokens
+                  <Input
+                    {...form.register("max_tokens", { valueAsNumber: true })}
+                    type="number"
+                    min="1"
+                    className="mt-2 block w-full rounded-md border border-border bg-background px-2 py-2 text-[16px] text-foreground"
+                  />
+                </label>
+                <label className="text-[11px] text-muted-foreground">
+                  Context window
+                  <span className="relative mt-2 block">
+                    <Select
+                      value={String(contextWindow)}
+                      onValueChange={(value) =>
+                        value && form.setValue("context_window", Number(value))
+                      }
+                    >
+                      <SelectTrigger
+                        aria-label="Context window"
+                        className="block w-full appearance-none rounded-md border border-border bg-background px-2 py-2 pr-9 text-[16px] text-foreground"
+                      >
+                        {Number(contextWindow) / 1000}K tokens
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="8000">8K tokens</SelectItem>
+                          <SelectItem value="32000">32K tokens</SelectItem>
+                          <SelectItem value="128000">128K tokens</SelectItem>
+                          <SelectItem
+                            value="200000"
+                            disabled={(selectedModelInfo?.context_window ?? 0) < 200000}
+                          >
+                            200K tokens
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </span>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {mutation.isError && (
+            <p role="alert" className="text-xs text-destructive">
+              {mutation.error.message}. Check that the API is available and try again.
+            </p>
+          )}
+          {!agent && config.isError && (
+            <p role="alert">Could not load agent defaults. Please reopen the dialog to retry.</p>
+          )}
+          <footer className="flex justify-end gap-2 border-t border-border pt-5">
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={close}
+              className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-foreground/5"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={
+                mutation.isPending ||
+                (!agent && (config.isPending || config.isError)) ||
+                catalog.isLoading ||
+                catalog.isError ||
+                models.length === 0
+              }
+            >
+              {mutation.isPending ? (
+                <LoaderCircle size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}{" "}
+              {agent ? "Save Changes" : "Create Agent"}
+            </Button>
+          </footer>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

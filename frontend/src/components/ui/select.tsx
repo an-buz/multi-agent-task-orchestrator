@@ -40,11 +40,11 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-slate-950 px-3 py-2.5 text-sm leading-normal whitespace-nowrap text-slate-300 shadow-none transition-colors outline-none",
-        "hover:border-slate-600",
-        "focus:border-emerald-500",
+        "flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-sm leading-normal whitespace-nowrap text-foreground shadow-none transition-colors outline-none",
+        "hover:border-ring",
+        "focus:border-ring",
         "disabled:cursor-not-allowed disabled:opacity-50",
-        "data-placeholder:text-slate-500",
+        "data-placeholder:text-muted-foreground",
         "data-[size=default]:h-10 data-[size=sm]:h-8 data-[size=lg]:h-10",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
@@ -54,7 +54,7 @@ function SelectTrigger({
       {children}
 
       <SelectPrimitive.Icon
-        render={<ChevronDownIcon className="size-4 shrink-0 text-slate-500" />}
+        render={<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />}
       />
     </SelectPrimitive.Trigger>
   );
@@ -90,7 +90,7 @@ function SelectContent({
           className={cn(
             "relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36",
             "origin-(--transform-origin) overflow-x-hidden overflow-y-auto",
-            "rounded-lg border border-border bg-slate-950 text-slate-300 shadow-xl",
+            "rounded-lg border border-border bg-popover text-popover-foreground shadow-xl",
             "ring-0",
             "data-[side=bottom]:slide-in-from-top-2",
             "data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95",

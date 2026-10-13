@@ -1,27 +1,28 @@
 "use client";
 
-import {
-  Check,
-  CloudUpload,
-  FileText,
-  Paperclip,
-  Play,
-  Sparkles,
-  X,
-} from "lucide-react";
-import { useRef, useState } from "react";
+import { Check, CloudUpload, FileText, Paperclip, Play, Sparkles, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Sidebar } from "@/components/sidebar";
+import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkflows } from "@/features/workflows/queries";
-import { cancelRun, confirmRun, createRun, editRunPlan, runsQueryKey, waitForRunPlan } from "@/features/runs/api";
-import { runSteps, useRunMonitor } from "@/features/monitor/use-run-monitor";
+import { cancelRun, confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
+import { runsQueryKey } from "@/features/runs/queries";
+import { runSteps } from "@/features/runs/model";
+import { useRunMonitor } from "@/features/monitor/use-run-monitor";
 import { RunPipeline, RunConsole, RunInspector } from "@/features/monitor/dashboard-monitor";
 import type { RunDetails } from "@/features/runs/types";
-import { useUploadContextFile, useDeleteContextFile, type ContextFile } from "@/features/files/queries";
+import type { ContextFile } from "@/features/files/types";
+import { useUploadContextFile, useDeleteContextFile } from "@/features/files/queries";
 
 export default function DashboardPage() {
   const [task, setTask] = useState(
@@ -40,16 +41,21 @@ export default function DashboardPage() {
   const monitoredRun = monitor.run;
   const monitoredSteps = runSteps(monitoredRun);
   const [inspected, setInspected] = useState<{ runId: string; number: number } | null>(null);
-  const inspectedStep = (inspected?.runId === monitoredRun?.id
-    ? monitoredSteps.find((step) => step.step_number === inspected?.number) : undefined)
-    ?? monitoredSteps.find((step) => step.status === "IN_PROGRESS")
-    ?? monitoredSteps.find((step) => step.status === "FAILED") ?? monitoredSteps[0];
+  const inspectedStep =
+    (inspected?.runId === monitoredRun?.id
+      ? monitoredSteps.find((step) => step.step_number === inspected?.number)
+      : undefined) ??
+    monitoredSteps.find((step) => step.status === "IN_PROGRESS") ??
+    monitoredSteps.find((step) => step.status === "FAILED") ??
+    monitoredSteps[0];
   const workflowsQuery = useWorkflows();
   const [workflowId, setWorkflowId] = useState("");
   const [runDraft, setRunDraft] = useState<RunDetails | null>(null);
   const [runError, setRunError] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const planningWait = useRef<AbortController | null>(null);
+  useEffect(() => () => planningWait.current?.abort(), []);
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setRunError("");
@@ -81,6 +87,9 @@ export default function DashboardPage() {
     }
     setBusy(true);
     setRunError("");
+    const controller = new AbortController();
+    planningWait.current?.abort();
+    planningWait.current = controller;
     try {
       const created = await createRun({
         workflow_id: workflowId,
@@ -88,14 +97,19 @@ export default function DashboardPage() {
         context_text: context || undefined,
         file_ids: attachments.map((file) => file.id),
       });
+      // Detach local upload state as soon as the server owns the references.
+      setAttachments([]);
+      if (controller.signal.aborted) return;
       router.replace(`/?run=${encodeURIComponent(created.id)}`, { scroll: false });
       await client.invalidateQueries({ queryKey: runsQueryKey, exact: true });
-      // The run now owns immutable references; removing draft attachments must not delete them.
-      setAttachments([]);
-      const draft = "plan" in created && created.plan ? created : await waitForRunPlan(created.id);
-      setRunDraft(draft);
+      const draft =
+        "plan" in created && created.plan
+          ? created
+          : await waitForRunPlan(created.id, controller.signal);
+      if (!controller.signal.aborted) setRunDraft(draft);
     } catch (error) {
-      setRunError(error instanceof Error ? error.message : "Could not create a run.");
+      if (!controller.signal.aborted)
+        setRunError(error instanceof Error ? error.message : "Could not create a run.");
     } finally {
       setBusy(false);
     }
@@ -104,6 +118,7 @@ export default function DashboardPage() {
   async function confirmPlan() {
     if (!runDraft) return;
     setBusy(true);
+    setRunError("");
     try {
       if (runDraft.plan) {
         const steps = Array.isArray(runDraft.plan) ? runDraft.plan : runDraft.plan.steps;
@@ -144,33 +159,35 @@ export default function DashboardPage() {
     : [];
 
   return (
-    <main className="min-h-screen bg-[#050816] lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-      <Sidebar />
+    <AppShell>
       <section className="min-w-0">
         <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Orchestration Center</h1>
-            <p className="mt-1 text-xs text-slate-400">
-              Active Session: <span className="font-mono text-slate-300">{monitor.runId ?? "No run selected"}</span>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Active Session:{" "}
+              <span className="font-mono text-foreground">
+                {monitor.runId ?? "No run selected"}
+              </span>
             </p>
           </div>
-          <div className="flex items-center gap-5 text-xs text-slate-300">
+          <div className="flex items-center gap-5 text-xs text-foreground">
             <span className="flex items-center gap-2">
-              <i className="size-2 rounded-full bg-emerald-400" />
+              <i className="size-2 rounded-full bg-status-completed" />
               Completed: {monitoredSteps.filter((step) => step.status === "COMPLETED").length}
             </span>
             <span className="flex items-center gap-2">
-              <i className="size-2 rounded-full bg-amber-400" />
+              <i className="size-2 rounded-full bg-status-warning" />
               Active Nodes: {monitoredSteps.filter((step) => step.status === "IN_PROGRESS").length}
             </span>
           </div>
         </header>
         <div className="grid min-h-[calc(100vh-80px)] xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-5 p-5 lg:p-6">
-            <section className="rounded-xl border border-(--border) bg-(--surface) p-4 lg:p-5">
+            <section className="rounded-xl border border-(--border) bg-card p-4 lg:p-5">
               <label
                 htmlFor="workflow-task"
-                className="text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+                className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
               >
                 Workflow task definition
               </label>
@@ -180,11 +197,11 @@ export default function DashboardPage() {
                 onChange={(event) => setTask(event.target.value)}
                 placeholder="Describe the task you want your workflow to complete..."
                 rows={3}
-                className="mt-2.5 min-h-24 w-full resize-y rounded-lg border border-(--border) bg-[#050816] px-3 py-3 text-sm leading-6 text-slate-200 outline-none placeholder:text-slate-600 focus:border-emerald-500/60"
+                className="mt-2.5 min-h-24 w-full resize-y rounded-lg border border-(--border) bg-background px-3 py-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-status-completed/60"
               />
               {contextOpen && (
-                <div className="mt-3 rounded-lg border border-(--border) bg-[#080e1d] p-3">
-                  <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                <div className="mt-3 rounded-lg border border-(--border) bg-background p-3">
+                  <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
                     <span className="flex items-center gap-2">
                       <Paperclip size={13} />
                       Additional context
@@ -193,13 +210,16 @@ export default function DashboardPage() {
                       variant="ghost"
                       onClick={() => setContextOpen(false)}
                       aria-label="Close context"
-                      className="rounded p-1 hover:bg-white/5 [&_svg]:size-4"
+                      className="rounded p-1 hover:bg-foreground/5 [&_svg]:size-4"
                     >
                       <X size={14} />
                     </Button>
                   </div>
                   {attachments.map((attachment) => (
-                    <div key={attachment.id} className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div
+                      key={attachment.id}
+                      className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"
+                    >
                       <FileText size={13} />
                       {attachment.filename} ({attachment.size_bytes} bytes)
                       <Button
@@ -218,22 +238,31 @@ export default function DashboardPage() {
                     onChange={(event) => setContext(event.target.value)}
                     rows={3}
                     placeholder="Paste context here..."
-                    className="w-full resize-y bg-transparent text-sm leading-5 text-slate-300 outline-none placeholder:text-slate-600"
+                    className="w-full resize-y bg-transparent text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground"
                   />
                 </div>
               )}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Select value={workflowId || null} onValueChange={(value) => setWorkflowId(value ?? "")}>
-                    <SelectTrigger aria-label="Workflow" className="h-auto w-auto rounded-lg border-(--border) bg-[#050816] px-3 py-2 text-xs text-slate-300">
-                      {workflowsQuery.data?.items.find((workflow) => workflow.id === workflowId)?.title ?? "Choose workflow"}
+                  <Select
+                    value={workflowId || null}
+                    onValueChange={(value) => setWorkflowId(value ?? "")}
+                  >
+                    <SelectTrigger
+                      aria-label="Workflow"
+                      className="h-auto w-auto rounded-lg border-(--border) bg-background px-3 py-2 text-xs text-foreground"
+                    >
+                      {workflowsQuery.data?.items.find((workflow) => workflow.id === workflowId)
+                        ?.title ?? "Choose workflow"}
                     </SelectTrigger>
                     <SelectContent>
-                    <SelectGroup>
-                    {workflowsQuery.data?.items.map((workflow) => (
-                      <SelectItem key={workflow.id} value={workflow.id}>{workflow.title}</SelectItem>
-                    ))}
-                    </SelectGroup>
+                      <SelectGroup>
+                        {workflowsQuery.data?.items.map((workflow) => (
+                          <SelectItem key={workflow.id} value={workflow.id}>
+                            {workflow.title}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                   <input
@@ -244,9 +273,14 @@ export default function DashboardPage() {
                     disabled={fileBusy || busy || attachments.length >= 10}
                     onChange={(event) => void handleFile(event.target.files?.[0])}
                   />
-                  <Button disabled={fileBusy || busy || attachments.length >= 10} onClick={() => fileInput.current?.click()} variant="secondary">
+                  <Button
+                    disabled={fileBusy || busy || attachments.length >= 10}
+                    onClick={() => fileInput.current?.click()}
+                    variant="secondary"
+                  >
                     <CloudUpload data-icon="inline-start" />
-                    {uploadFile.isPending ? "Uploading…" : "Add context file"} <span className="text-muted-foreground">TXT · MD · JSON · PDF</span>
+                    {uploadFile.isPending ? "Uploading…" : "Add context file"}{" "}
+                    <span className="text-muted-foreground">TXT · MD · JSON · PDF</span>
                   </Button>
                   <Button onClick={() => setContextOpen(true)} variant="ghost">
                     Paste text
@@ -265,21 +299,20 @@ export default function DashboardPage() {
                 </Button>
               </div>
               {runError && (
-                <p role="alert" className="mt-3 text-xs text-rose-300">
+                <p role="alert" className="mt-3 text-xs text-destructive">
                   {runError}
                 </p>
               )}
               {workflowsQuery.isError && (
-                <p role="alert" className="mt-2 text-xs text-rose-300">
+                <p role="alert" className="mt-2 text-xs text-destructive">
                   Could not load workflows.
                 </p>
               )}
               {runDraft && (
                 <div
-                  role="dialog"
-                  aria-modal="true"
+                  role="region"
                   aria-labelledby="plan-title"
-                  className="mt-4 rounded-lg border border-emerald-500/30 bg-[#080e1d] p-4"
+                  className="mt-4 rounded-lg border border-status-completed/30 bg-background p-4"
                 >
                   <div className="flex items-center justify-between">
                     <h2 id="plan-title" className="text-sm font-semibold">
@@ -303,12 +336,12 @@ export default function DashboardPage() {
                         <span className="font-medium">
                           {step.step_number}. {step.agent_name}
                         </span>
-                        <span className="ml-2 text-slate-400">
+                        <span className="ml-2 text-muted-foreground">
                           Depends on: {step.depends_on.length ? step.depends_on.join(", ") : "none"}
                         </span>
-                        <textarea
+                        <Textarea
                           aria-label={`Task for ${step.agent_name}`}
-                          className="mt-2 block w-full rounded border border-(--border) bg-[#050816] p-2 text-slate-300"
+                          className="mt-2 block w-full rounded border border-(--border) bg-background p-2 text-foreground"
                           value={step.input ?? step.subtask ?? ""}
                           onChange={(event) =>
                             setRunDraft({
@@ -332,28 +365,58 @@ export default function DashboardPage() {
                     <Button variant="secondary" disabled={busy} onClick={() => void cancelPlan()}>
                       Cancel
                     </Button>
-                    <Button disabled={busy} onClick={() => void confirmPlan()}>
+                    <Button
+                      disabled={
+                        busy ||
+                        planSteps.length === 0 ||
+                        planSteps.some((step) => !(step.subtask ?? step.input ?? "").trim())
+                      }
+                      onClick={() => void confirmPlan()}
+                    >
                       {busy ? "Starting…" : "Confirm and run"}
                     </Button>
                   </div>
                 </div>
               )}
             </section>
-            {monitor.runs.isError && <p role="alert" className="text-sm text-destructive">Could not load runs.</p>}
-            {monitor.detail.isError && <p role="alert" className="text-sm text-destructive">Could not load the selected run.</p>}
-            {(monitor.runs.isLoading || monitor.detail.isLoading) && <p role="status" className="text-sm text-muted-foreground">Loading monitoring data…</p>}
-            <RunPipeline run={monitoredRun} runs={monitor.runs.data?.items ?? []}
+            {monitor.runs.isError && (
+              <p role="alert" className="text-sm text-destructive">
+                Could not load runs.
+              </p>
+            )}
+            {monitor.detail.isError && (
+              <p role="alert" className="text-sm text-destructive">
+                Could not load the selected run.
+              </p>
+            )}
+            {(monitor.runs.isLoading || monitor.detail.isLoading) && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Loading monitoring data…
+              </p>
+            )}
+            <RunPipeline
+              run={monitoredRun}
+              runs={monitor.runs.data?.items ?? []}
               pending={monitor.runs.isLoading || monitor.detail.isLoading}
               failed={monitor.runs.isError || monitor.detail.isError}
-              selectRun={(id) => router.replace(`/?run=${encodeURIComponent(id)}`, { scroll: false })}
-              step={inspectedStep} selectStep={(number) => {
+              selectRun={(id) =>
+                router.replace(`/?run=${encodeURIComponent(id)}`, { scroll: false })
+              }
+              step={inspectedStep}
+              selectStep={(number) => {
                 if (monitoredRun) setInspected({ runId: monitoredRun.id, number });
-              }} />
-            <RunConsole runId={monitor.runId} events={monitor.events} connectionError={monitor.connectionError} steps={monitoredSteps} />
+              }}
+            />
+            <RunConsole
+              runId={monitor.runId}
+              events={monitor.events}
+              connectionError={monitor.connectionError}
+              steps={monitoredSteps}
+            />
           </div>
           <RunInspector run={monitoredRun} step={inspectedStep} />
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }

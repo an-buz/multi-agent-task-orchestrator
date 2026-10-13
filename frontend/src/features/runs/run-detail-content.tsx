@@ -1,34 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sidebar } from "@/components/sidebar";
+import { useQueryClient } from "@tanstack/react-query";
+import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { RunDetails, RunStep } from "@/features/runs/types";
+import type { RunStep } from "@/features/runs/types";
 import { contextFileDownloadUrl } from "@/features/files/queries";
-import {
-  cancelRun,
-  confirmRun,
-  editRunPlan,
-  exportRun,
-  getRun,
-  retryRunStep,
-  runsQueryKey,
-  subscribeToRun,
-} from "@/features/runs/api";
+import { cancelRun, confirmRun, editRunPlan, exportRun, retryRunStep } from "@/features/runs/api";
+
+import { useRun, runsQueryKey } from "./queries";
+import { useRunEvents } from "./use-run-events";
+import { runSteps as getRunSteps } from "./model";
+import { StatusBadge } from "@/components/status-badge";
 
 export default function RunDetailContent({ id }: { id: string }) {
   const client = useQueryClient();
-  const query = useQuery({
-    queryKey: [...runsQueryKey, id],
-    queryFn: () => getRun(id),
-    refetchInterval: 3000,
-  });
-  const [events, setEvents] = useState<string[]>([]);
-  const [streamError, setStreamError] = useState(false);
+  const query = useRun(id);
+  const { events, connectionError: streamError } = useRunEvents(id);
   const [actionError, setActionError] = useState("");
   const [pending, setPending] = useState(false);
   const [planDraft, setPlanDraft] = useState<RunStep[] | null>(null);
@@ -47,47 +38,6 @@ export default function RunDetailContent({ id }: { id: string }) {
       setPending(false);
     }
   }
-  useEffect(
-    () =>
-      subscribeToRun(
-        id,
-        (event) => {
-          setStreamError(false);
-          const data = event.data ?? event.payload;
-          if (event.event === "agent:stream_chunk" && data &&
-              typeof data.stepNumber === "number" && typeof data.output === "string" &&
-              typeof data.attempt === "number") {
-            // Absolute output makes repeated SSE delivery idempotent.
-            void client.cancelQueries({ queryKey: [...runsQueryKey, id] });
-            client.setQueryData<RunDetails>([...runsQueryKey, id], (current) => {
-              if (!current?.plan) return current;
-              const update = (step: RunStep) => {
-                if (step.step_number !== data.stepNumber ||
-                    (step.attempt ?? 0) > (data.attempt as number)) return step;
-                if (["COMPLETED", "FAILED", "CANCELLED"].includes(step.status) &&
-                    (step.attempt ?? 0) >= (data.attempt as number)) return step;
-                return { ...step, status: "IN_PROGRESS" as const,
-                  attempt: data.attempt as number, output: data.output as string };
-              };
-              return { ...current, plan: Array.isArray(current.plan)
-                ? current.plan.map(update)
-                : { ...current.plan, steps: current.plan.steps.map(update) } };
-            });
-            return;
-          }
-          setEvents((current) =>
-            [
-              ...current,
-              `${new Date(event.ts ?? event.timestamp ?? new Date().toISOString()).toLocaleTimeString()} ${event.event}`,
-            ].slice(-150),
-          );
-          void client.invalidateQueries({ queryKey: [...runsQueryKey, id] });
-        },
-        () => setStreamError(true),
-      ),
-    [id, client],
-  );
-
   async function download(format: "json" | "md" | "pdf") {
     const response = await exportRun(id, format);
     if (!response.ok) throw new Error(`Export failed (${response.status})`);
@@ -100,19 +50,18 @@ export default function RunDetailContent({ id }: { id: string }) {
     URL.revokeObjectURL(url);
   }
   const run = query.data;
-  const runSteps = run?.plan ? (Array.isArray(run.plan) ? run.plan : run.plan.steps) : [];
+  const runSteps = getRunSteps(run);
   return (
-    <main className="min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-      <Sidebar />
+    <AppShell>
       <section className="min-w-0">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-5 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold">Run details</h1>
-            <p className="mt-1 font-mono text-xs text-slate-400">{id}</p>
+            <p className="mt-1 font-mono text-xs text-muted-foreground">{id}</p>
           </div>
           {run && (
             <div className="flex gap-2">
-              <span className="self-center font-mono text-xs">{run.status}</span>
+              <StatusBadge status={run.status} />
               {["PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS"].includes(run.status) && (
                 <Button
                   variant="secondary"
@@ -126,36 +75,47 @@ export default function RunDetailContent({ id }: { id: string }) {
           )}
         </header>
         <div className="space-y-5 p-6 lg:p-8">
-          {actionError && <p role="alert" className="text-destructive">{actionError}</p>}
+          {actionError && (
+            <p role="alert" className="text-destructive">
+              {actionError}
+            </p>
+          )}
           {query.isLoading && <p>Loading run…</p>}
           {query.isError && (
-            <p role="alert" className="text-rose-400">
+            <p role="alert" className="text-destructive">
               Could not load this run.
             </p>
           )}
           {run && (
             <>
-              <section className="rounded-xl border border-(--border) bg-(--surface) p-5">
+              <section className="rounded-xl border border-(--border) bg-card p-5">
                 <h2 className="text-sm font-semibold">Task</h2>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-300">{run.task}</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{run.task}</p>
                 {(run.files?.length ?? 0) > 0 && (
                   <div className="mt-3 flex flex-col gap-2" aria-label="Context attachments">
                     <h3 className="text-sm font-medium">Context attachments</h3>
                     {run.files?.map((file) => (
-                      <a key={file.id} href={contextFileDownloadUrl(file.id)} className="text-sm text-primary underline">
+                      <a
+                        key={file.id}
+                        href={contextFileDownloadUrl(file.id)}
+                        className="text-sm text-primary underline"
+                      >
                         Download {file.filename} ({file.size_bytes} bytes)
                       </a>
                     ))}
                   </div>
                 )}
                 {run.context_text && (
-                  <pre className="mt-3 overflow-auto rounded bg-[#050816] p-3 text-xs text-slate-400">
+                  <pre className="mt-3 overflow-auto rounded bg-background p-3 text-xs text-muted-foreground">
                     {run.context_text}
                   </pre>
                 )}
               </section>
               {run.status === "AWAITING_CONFIRMATION" && (
-                <section aria-label="Plan preview" className="flex flex-col gap-3 rounded-xl border border-border p-5">
+                <section
+                  aria-label="Plan preview"
+                  className="flex flex-col gap-3 rounded-xl border border-border p-5"
+                >
                   <h2 className="text-sm font-semibold">Plan preview</h2>
                   {(planDraft ?? runSteps).map((step) => (
                     <label key={step.step_number} className="flex flex-col gap-2">
@@ -164,19 +124,37 @@ export default function RunDetailContent({ id }: { id: string }) {
                         aria-label={`Task for ${step.agent_name}`}
                         disabled={pending}
                         value={step.subtask ?? step.input ?? ""}
-                        onChange={(event) => setPlanDraft((planDraft ?? runSteps).map((item) =>
-                          item.step_number === step.step_number ? { ...item, subtask: event.target.value } : item
-                        ))}
+                        onChange={(event) =>
+                          setPlanDraft(
+                            (planDraft ?? runSteps).map((item) =>
+                              item.step_number === step.step_number
+                                ? { ...item, subtask: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
                       />
                     </label>
                   ))}
-                  <Button disabled={pending || (planDraft ?? runSteps).some((step) => !(step.subtask ?? step.input ?? "").trim())} onClick={() => void perform(async () => {
-                    if (planDraft) await editRunPlan(id, planDraft);
-                    await confirmRun(id);
-                  })}>Confirm and run</Button>
+                  <Button
+                    disabled={
+                      pending ||
+                      (planDraft ?? runSteps).some(
+                        (step) => !(step.subtask ?? step.input ?? "").trim(),
+                      )
+                    }
+                    onClick={() =>
+                      void perform(async () => {
+                        if (planDraft) await editRunPlan(id, planDraft);
+                        await confirmRun(id);
+                      })
+                    }
+                  >
+                    Confirm and run
+                  </Button>
                 </section>
               )}
-              <section className="rounded-xl border border-(--border) bg-(--surface) p-5">
+              <section className="rounded-xl border border-(--border) bg-card p-5">
                 <h2 className="mb-3 text-sm font-semibold">Execution steps</h2>
                 <div className="space-y-3">
                   {runSteps.map((step) => (
@@ -188,27 +166,32 @@ export default function RunDetailContent({ id }: { id: string }) {
                         <h3 className="text-sm font-medium">
                           {step.step_number}. {step.agent_name}
                         </h3>
-                        <span className="font-mono text-xs">{step.status}</span>
+                        <StatusBadge status={step.status} />
                       </div>
                       {step.input && (
-                        <p className="mt-2 text-xs text-slate-400">Input: {step.input}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">Input: {step.input}</p>
                       )}
                       {step.output && (
-                        <p aria-label={`Output for step ${step.step_number}`} className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                        <p
+                          aria-label={`Output for step ${step.step_number}`}
+                          className="mt-2 whitespace-pre-wrap text-sm text-foreground"
+                        >
                           {step.output}
                         </p>
                       )}
                       {step.status === "IN_PROGRESS" && (
-                        <p role="status" className="mt-2 text-xs text-muted-foreground">Generating response…</p>
+                        <p role="status" className="mt-2 text-xs text-muted-foreground">
+                          Generating response…
+                        </p>
                       )}
                       {step.error && (
-                        <p role="alert" className="mt-2 text-xs text-rose-300">
+                        <p role="alert" className="mt-2 text-xs text-destructive">
                           {step.error.message}
                         </p>
                       )}
                       {step.retryable && (
                         <button
-                          className="mt-3 text-xs text-emerald-300 underline"
+                          className="mt-3 text-xs text-status-completed underline"
                           disabled={pending}
                           onClick={() => void perform(() => retryRunStep(id, step.step_number))}
                         >
@@ -220,25 +203,29 @@ export default function RunDetailContent({ id }: { id: string }) {
                 </div>
               </section>
               {run.final_report && (
-                <section className="prose prose-invert max-w-none rounded-xl border border-(--border) bg-(--surface) p-5">
+                <section className="prose dark:prose-invert max-w-none rounded-xl border border-(--border) bg-card p-5">
                   <h2>Final report</h2>
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.final_report}</ReactMarkdown>
                 </section>
               )}
-              <section className="rounded-xl border border-(--border) bg-[#050816] p-5">
+              <section className="rounded-xl border border-(--border) bg-background p-5">
                 <h2 className="text-sm font-semibold">Live events</h2>
                 {streamError && (
-                  <p role="status" className="mt-2 text-xs text-amber-300">
+                  <p role="status" className="mt-2 text-xs text-status-warning">
                     Connection lost. Reconnecting…
                   </p>
                 )}
                 <div
                   aria-live="polite"
-                  className="mt-3 max-h-56 space-y-1 overflow-auto font-mono text-xs text-slate-400"
+                  className="mt-3 max-h-56 space-y-1 overflow-auto font-mono text-xs text-muted-foreground"
                 >
-                  {events.map((event, i) => (
-                    <p key={`${event}-${i}`}>{event}</p>
-                  ))}
+                  {events
+                    .filter((event) => event.event !== "agent:stream_chunk")
+                    .map((event, i) => (
+                      <p key={event.id ?? i}>
+                        {event.ts ?? event.timestamp} {event.event}
+                      </p>
+                    ))}
                 </div>
               </section>
               {run.final_report && (
@@ -260,7 +247,12 @@ export default function RunDetailContent({ id }: { id: string }) {
                   <button
                     className="rounded border border-(--border) px-3 py-2 text-xs"
                     disabled={pending}
-                    onClick={() => void perform(() => navigator.clipboard.writeText(run.final_report ?? ""), false)}
+                    onClick={() =>
+                      void perform(
+                        () => navigator.clipboard.writeText(run.final_report ?? ""),
+                        false,
+                      )
+                    }
                   >
                     Copy Markdown
                   </button>
@@ -270,6 +262,6 @@ export default function RunDetailContent({ id }: { id: string }) {
           )}
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }

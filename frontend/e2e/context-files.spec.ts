@@ -18,17 +18,36 @@ for (const theme of ["dark", "light"]) {
         "access-control-allow-headers": "content-type",
       };
       if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
-      if (pathname === "/api/v1/workflows") return route.fulfill({ headers, json: {
-        items: [{ id: workflowId, title: "Files workflow", steps: [], execution_type: "sequential" }], total: 1,
-      } });
+      if (pathname === "/api/v1/workflows")
+        return route.fulfill({
+          headers,
+          json: {
+            items: [
+              { id: workflowId, title: "Files workflow", steps: [], execution_type: "sequential" },
+            ],
+            total: 1,
+          },
+        });
       if (pathname === "/api/v1/files" && request.method() === "POST") {
         expect(request.headers()["content-type"]).toContain("multipart/form-data");
         if (request.postDataBuffer()?.toString().includes("invalid.json")) {
-          return route.fulfill({ status: 422, headers, json: { error: { message: "The context file contains invalid JSON." } } });
+          return route.fulfill({
+            status: 422,
+            headers,
+            json: { error: { message: "The context file contains invalid JSON." } },
+          });
         }
-        return route.fulfill({ status: 201, headers, json: {
-          id: fileId, filename: "brief.pdf", size_bytes: 7, media_type: "application/pdf", created_at: "2026-10-08T08:00:00Z",
-        } });
+        return route.fulfill({
+          status: 201,
+          headers,
+          json: {
+            id: fileId,
+            filename: "brief.pdf",
+            size_bytes: 7,
+            media_type: "application/pdf",
+            created_at: "2026-10-08T08:00:00Z",
+          },
+        });
       }
       if (pathname === `/api/v1/files/${fileId}` && request.method() === "DELETE") {
         removed = true;
@@ -36,9 +55,15 @@ for (const theme of ["dark", "light"]) {
       }
       if (pathname === "/api/v1/runs" && request.method() === "POST") {
         submitted = request.postDataJSON() as Record<string, unknown>;
-        return route.fulfill({ status: 201, headers, json: {
-          id: runId, status: "AWAITING_CONFIRMATION", plan: { summary: "Review files", steps: [] },
-        } });
+        return route.fulfill({
+          status: 201,
+          headers,
+          json: {
+            id: runId,
+            status: "AWAITING_CONFIRMATION",
+            plan: { summary: "Review files", steps: [] },
+          },
+        });
       }
       return route.fulfill({ headers, json: { items: [], total: 0 } });
     });
@@ -47,7 +72,11 @@ for (const theme of ["dark", "light"]) {
     await page.getByPlaceholder("Paste context here...").fill("Keep this note");
     const input = page.locator('input[type="file"]');
     await expect(input).toHaveAttribute("accept", /application\/pdf/);
-    const brief = { name: "brief.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-mock") };
+    const brief = {
+      name: "brief.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-mock"),
+    };
     await input.setInputFiles(brief);
     await expect(page.getByRole("button", { name: "Remove attachment brief.pdf" })).toBeVisible();
     await expect(page.getByPlaceholder("Paste context here...")).toHaveValue("Keep this note");
@@ -55,14 +84,18 @@ for (const theme of ["dark", "light"]) {
     await expect(page.getByRole("button", { name: "Remove attachment brief.pdf" })).toHaveCount(0);
     expect(removed).toBe(true);
     await expect(page.getByPlaceholder("Paste context here...")).toHaveValue("Keep this note");
-    await input.setInputFiles({ name: "invalid.json", mimeType: "application/json", buffer: Buffer.from("{bad}") });
+    await input.setInputFiles({
+      name: "invalid.json",
+      mimeType: "application/json",
+      buffer: Buffer.from("{bad}"),
+    });
     await expect(page.getByRole("alert").filter({ hasText: "invalid JSON" })).toBeVisible();
     await input.setInputFiles(brief);
     await expect(page.getByRole("button", { name: "Remove attachment brief.pdf" })).toBeVisible();
     await page.getByRole("combobox", { name: "Workflow", exact: true }).click();
     await page.getByRole("option", { name: "Files workflow" }).click();
     await page.getByRole("button", { name: "Decompose and Run" }).click();
-    await expect(page.getByRole("dialog", { name: "Plan preview" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Plan preview" })).toBeVisible();
     expect(submitted?.file_ids).toEqual([fileId]);
     expect(submitted?.context_text).toBe("Keep this note");
   });

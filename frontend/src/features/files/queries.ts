@@ -1,17 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, apiUrl } from "@/lib/api";
 
-export interface ContextFile {
-  id: string;
-  filename: string;
-  media_type: string;
-  size_bytes: number;
-  created_at: string;
-}
+import type { ContextFile } from "./types";
 
 export function contextFileDownloadUrl(id: string) {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
-  return `${base}/files/${encodeURIComponent(id)}/download`;
+  return apiUrl(`/files/${encodeURIComponent(id)}/download`);
 }
 
 export function useUploadContextFile() {
