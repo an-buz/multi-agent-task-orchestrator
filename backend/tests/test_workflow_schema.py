@@ -5,8 +5,23 @@ from uuid import uuid4
 import pytest
 from app.llm.planning import PlannedSubtask
 from app.schemas.run import RunPlanStep
-from app.schemas.workflow import WorkflowWrite, validate_workflow_graph
+from app.schemas.workflow import (
+    WorkflowStepInput,
+    WorkflowStepRead,
+    WorkflowWrite,
+    validate_workflow_graph,
+)
 from pydantic import ValidationError
+
+
+@pytest.mark.parametrize("field", ["step_number", "depends_on"])
+def test_legacy_workflow_identifiers_are_readable_but_cannot_be_written(field: str) -> None:
+    payload = {"step_number": 1, "agent_id": uuid4(), "depends_on": []}
+    payload[field] = 2147483648 if field == "step_number" else [2147483648]
+    read = WorkflowStepRead.model_validate(payload)
+    assert getattr(read, field) == payload[field]
+    with pytest.raises(ValidationError):
+        WorkflowStepInput.model_validate(read.model_dump())
 
 
 def test_valid_hybrid_dag_passes() -> None:

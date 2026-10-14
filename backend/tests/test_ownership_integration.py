@@ -19,6 +19,7 @@ from app.orchestrator.planner import LLMPlanner, PlannerExecutor
 from app.schemas.run import RunCreate
 from app.services.runs import RunService
 from app.workers import tasks
+from app.workers.ownership import run_lock_key
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -125,11 +126,28 @@ async def test_ownership_connection_loss_stops_work_and_prevents_duplicate_dispa
         first = asyncio.create_task(tasks.run_job(str(run_id), planning=phase == "planning"))
         await asyncio.wait_for(entered.wait(), 5)
         async with engine.connect() as connection:
+            key = run_lock_key(run_id)
             pid = await connection.scalar(
-                text("SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted LIMIT 1")
+                text(
+                    "SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted "
+                    "AND classid = :high AND objid = :low AND objsubid = 1"
+                ),
+                {"high": (key >> 32) & 0xFFFFFFFF, "low": key & 0xFFFFFFFF},
             )
-            assert await connection.scalar(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
-        # Dispatch immediately: pending request/tool receipts prohibit reissuing it,
+            assert pid is not None
+            # A positive timeout waits for termination, rather than only signalling
+            # it. Verify release before requiring the next delivery to execute.
+            assert await connection.scalar(
+                text("SELECT pg_terminate_backend(:pid, 5000)"), {"pid": pid}
+            )
+            assert not await connection.scalar(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks "
+                    "WHERE pid = :pid AND locktype = 'advisory' AND granted)"
+                ),
+                {"pid": pid},
+            )
+        # Dispatch after lock release: pending receipts prohibit reissuing work,
         # even before the old worker's watchdog processes the disconnect.
         await asyncio.wait_for(tasks.run_job(str(run_id), planning=phase == "planning"), 5)
         # A late response must not write through a fresh connection even when the
@@ -230,7 +248,22 @@ async def test_step_number_boundaries_and_legacy_workflows_return_validation_err
                 await client.post("/api/v1/workflows/validate", json=payload)
             ).status_code == 422
             async with sessions() as session:
-                legacy = Workflow(id=uuid4(), **payload)
+                legacy_payload = {
+                    **payload,
+                    "steps": [
+                        {
+                            "step_number": 2147483648,
+                            "agent_id": agent.json()["id"],
+                            "depends_on": [],
+                        },
+                        {
+                            "step_number": 2147483649,
+                            "agent_id": agent.json()["id"],
+                            "depends_on": [2147483648],
+                        },
+                    ],
+                }
+                legacy = Workflow(id=uuid4(), **legacy_payload)
                 session.add(legacy)
                 await session.commit()
             response = await client.post(
@@ -238,6 +271,33 @@ async def test_step_number_boundaries_and_legacy_workflows_return_validation_err
             )
             assert response.status_code == 422
             assert "edit the workflow" in response.json()["error"]["message"]
+            detail = await client.get(f"/api/v1/workflows/{legacy.id}")
+            assert detail.status_code == 200
+            assert detail.json()["steps"][0]["step_number"] == 2147483648
+            assert detail.json()["steps"][1]["depends_on"] == [2147483648]
+            listing = await client.get("/api/v1/workflows")
+            assert listing.status_code == 200
+            items = {item["id"]: item for item in listing.json()["items"]}
+            assert items[str(legacy.id)]["steps"] == detail.json()["steps"]
+            assert items[workflow.json()["id"]]["steps"][0]["step_number"] == 2147483647
+            # Compatibility reads must not allow invalid identifiers back into writes.
+            assert (
+                await client.put(f"/api/v1/workflows/{legacy.id}", json=legacy_payload)
+            ).status_code == 422
+            repaired = {
+                **legacy_payload,
+                "steps": [
+                    {"step_number": 1, "agent_id": agent.json()["id"], "depends_on": []},
+                    {"step_number": 2, "agent_id": agent.json()["id"], "depends_on": [1]},
+                ],
+            }
+            updated = await client.put(f"/api/v1/workflows/{legacy.id}", json=repaired)
+            assert updated.status_code == 200
+            assert updated.json()["steps"][1]["depends_on"] == [1]
+            runnable = await client.post(
+                "/api/v1/runs", json={"workflow_id": str(legacy.id), "task": "Repaired step"}
+            )
+            assert runnable.status_code == 201
     finally:
         app.dependency_overrides.clear()
         await engine.dispose()

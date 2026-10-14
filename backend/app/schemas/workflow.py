@@ -11,11 +11,18 @@ from app.schemas.base import StepNumber, StorageModel
 WorkflowType = Literal["sequential", "parallel", "hybrid"]
 
 
-class WorkflowStepInput(StorageModel):
-    step_number: StepNumber
+class WorkflowStepRead(StorageModel):
+    """Keep previously accepted identifiers readable so workflows can be repaired."""
+
+    step_number: int = Field(ge=1)
     agent_id: UUID
-    depends_on: list[StepNumber] = Field(default_factory=list)
+    depends_on: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list)
     input_transform: str = ""
+
+
+class WorkflowStepInput(WorkflowStepRead):
+    step_number: StepNumber
+    depends_on: list[StepNumber] = Field(default_factory=list)
 
 
 class WorkflowWrite(StorageModel):
@@ -30,7 +37,7 @@ class WorkflowRead(BaseModel):
     id: UUID
     title: str
     execution_type: WorkflowType
-    steps: list[WorkflowStepInput]
+    steps: list[WorkflowStepRead]
     graph_layout: dict[str, Any]
     created_at: datetime
     updated_at: datetime
