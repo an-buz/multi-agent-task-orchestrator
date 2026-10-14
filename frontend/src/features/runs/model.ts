@@ -8,6 +8,30 @@ export function eventKey(event: RunEvent): string {
   return event.id ?? JSON.stringify(event);
 }
 
+export function canRetryStep(run: RunDetails, step: RunStep): boolean {
+  return run.status === "FAILED" && step.status === "FAILED";
+}
+
+export interface RunEventLog {
+  events: RunEvent[];
+  activityEvents: RunEvent[];
+  after: number;
+}
+
+export function appendRunEvent(log: RunEventLog, event: RunEvent): RunEventLog {
+  const append = (events: RunEvent[]) =>
+    events.some((item) => eventKey(item) === eventKey(event))
+      ? events
+      : [...events, event].slice(-150);
+  const cursor = event.id && /^\d+$/.test(event.id) ? Number(event.id) : 0;
+  return {
+    events: append(log.events),
+    activityEvents:
+      event.event === "agent:stream_chunk" ? log.activityEvents : append(log.activityEvents),
+    after: Math.max(log.after, cursor),
+  };
+}
+
 export function applyStreamChunk(
   run: RunDetails | undefined,
   event: RunEvent,

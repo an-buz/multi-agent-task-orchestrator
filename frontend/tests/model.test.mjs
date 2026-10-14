@@ -2,7 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { applyStreamChunk, runSteps } from "../src/features/runs/model.ts";
+import {
+  appendRunEvent,
+  applyStreamChunk,
+  canRetryStep,
+  runSteps,
+} from "../src/features/runs/model.ts";
 import { graphErrors, inferType } from "../src/features/workflows/graph.ts";
 import { agentSchema } from "../src/features/agents/form-schema.ts";
 import { upsertItem, removeItem } from "../src/lib/collection.ts";
@@ -13,6 +18,44 @@ const run = { id: "run", plan: { summary: "Keep summary", steps: [step] } };
 const chunk = (output, attempt = 2) => ({
   event: "agent:stream_chunk",
   data: { stepNumber: 1, output, attempt },
+});
+
+test("retry is available only for a failed step in a failed run without a retryable flag", () => {
+  for (const status of [
+    "PLANNING",
+    "AWAITING_CONFIRMATION",
+    "IN_PROGRESS",
+    "FAILED",
+    "CANCELLED",
+    "COMPLETED",
+  ]) {
+    for (const stepStatus of ["PENDING", "IN_PROGRESS", "FAILED", "CANCELLED", "COMPLETED"]) {
+      assert.equal(
+        canRetryStep({ status }, { status: stepStatus }),
+        status === "FAILED" && stepStatus === "FAILED",
+      );
+    }
+  }
+});
+
+test("long streams preserve activity history and advance replay independently", () => {
+  let log = { events: [], activityEvents: [], after: 0 };
+  const started = { id: "1", event: "task:started" };
+  const tool = { id: "2", event: "agent:tool_call" };
+  log = appendRunEvent(appendRunEvent(log, started), tool);
+  for (let id = 3; id <= 203; id++)
+    log = appendRunEvent(log, { ...chunk(String(id)), id: String(id) });
+  assert.equal(log.events.length, 150);
+  assert.deepEqual(log.activityEvents, [started, tool]);
+  assert.equal(log.after, 203);
+  log = appendRunEvent(log, started);
+  assert.equal(log.activityEvents.length, 2);
+  assert.equal(log.after, 203);
+  for (let id = 204; id <= 404; id++)
+    log = appendRunEvent(log, { id: String(id), event: "agent:status_change" });
+  assert.equal(log.events.length, 150);
+  assert.equal(log.activityEvents.length, 150);
+  assert.equal(log.after, 404);
 });
 
 test("stream output is absolute and duplicate delivery is idempotent", () => {

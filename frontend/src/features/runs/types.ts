@@ -26,7 +26,6 @@ export interface RunStep {
   subtask?: string;
   output?: string | null;
   error?: { code: string; message: string } | null;
-  retryable?: boolean;
   prompt_tokens?: number;
   completion_tokens?: number;
   duration_ms?: number;

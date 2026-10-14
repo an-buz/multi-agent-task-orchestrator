@@ -13,13 +13,13 @@ import { cancelRun, confirmRun, editRunPlan, exportRun, retryRunStep } from "@/f
 
 import { useRun, runsQueryKey } from "./queries";
 import { useRunEvents } from "./use-run-events";
-import { runSteps as getRunSteps } from "./model";
+import { canRetryStep, runSteps as getRunSteps } from "./model";
 import { StatusBadge } from "@/components/status-badge";
 
 export default function RunDetailContent({ id }: { id: string }) {
   const client = useQueryClient();
   const query = useRun(id);
-  const { events, connectionError: streamError } = useRunEvents(id);
+  const { activityEvents: events, connectionError: streamError } = useRunEvents(id);
   const [actionError, setActionError] = useState("");
   const [pending, setPending] = useState(false);
   const [planDraft, setPlanDraft] = useState<RunStep[] | null>(null);
@@ -189,7 +189,7 @@ export default function RunDetailContent({ id }: { id: string }) {
                           {step.error.message}
                         </p>
                       )}
-                      {step.retryable && (
+                      {canRetryStep(run, step) && (
                         <button
                           className="mt-3 text-xs text-status-completed underline"
                           disabled={pending}

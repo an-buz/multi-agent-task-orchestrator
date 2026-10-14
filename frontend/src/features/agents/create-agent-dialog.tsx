@@ -15,7 +15,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import remarkGfm from "remark-gfm";
 import { useForm, useWatch } from "react-hook-form";
 import { agentSchema, type AgentFormValues } from "./form-schema";
@@ -77,6 +77,7 @@ export function CreateAgentDialog({
   const [advanced, setAdvanced] = useState(false);
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
   const mutation = useSaveAgent(agent?.id);
+  const errorId = useId();
   const form = useForm<AgentFormValues>({ resolver: zodResolver(agentSchema), defaultValues });
   useEffect(() => {
     if (agent) {
@@ -156,15 +157,21 @@ export function CreateAgentDialog({
         </header>
 
         <form
-          onSubmit={form.handleSubmit((values) =>
-            mutation.mutate(values, {
-              onSuccess: () => {
-                setOpen(false);
-                onClose?.();
-                form.reset(defaultValues);
-                setPromptView("write");
-              },
-            }),
+          noValidate
+          onSubmit={form.handleSubmit(
+            (values) =>
+              mutation.mutate(values, {
+                onSuccess: () => {
+                  setOpen(false);
+                  onClose?.();
+                  form.reset(defaultValues);
+                  setPromptView("write");
+                },
+              }),
+            (errors) => {
+              if (errors.max_tokens || errors.context_window || errors.temperature)
+                setAdvanced(true);
+            },
           )}
           className="space-y-5"
         >
@@ -402,16 +409,32 @@ export function CreateAgentDialog({
                   <div className="mt-3 flex h-5 items-center">
                     <Slider
                       aria-label="Temperature"
+                      aria-invalid={Boolean(form.formState.errors.temperature)}
+                      aria-describedby={
+                        form.formState.errors.temperature ? `${errorId}-temperature` : undefined
+                      }
                       min={0}
                       max={1}
                       step={0.1}
                       value={temperature}
                       onValueChange={(value) => {
                         const v = Array.isArray(value) ? value[0] : value;
-                        form.setValue("temperature", v, { shouldDirty: true });
+                        form.setValue("temperature", v, {
+                          shouldDirty: true,
+                          shouldValidate: form.formState.isSubmitted,
+                        });
                       }}
                     />
                   </div>
+                  {form.formState.errors.temperature && (
+                    <span
+                      id={`${errorId}-temperature`}
+                      role="alert"
+                      className="mt-1 block text-destructive"
+                    >
+                      {form.formState.errors.temperature.message}
+                    </span>
+                  )}
                 </label>
                 <label className="text-[11px] text-muted-foreground">
                   Max tokens
@@ -419,8 +442,22 @@ export function CreateAgentDialog({
                     {...form.register("max_tokens", { valueAsNumber: true })}
                     type="number"
                     min="1"
+                    aria-label="Max tokens"
+                    aria-invalid={Boolean(form.formState.errors.max_tokens)}
+                    aria-describedby={
+                      form.formState.errors.max_tokens ? `${errorId}-max-tokens` : undefined
+                    }
                     className="mt-2 block w-full rounded-md border border-border bg-background px-2 py-2 text-[16px] text-foreground"
                   />
+                  {form.formState.errors.max_tokens && (
+                    <span
+                      id={`${errorId}-max-tokens`}
+                      role="alert"
+                      className="mt-1 block text-destructive"
+                    >
+                      {form.formState.errors.max_tokens.message}
+                    </span>
+                  )}
                 </label>
                 <label className="text-[11px] text-muted-foreground">
                   Context window
@@ -428,11 +465,21 @@ export function CreateAgentDialog({
                     <Select
                       value={String(contextWindow)}
                       onValueChange={(value) =>
-                        value && form.setValue("context_window", Number(value))
+                        value &&
+                        form.setValue("context_window", Number(value), {
+                          shouldDirty: true,
+                          shouldValidate: form.formState.isSubmitted,
+                        })
                       }
                     >
                       <SelectTrigger
                         aria-label="Context window"
+                        aria-invalid={Boolean(form.formState.errors.context_window)}
+                        aria-describedby={
+                          form.formState.errors.context_window
+                            ? `${errorId}-context-window`
+                            : undefined
+                        }
                         className="block w-full appearance-none rounded-md border border-border bg-background px-2 py-2 pr-9 text-[16px] text-foreground"
                       >
                         {Number(contextWindow) / 1000}K tokens
@@ -452,6 +499,15 @@ export function CreateAgentDialog({
                       </SelectContent>
                     </Select>
                   </span>
+                  {form.formState.errors.context_window && (
+                    <span
+                      id={`${errorId}-context-window`}
+                      role="alert"
+                      className="mt-1 block text-destructive"
+                    >
+                      {form.formState.errors.context_window.message}
+                    </span>
+                  )}
                 </label>
               </div>
             )}
