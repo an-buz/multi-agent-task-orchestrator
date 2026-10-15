@@ -18,6 +18,7 @@ import {
 import { useAppConfig, useSaveAppConfig } from "./queries";
 import { useAgentModels } from "@/features/agents/queries";
 import type { AgentModel } from "@/features/agents/types";
+import { ThemeSettings } from "./theme-settings";
 
 const settingsSchema = z.object({
   default_model: z.string().min(1, "Default model is required."),
@@ -81,6 +82,7 @@ export default function SettingsContent() {
           </div>
         </header>
         <div className="mx-auto max-w-360 p-6 lg:p-10">
+          <ThemeSettings />
           {/* Load error (distinct from save notice) */}
           {loadError && (
             <div
