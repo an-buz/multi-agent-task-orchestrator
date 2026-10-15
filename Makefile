@@ -1,10 +1,13 @@
 .PHONY: up backend-dev worker frontend-dev migrate migration lint test test-e2e
 
+BACKEND_HOST ?= 0.0.0.0
+BACKEND_PORT ?= 8000
+
 up:
 	docker compose up -d postgres redis
 
 backend-dev:
-	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && uv run uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
 
 worker:
 	cd backend && uv run python -m app.workers.runner

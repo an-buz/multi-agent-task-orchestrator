@@ -44,6 +44,12 @@ class MemorySession:
         assert agent is self.agent
         self.deleted = True
 
+    async def scalars(self, statement: object) -> list[object]:
+        return []
+
+    async def execute(self, statement: object) -> None:
+        return None
+
 
 @pytest.fixture
 def test_client() -> Generator[TestClient, Any]:

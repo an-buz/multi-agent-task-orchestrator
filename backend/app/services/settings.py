@@ -2,9 +2,11 @@
 
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.db.model_repository import ModelRepository
 from app.db.settings_repository import SettingsRepository
 from app.llm.registry import get_model_registry
 from app.schemas.settings import AgentDefaults, AppConfigRead
+from app.services.models import ModelService, ModelUnavailable
 
 
 class SettingsError(AppError):
@@ -49,5 +51,12 @@ class SettingsService:
 
     async def update(self, defaults: AgentDefaults) -> AppConfigRead:
         self.validate(defaults)
+        if (
+            defaults.default_model
+            not in await ModelService(
+                ModelRepository(self.repository.session), self.settings
+            ).available()
+        ):
+            raise ModelUnavailable("Choose an enabled default model from a connected provider.")
         await self.repository.save(defaults.model_dump())
         return self.public(defaults)

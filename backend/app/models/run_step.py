@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,6 +23,9 @@ class RunStep(Base):
     step_number: Mapped[int] = mapped_column(Integer)
     agent_name: Mapped[str] = mapped_column(String(100))
     agent_config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    requires_reconfiguration: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     depends_on: Mapped[list[int]] = mapped_column(JSONB)
     input_transform: Mapped[str] = mapped_column(Text, default="")
     subtask: Mapped[str] = mapped_column(Text)

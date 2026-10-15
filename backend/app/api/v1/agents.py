@@ -5,10 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.settings import Models
 from app.db.agent_repository import AgentRepository
 from app.db.session import get_session
-from app.llm.registry import TOOLS, get_model_registry
+from app.llm.registry import TOOLS
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.schemas.model_setting import ModelCatalogue
 from app.services.agents import AgentService
 
 router = APIRouter()
@@ -36,19 +38,8 @@ async def create_agent(payload: AgentCreate, service: Service) -> AgentRead:
 
 
 @router.get("/models")
-async def list_models() -> dict[str, list[dict[str, str | int]]]:
-    return {
-        "items": [
-            {
-                "key": model.key,
-                "provider": model.provider,
-                "model_id": model.model_id,
-                "tier": model.tier,
-                "context_window": model.context_window,
-            }
-            for model in get_model_registry().values()
-        ]
-    }
+async def list_models(service: Models) -> ModelCatalogue:
+    return await service.catalogue(enabled_only=True)
 
 
 @router.get("/tools")

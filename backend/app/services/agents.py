@@ -6,9 +6,11 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError
 from app.db.agent_repository import AgentRepository
+from app.db.model_repository import ModelRepository
 from app.llm.registry import TOOLS, get_model_registry
 from app.models.agent import Agent
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.services.models import ModelService, ModelUnavailable
 
 
 class AgentError(AppError):
@@ -60,20 +62,36 @@ class AgentService:
             raise AgentError(
                 "An agent with this name already exists.", "duplicate_agent_name", 409
             ) from exception
-        return AgentRead.model_validate(agent)
+        return await self.representation(agent)
+
+    async def representation(self, agent: Agent) -> AgentRead:
+        value = AgentRead.model_validate(agent)
+        value.available = (
+            not agent.requires_reconfiguration
+            and agent.model
+            in await ModelService(ModelRepository(self.repository.session)).available()
+        )
+        return value
+
+    async def validate_availability(self, model: str) -> None:
+        if model not in await ModelService(ModelRepository(self.repository.session)).available():
+            raise ModelUnavailable("Choose an enabled model from a connected provider.")
 
     async def create(self, payload: AgentCreate) -> AgentRead:
         self.validate(payload)
-        return await self.persist(Agent(**payload.model_dump()))
+        await self.validate_availability(payload.model)
+        return await self.persist(Agent(**payload.model_dump(), requires_reconfiguration=False))
 
     async def read(self, agent_id: str) -> AgentRead:
-        return AgentRead.model_validate(await self.require(agent_id))
+        return await self.representation(await self.require(agent_id))
 
     async def update(self, agent_id: str, payload: AgentUpdate) -> AgentRead:
         agent = await self.require(agent_id)
         self.validate(payload)
+        await self.validate_availability(payload.model)
         for field, value in payload.model_dump().items():
             setattr(agent, field, value)
+        agent.requires_reconfiguration = False
         return await self.persist(agent)
 
     async def delete(self, agent_id: str) -> None:
@@ -81,4 +99,4 @@ class AgentService:
 
     async def list(self, limit: int, offset: int) -> dict[str, object]:
         agents, total = await self.repository.list(limit, offset)
-        return {"items": [AgentRead.model_validate(agent) for agent in agents], "total": total}
+        return {"items": [await self.representation(agent) for agent in agents], "total": total}

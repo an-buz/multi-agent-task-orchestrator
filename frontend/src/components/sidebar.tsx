@@ -9,10 +9,10 @@ import { useAgents } from "@/features/agents/queries";
 export function Sidebar() {
   const pathname = usePathname();
   const agentsQuery = useAgents();
-  const agents = agentsQuery.data?.items ?? [];
+  const agents = (agentsQuery.data?.items ?? []).filter((agent) => agent.available !== false);
 
   return (
-    <aside className="flex flex-col border-b border-(--border) bg-card p-5 lg:min-h-screen lg:border-b-0 lg:border-r">
+    <aside className="flex flex-col border-b border-border bg-card p-5 lg:min-h-screen lg:border-b-0 lg:border-r">
       <Link className="mb-7 flex items-center gap-3" href="/">
         <span className="grid size-8 place-items-center rounded-md border bg-status-completed/15 text-status-completed">
           <Cpu size={19} />
@@ -48,19 +48,26 @@ export function Sidebar() {
           <Activity size={16} /> Runs
         </Link>
         <Link
+          href="/models"
+          aria-current={pathname === "/models" ? "page" : undefined}
+          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
+        >
+          <Cpu size={16} /> Models
+        </Link>
+        <Link
           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${pathname === "/settings" ? "bg-status-completed/10 font-medium text-status-completed" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"}`}
           href="/settings"
         >
           <Settings size={16} /> Settings
         </Link>
       </nav>
-      <div className="mb-6 mt-8 border-t border-(--border)" />
+      <div className="mb-6 mt-8 border-t border-border" />
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-[.18em] text-foreground">
           Ready agents
         </p>
         <span className="rounded-md bg-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
-          {agentsQuery.data?.total ?? agents.length}
+          {agents.length}
         </span>
       </div>
       <div className="mt-3 space-y-2">
@@ -90,7 +97,9 @@ export function Sidebar() {
           </p>
         )}
         {!agentsQuery.isLoading && !agentsQuery.isError && agents.length === 0 && (
-          <p className="px-3 py-2 text-xs text-muted-foreground">No agents yet.</p>
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            {agentsQuery.data?.items.length ? "No available agents." : "No agents yet."}
+          </p>
         )}
       </div>
       <CreateAgentDialog />

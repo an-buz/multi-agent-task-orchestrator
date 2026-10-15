@@ -10,6 +10,8 @@ export interface Agent {
   tools: string[];
   created_at: string;
   updated_at: string;
+  available?: boolean;
+  requires_reconfiguration?: boolean;
 }
 
 export interface AgentModel {

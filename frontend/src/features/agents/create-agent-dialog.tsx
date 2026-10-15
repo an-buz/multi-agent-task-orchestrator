@@ -159,7 +159,13 @@ export function CreateAgentDialog({
         <form
           noValidate
           onSubmit={form.handleSubmit(
-            (values) =>
+            (values) => {
+              if (!models.some((model) => model.key === values.model)) {
+                form.setError("model", {
+                  message: "Choose an enabled model from a connected provider.",
+                });
+                return;
+              }
               mutation.mutate(values, {
                 onSuccess: () => {
                   setOpen(false);
@@ -167,7 +173,8 @@ export function CreateAgentDialog({
                   form.reset(defaultValues);
                   setPromptView("write");
                 },
-              }),
+              });
+            },
             (errors) => {
               if (errors.max_tokens || errors.context_window || errors.temperature)
                 setAdvanced(true);
@@ -331,6 +338,18 @@ export function CreateAgentDialog({
                 </SelectGroup>
               </SelectContent>
             </Select>
+            {form.formState.errors.model && (
+              <p role="alert" className="mt-2 text-xs text-destructive">
+                {form.formState.errors.model.message}
+              </p>
+            )}
+            {!selectedModelInfo && !catalog.isPending && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {models.length
+                  ? "This model is unavailable. Choose an enabled model."
+                  : "No enabled models. Enable a model on the Models page first."}
+              </p>
+            )}
             {selectedModelInfo && (
               <p className="mt-2 text-xs text-muted-foreground">
                 {selectedModelInfo.provider} · {selectedModelInfo.context_window.toLocaleString()}{" "}

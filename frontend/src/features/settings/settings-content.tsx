@@ -72,7 +72,7 @@ export default function SettingsContent() {
   return (
     <AppShell>
       <section className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -96,7 +96,7 @@ export default function SettingsContent() {
 
           {/* Loading state */}
           {!config && !loadError && (
-            <div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-(--border) bg-card p-8 text-center">
+            <div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-border bg-card p-8 text-center">
               <div>
                 <LoaderCircle size={24} className="mx-auto animate-spin text-muted-foreground" />
                 <h2 className="mt-4 font-semibold">Loading settings…</h2>
@@ -111,7 +111,7 @@ export default function SettingsContent() {
           {config && !loadError && (
             <section className="space-y-6">
               {/* API Keys Section */}
-              <article className="rounded-xl border border-(--border) bg-card p-5">
+              <article className="rounded-xl border border-border bg-card p-5">
                 <h2 className="text-sm font-semibold">API keys</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   API keys are configured on the server side. Keys must be set in environment
@@ -125,7 +125,7 @@ export default function SettingsContent() {
               </article>
 
               {/* LLM Provider Mode */}
-              <article className="rounded-xl border border-(--border) bg-card p-5">
+              <article className="rounded-xl border border-border bg-card p-5">
                 <h2 className="text-sm font-semibold">LLM provider mode</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   When set to{" "}
@@ -141,7 +141,7 @@ export default function SettingsContent() {
               </article>
 
               {/* Code Executor */}
-              <article className="rounded-xl border border-(--border) bg-card p-5">
+              <article className="rounded-xl border border-border bg-card p-5">
                 <h2 className="text-sm font-semibold">Code executor</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   The code executor backend is{" "}
@@ -169,7 +169,7 @@ export default function SettingsContent() {
               )}
 
               {/* Default Agent Parameters */}
-              <article className="rounded-xl border border-(--border) bg-card p-5">
+              <article className="rounded-xl border border-border bg-card p-5">
                 <h2 className="text-sm font-semibold">Default agent parameters</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Values applied when creating a new agent. Adjusted values can be overridden in the
@@ -194,7 +194,7 @@ export default function SettingsContent() {
                         className={
                           form.formState.errors.default_model
                             ? "border-destructive"
-                            : "border-(--border)"
+                            : "border-border"
                         }
                       >
                         {selectedDefaultModelInfo ? (
@@ -251,7 +251,7 @@ export default function SettingsContent() {
                         max={1}
                         aria-describedby="temp-error"
                         disabled={saveDisabled}
-                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-status-completed ${form.formState.errors.temperature ? "border-destructive" : "border-(--border)"}`}
+                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-status-completed ${form.formState.errors.temperature ? "border-destructive" : "border-border"}`}
                       />
                       {form.formState.errors.temperature && (
                         <p id="temp-error" className="mt-1.5 text-xs text-destructive">
@@ -269,7 +269,7 @@ export default function SettingsContent() {
                         max={8192}
                         aria-describedby="tokens-error"
                         disabled={saveDisabled}
-                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-status-completed ${form.formState.errors.max_tokens ? "border-destructive" : "border-(--border)"}`}
+                        className={`mt-2 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-status-completed ${form.formState.errors.max_tokens ? "border-destructive" : "border-border"}`}
                       />
                       {form.formState.errors.max_tokens && (
                         <p id="tokens-error" className="mt-1.5 text-xs text-destructive">
@@ -333,7 +333,7 @@ function formatTierLabel(tier: string): string {
 
 function ApiKeyStatus({ label, configured }: { label: string; configured: boolean }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-(--border) px-4 py-2.5">
+    <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-2.5">
       <span
         className={`size-2 shrink-0 rounded-full ${configured ? "bg-status-completed" : "bg-status-pending"}`}
       />

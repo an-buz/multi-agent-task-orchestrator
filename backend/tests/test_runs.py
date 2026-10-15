@@ -73,6 +73,12 @@ class MemoryRunRepository(RunRepository):
     async def steps(self, run_id: UUID) -> list[RunStep]:
         return [step for step in self.saved_steps if step.run_id == run_id]
 
+    async def reconfiguration_flags(self, run_id: UUID) -> dict[int, bool]:
+        return {
+            step.step_number: bool(step.requires_reconfiguration)
+            for step in await self.steps(run_id)
+        }
+
     async def list(self, limit: int, offset: int) -> tuple[list[Run], int]:
         return list(self.runs.values())[offset : offset + limit], len(self.runs)
 

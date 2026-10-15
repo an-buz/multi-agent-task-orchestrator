@@ -13,6 +13,7 @@ export function useAgents() {
     queryKey: agentsQueryKey,
     queryFn: ({ signal }) => apiRequest<{ items: Agent[]; total: number }>("/agents", { signal }),
     staleTime: 30_000,
+    refetchInterval: 5000,
   });
 }
 
@@ -21,6 +22,7 @@ export function useAgentModels() {
     queryKey: agentModelsQueryKey,
     queryFn: ({ signal }) => apiRequest<{ items: AgentModel[] }>("/agents/models", { signal }),
     staleTime: 5 * 60_000,
+    refetchInterval: 5000,
   });
 }
 
@@ -58,6 +60,7 @@ export function useSaveAgent(id?: string) {
         upsertItem(current, agent),
       );
       await client.invalidateQueries({ queryKey: agentsQueryKey });
+      await client.invalidateQueries({ queryKey: ["runs"] });
     },
   });
 }

@@ -44,3 +44,5 @@ class AgentRead(BaseModel):
     tools: list[str]
     created_at: datetime
     updated_at: datetime
+    available: bool = True
+    requires_reconfiguration: bool = False

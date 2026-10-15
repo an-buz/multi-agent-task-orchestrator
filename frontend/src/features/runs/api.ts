@@ -121,6 +121,8 @@ export function subscribeToRun(
     "run:snapshot",
     "plan:ready",
     "task:started",
+    "task:paused",
+    "task:resumed",
     "agent:status_change",
     "agent:stream_chunk",
     "agent:tool_call",

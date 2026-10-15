@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/status-badge";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -166,6 +167,14 @@ export default function AgentsContent() {
                     </span>
                   </span>
                 </span>
+                {agent.available === false && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <StatusBadge status="UNAVAILABLE" />
+                    <p className="text-xs text-muted-foreground">
+                      Choose an enabled model and save this agent to resume its runs.
+                    </p>
+                  </div>
+                )}
                 <p className="mt-4 line-clamp-3 min-h-14 text-sm leading-6 text-muted-foreground">
                   {agent.role}
                 </p>

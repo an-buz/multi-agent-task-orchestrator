@@ -61,6 +61,14 @@ class RunRepository:
             )
         )
 
+    async def reconfiguration_flags(self, run_id: UUID) -> dict[int, bool]:
+        rows = await self.session.execute(
+            select(RunStep.step_number, RunStep.requires_reconfiguration).where(
+                RunStep.run_id == run_id
+            )
+        )
+        return {number: required for number, required in rows}
+
     async def list(self, limit: int, offset: int) -> tuple[list[Run], int]:
         total = await self.session.scalar(select(func.count()).select_from(Run))
         values = await self.session.scalars(

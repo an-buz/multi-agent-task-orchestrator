@@ -6,6 +6,8 @@ import remarkGfm from "remark-gfm";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import type { RunStep } from "@/features/runs/types";
 import { contextFileDownloadUrl } from "@/features/files/queries";
@@ -54,7 +56,7 @@ export default function RunDetailContent({ id }: { id: string }) {
   return (
     <AppShell>
       <section className="min-w-0">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-5 lg:px-8">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-5 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold">Run details</h1>
             <p className="mt-1 font-mono text-xs text-muted-foreground">{id}</p>
@@ -62,7 +64,9 @@ export default function RunDetailContent({ id }: { id: string }) {
           {run && (
             <div className="flex gap-2">
               <StatusBadge status={run.status} />
-              {["PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS"].includes(run.status) && (
+              {["PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS", "PAUSED"].includes(
+                run.status,
+              ) && (
                 <Button
                   variant="secondary"
                   disabled={pending}
@@ -88,7 +92,16 @@ export default function RunDetailContent({ id }: { id: string }) {
           )}
           {run && (
             <>
-              <section className="rounded-xl border border-(--border) bg-card p-5">
+              {run.status === "PAUSED" && (
+                <Alert>
+                  <AlertTitle>Waiting for agent reconfiguration</AlertTitle>
+                  <AlertDescription>
+                    Save unavailable agents with an enabled model to resume this run automatically.
+                    Completed steps are preserved. <Link href="/agents">Manage agents</Link>.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <section className="rounded-xl border border-border bg-card p-5">
                 <h2 className="text-sm font-semibold">Task</h2>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{run.task}</p>
                 {(run.files?.length ?? 0) > 0 && (
@@ -154,14 +167,11 @@ export default function RunDetailContent({ id }: { id: string }) {
                   </Button>
                 </section>
               )}
-              <section className="rounded-xl border border-(--border) bg-card p-5">
+              <section className="rounded-xl border border-border bg-card p-5">
                 <h2 className="mb-3 text-sm font-semibold">Execution steps</h2>
                 <div className="space-y-3">
                   {runSteps.map((step) => (
-                    <article
-                      key={step.step_number}
-                      className="rounded-lg border border-(--border) p-4"
-                    >
+                    <article key={step.step_number} className="rounded-lg border border-border p-4">
                       <div className="flex flex-wrap justify-between gap-2">
                         <h3 className="text-sm font-medium">
                           {step.step_number}. {step.agent_name}
@@ -203,12 +213,12 @@ export default function RunDetailContent({ id }: { id: string }) {
                 </div>
               </section>
               {run.final_report && (
-                <section className="prose dark:prose-invert max-w-none rounded-xl border border-(--border) bg-card p-5">
+                <section className="prose dark:prose-invert max-w-none rounded-xl border border-border bg-card p-5">
                   <h2>Final report</h2>
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.final_report}</ReactMarkdown>
                 </section>
               )}
-              <section className="rounded-xl border border-(--border) bg-background p-5">
+              <section className="rounded-xl border border-border bg-background p-5">
                 <h2 className="text-sm font-semibold">Live events</h2>
                 {streamError && (
                   <p role="status" className="mt-2 text-xs text-status-warning">
@@ -233,7 +243,7 @@ export default function RunDetailContent({ id }: { id: string }) {
                   {(["json", "md", "pdf"] as const).map((format) => (
                     <button
                       key={format}
-                      className="rounded border border-(--border) px-3 py-2 text-xs uppercase"
+                      className="rounded border border-border px-3 py-2 text-xs uppercase"
                       disabled={pending}
                       onClick={() => void perform(() => download(format), false)}
                     >
@@ -245,7 +255,7 @@ export default function RunDetailContent({ id }: { id: string }) {
                     </button>
                   ))}
                   <button
-                    className="rounded border border-(--border) px-3 py-2 text-xs"
+                    className="rounded border border-border px-3 py-2 text-xs"
                     disabled={pending}
                     onClick={() =>
                       void perform(

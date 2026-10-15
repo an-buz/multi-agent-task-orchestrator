@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,6 +22,9 @@ class Agent(Base):
     role: Mapped[str] = mapped_column(String(500), nullable=False)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
+    requires_reconfiguration: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=4096)
     context_window: Mapped[int] = mapped_column(Integer, nullable=False, default=128000)

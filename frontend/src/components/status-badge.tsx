@@ -1,6 +1,8 @@
 import type { RunStatus } from "@/features/runs/types";
 
-const tones: Record<RunStatus, string> = {
+const tones: Record<RunStatus | "UNAVAILABLE", string> = {
+  PAUSED: "var(--status-warning)",
+  UNAVAILABLE: "var(--status-warning)",
   PENDING: "var(--status-pending)",
   PLANNING: "var(--status-progress)",
   AWAITING_CONFIRMATION: "var(--status-pending)",
@@ -10,7 +12,13 @@ const tones: Record<RunStatus, string> = {
   CANCELLED: "var(--status-pending)",
 };
 
-export function StatusBadge({ status, variant }: { status: RunStatus; variant?: "pipeline" }) {
+export function StatusBadge({
+  status,
+  variant,
+}: {
+  status: RunStatus | "UNAVAILABLE";
+  variant?: "pipeline";
+}) {
   if (variant === "pipeline") {
     const tone =
       status === "COMPLETED"

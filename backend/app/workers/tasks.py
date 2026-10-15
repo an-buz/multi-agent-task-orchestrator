@@ -112,7 +112,9 @@ async def recover_runs(ctx: dict[str, Any]) -> None:
     # Keyset batches avoid holding a DB transaction open across Redis I/O.
     while True:
         async with async_session_factory() as session:
-            query = select(Run.id, Run.status).where(Run.status.in_(["PLANNING", "IN_PROGRESS"]))
+            query = select(Run.id, Run.status).where(
+                Run.status.in_(["PLANNING", "IN_PROGRESS", "PAUSED"])
+            )
             if after is not None:
                 query = query.where(Run.id > after)
             runs = list(

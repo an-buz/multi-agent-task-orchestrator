@@ -161,7 +161,7 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <section className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-(--border) px-6 py-4 lg:px-8">
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Orchestration Center</h1>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -184,7 +184,7 @@ export default function DashboardPage() {
         </header>
         <div className="grid min-h-[calc(100vh-80px)] xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-5 p-5 lg:p-6">
-            <section className="rounded-xl border border-(--border) bg-card p-4 lg:p-5">
+            <section className="rounded-xl border border-border bg-card p-4 lg:p-5">
               <label
                 htmlFor="workflow-task"
                 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
@@ -197,10 +197,10 @@ export default function DashboardPage() {
                 onChange={(event) => setTask(event.target.value)}
                 placeholder="Describe the task you want your workflow to complete..."
                 rows={3}
-                className="mt-2.5 min-h-24 w-full resize-y rounded-lg border border-(--border) bg-background px-3 py-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-status-completed/60"
+                className="mt-2.5 min-h-24 w-full resize-y rounded-lg border border-border bg-background px-3 py-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-status-completed/60"
               />
               {contextOpen && (
-                <div className="mt-3 rounded-lg border border-(--border) bg-background p-3">
+                <div className="mt-3 rounded-lg border border-border bg-background p-3">
                   <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
                     <span className="flex items-center gap-2">
                       <Paperclip size={13} />
@@ -250,7 +250,7 @@ export default function DashboardPage() {
                   >
                     <SelectTrigger
                       aria-label="Workflow"
-                      className="h-auto w-auto rounded-lg border-(--border) bg-background px-3 py-2 text-xs text-foreground"
+                      className="h-auto w-auto rounded-lg border-border bg-background px-3 py-2 text-xs text-foreground"
                     >
                       {workflowsQuery.data?.items.find((workflow) => workflow.id === workflowId)
                         ?.title ?? "Choose workflow"}
@@ -331,7 +331,7 @@ export default function DashboardPage() {
                     {planSteps.map((step) => (
                       <li
                         key={step.step_number}
-                        className="rounded border border-(--border) p-3 text-xs"
+                        className="rounded border border-border p-3 text-xs"
                       >
                         <span className="font-medium">
                           {step.step_number}. {step.agent_name}
@@ -341,7 +341,7 @@ export default function DashboardPage() {
                         </span>
                         <Textarea
                           aria-label={`Task for ${step.agent_name}`}
-                          className="mt-2 block w-full rounded border border-(--border) bg-background p-2 text-foreground"
+                          className="mt-2 block w-full rounded border border-border bg-background p-2 text-foreground"
                           value={step.input ?? step.subtask ?? ""}
                           onChange={(event) =>
                             setRunDraft({

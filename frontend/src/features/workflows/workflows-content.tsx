@@ -302,6 +302,12 @@ export default function WorkflowsContent() {
                 <Button
                   key={agent.id}
                   variant="ghost"
+                  disabled={agent.available === false}
+                  title={
+                    agent.available === false
+                      ? "Reconfigure this agent with an enabled model first."
+                      : undefined
+                  }
                   onClick={() => addAgent(agent.id)}
                   className="mb-2 w-full rounded-lg border border-border p-3 text-left hover:border-status-completed/50"
                 >

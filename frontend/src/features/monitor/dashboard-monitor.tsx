@@ -30,6 +30,7 @@ const statusLabels = {
   PLANNING: "Planning",
   AWAITING_CONFIRMATION: "Awaiting confirmation",
   IN_PROGRESS: "In Progress",
+  PAUSED: "Paused",
   COMPLETED: "Completed",
   FAILED: "Failed",
   CANCELLED: "Cancelled",
@@ -94,7 +95,7 @@ export function RunPipeline({
   return (
     <section
       aria-label="Execution pipeline"
-      className="rounded-xl border border-(--border) bg-card p-4 lg:p-5"
+      className="rounded-xl border border-border bg-card p-4 lg:p-5"
     >
       <div className="mb-4 flex items-center justify-between">
         <div>
@@ -181,7 +182,7 @@ export function RunPipeline({
         {steps.map((item, index) => (
           <div key={item.step_number} className="flex min-w-30.5 flex-1 items-center gap-2">
             <article
-              className={`min-w-29.5 flex-1 rounded-lg border p-3 ${item.status === "IN_PROGRESS" ? "border-status-progress bg-status-progress/10" : "border-(--border) bg-card"}`}
+              className={`min-w-29.5 flex-1 rounded-lg border p-3 ${item.status === "IN_PROGRESS" ? "border-status-progress bg-status-progress/10" : "border-border bg-card"}`}
             >
               <button
                 aria-label={`Inspect step ${item.step_number}: ${item.agent_name}`}
@@ -224,8 +225,8 @@ export function RunConsole({
     (event) => hidden.runId !== runId || !hidden.keys.has(eventKey(event)),
   );
   return (
-    <section className="flex min-h-97.5 flex-col overflow-hidden rounded-xl border border-(--border) bg-background">
-      <div className="flex items-center justify-between border-b border-(--border) bg-card px-4 py-3">
+    <section className="flex min-h-97.5 flex-col overflow-hidden rounded-xl border border-border bg-background">
+      <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
         <h2 className="flex items-center gap-2 font-mono text-xs font-semibold tracking-wide text-foreground">
           <i className="size-2 rounded-full bg-status-completed" />
           LIVE ORCHESTRATION CONSOLE
@@ -240,7 +241,7 @@ export function RunConsole({
       </div>
       <div
         aria-label="Run orchestration events"
-        className="dashboard-console-scroll h-[364px] space-y-3 overflow-auto p-4 font-mono text-[11px] leading-5"
+        className="dashboard-console-scroll h-91 space-y-3 overflow-auto p-4 font-mono text-[11px] leading-5"
       >
         {!visible.length && (
           <p className="text-muted-foreground">
@@ -265,7 +266,7 @@ export function RunConsole({
               >
                 {tag}
               </span>
-              <span className="min-w-0 whitespace-pre-wrap break-words text-foreground">
+              <span className="min-w-0 whitespace-pre-wrap wrap-break-words text-foreground">
                 {message}
               </span>
             </div>
@@ -295,12 +296,12 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
   return (
     <aside
       aria-label="Agent inspector"
-      className="flex flex-col gap-3 border-t border-(--border) bg-background p-4 xl:border-l xl:border-t-0"
+      className="flex flex-col gap-3 border-t border-border bg-background p-4 xl:border-l xl:border-t-0"
     >
       <h2 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Active agent inspector
       </h2>
-      <section className="flex items-center gap-3 rounded-lg border border-(--border) bg-card p-3">
+      <section className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-full border border-status-warning bg-status-warning/70 text-status-warning">
           <Bot size={20} />
         </span>
@@ -329,13 +330,13 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
           <div className="h-full bg-status-warning" style={{ width: `${progress}%` }} />
         </div>
       </section>
-      <section className="rounded-lg border border-(--border) bg-card p-3">
+      <section className="rounded-lg border border-border bg-card p-3">
         <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
           Current step
         </h3>
         <p
           aria-label={step ? `Output for step ${step.step_number}` : undefined}
-          className="dashboard-inspector-scroll h-[50.4px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-[1.4] text-foreground"
+          className="dashboard-inspector-scroll h-[50.4px] overflow-auto whitespace-pre-wrap warp-break-words font-mono text-xs leading-[1.4] text-foreground"
         >
           {step?.output ??
             step?.subtask ??
@@ -347,7 +348,7 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
           </p>
         )}
       </section>
-      <section className="rounded-lg border border-(--border) bg-card p-3">
+      <section className="rounded-lg border border-border bg-card p-3">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-[10px] font-semibold uppercase text-muted-foreground">
             Input context
@@ -385,7 +386,7 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
           {step?.input ?? "Input will be prepared when the step starts."}
         </pre>
       </section>
-      <section className="rounded-lg border border-(--border) bg-card p-3">
+      <section className="rounded-lg border border-border bg-card p-3">
         <div className="flex items-center justify-between">
           <h3 className="text-[10px] font-semibold uppercase text-muted-foreground">Token usage</h3>
           <span aria-label="Step tokens" className="font-mono text-[11px] text-foreground">
@@ -410,7 +411,7 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
           <span className="text-status-progress">● Completion ({completion.toLocaleString()})</span>
         </div>
       </section>
-      <section className="mt-auto rounded-lg border border-(--border) bg-card p-3">
+      <section className="mt-auto rounded-lg border border-border bg-card p-3">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold">Final report</h3>
           {!run?.final_report && <LockKeyhole size={14} className="text-muted-foreground" />}

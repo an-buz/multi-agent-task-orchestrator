@@ -11,6 +11,8 @@ from app.schemas.run import RunPlan, RunRead, StepStatus
 EventName = Literal[
     "plan:ready",
     "task:started",
+    "task:paused",
+    "task:resumed",
     "agent:status_change",
     "agent:stream_chunk",
     "agent:completed",
@@ -110,6 +112,8 @@ class Snapshot(EventData):
 PAYLOAD_MODELS: dict[str, type[EventData]] = {
     "plan:ready": PlanReady,
     "task:started": TaskStarted,
+    "task:paused": TaskIdentity,
+    "task:resumed": TaskIdentity,
     "agent:status_change": StatusChanged,
     "agent:stream_chunk": StreamChunk,
     "agent:completed": StepCompleted,

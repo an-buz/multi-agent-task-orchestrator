@@ -12,9 +12,11 @@ from time import perf_counter
 from typing import Any
 
 import structlog
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import get_settings
 from app.db.file_repository import FileRepository
+from app.db.model_repository import ModelRepository
 from app.db.run_repository import RunRepository
 from app.llm.context import ContextTooLarge, check_context
 from app.llm.provider import LLMProvider, LLMResponse, StreamingLLMProvider
@@ -23,6 +25,7 @@ from app.llm.retry import llm_retrying
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.schemas.event import EventName
+from app.services.models import ModelService
 from app.tools.runtime import ToolRuntime
 
 logger = structlog.get_logger()
@@ -324,10 +327,16 @@ class DAGExecutor:
 
     async def execute(self, run: Run) -> None:
         current = await self.repository.get(run.id, lock=True)
-        if current is None or current.status != "IN_PROGRESS":
+        if current is None or current.status not in {"IN_PROGRESS", "PAUSED"}:
             await self.repository.save()
             return
         steps = await self.repository.steps(run.id)
+        if current.status == "PAUSED":
+            if not await self.models_ready(run, steps):
+                await self.repository.save()
+                return
+            current.status = "IN_PROGRESS"
+            self.repository.emit(run.id, "task:resumed", {"taskId": str(run.id)})
         if not steps:
             run.status = "FAILED"
             run.finished_at = datetime.now(UTC)
@@ -400,7 +409,10 @@ class DAGExecutor:
             while True:
                 if not await flush_tool_events():
                     return
+                models_ready = await self.models_ready(run, steps)
                 for step in steps:
+                    if not models_ready:
+                        break
                     if len(active) >= limit:
                         break
                     if step.status != "PENDING" or any(
@@ -408,6 +420,10 @@ class DAGExecutor:
                         for number in step.depends_on
                     ):
                         continue
+                    # A switch may have committed after the previous step was dispatched.
+                    if not await self.models_ready(run, steps):
+                        models_ready = False
+                        break
                     if not await self.still_running(run):
                         return
                     step.attempt += 1
@@ -452,7 +468,16 @@ class DAGExecutor:
                         )
                     ] = step
                 if not active:
+                    if not models_ready:
+                        if not await self.still_running(run):
+                            return
+                        run.status = "PAUSED"
+                        self.repository.emit(run.id, "task:paused", {"taskId": str(run.id)})
+                        await self.repository.save()
+                        return
                     break
+                # Release policy/agent locks before waiting for external I/O.
+                await self.repository.save()
                 notification = asyncio.create_task(event_ready.wait())
                 try:
                     ready, _ = await asyncio.wait(
@@ -533,6 +558,43 @@ class DAGExecutor:
                 task.cancel()
             if active:
                 await asyncio.gather(*active, return_exceptions=True)
+
+    async def models_ready(self, run: Run, steps: list[RunStep]) -> bool:
+        """Drain active work before pausing; repair only invalidated snapshots."""
+        unfinished = [step for step in steps if step.status in {"PENDING", "IN_PROGRESS"}]
+        if not unfinished:
+            return True
+        available = await ModelService(ModelRepository(self.repository.session)).available()
+        flags = await self.repository.reconfiguration_flags(run.id)
+        agents = await self.repository.agents({step.agent_id for step in unfinished})
+        ready = True
+        for step in unfinished:
+            if step.step_number in flags:
+                set_committed_value(step, "requires_reconfiguration", flags[step.step_number])
+            invalidated = flags.get(step.step_number, False) or step.requires_reconfiguration
+            if not invalidated and step.agent_config.get("model") in available:
+                continue
+            agent = agents.get(step.agent_id)
+            if (
+                step.status == "IN_PROGRESS"
+                or agent is None
+                or agent.requires_reconfiguration
+                or agent.model not in available
+            ):
+                ready = False
+                continue
+            step.agent_config = {
+                "role": agent.role,
+                "system_prompt": agent.system_prompt,
+                "model": agent.model,
+                "temperature": agent.temperature,
+                "max_tokens": agent.max_tokens,
+                "context_window": agent.context_window,
+                "tools": list(agent.tools),
+            }
+            step.agent_name = agent.name
+            step.requires_reconfiguration = False
+        return ready
 
     async def still_running(self, run: Run) -> bool:
         # Serialize checkpoints with cancel/retry; refresh avoids stale ORM status.

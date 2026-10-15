@@ -3,6 +3,7 @@ export type RunStatus =
   | "PENDING"
   | "AWAITING_CONFIRMATION"
   | "IN_PROGRESS"
+  | "PAUSED"
   | "COMPLETED"
   | "FAILED"
   | "CANCELLED";
