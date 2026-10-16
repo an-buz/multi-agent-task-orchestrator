@@ -193,18 +193,24 @@ for (const theme of ["dark", "light"]) {
       output: "Partial result",
     };
     active.plan.steps[0].output = "Partial result";
+    await emit(page, "agent:status_change", { stepNumber: 1, status: "IN_PROGRESS" }, "9");
     await emit(page, "agent:stream_chunk", chunk, "10");
     await expect(inspector.getByLabel("Output for step 1")).toHaveText("Partial result");
     await emit(page, "agent:stream_chunk", chunk, "10");
     await expect(
       page.getByLabel("Run orchestration events").getByLabel("agent:stream_chunk", { exact: true }),
-    ).toHaveCount(1);
+    ).toHaveCount(0);
+    await expect(
+      page
+        .getByLabel("Run orchestration events")
+        .getByText("Actual reviewer: in progress.", { exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Clear", exact: true }).click();
     await expect(page.getByText("Console cleared. Waiting for new events.")).toBeVisible();
     await emit(
       page,
       "agent:tool_result",
-      { stepNumber: 1, toolName: "calculator", ok: true, summary: "Tool completed." },
+      { stepNumber: 1, toolName: "calculator", ok: true, summary: "Tool\ncompleted." },
       "11",
     );
     await expect(
@@ -216,6 +222,18 @@ for (const theme of ["dark", "light"]) {
     await expect(
       page.getByLabel("Run orchestration events").getByText("Tool completed.", { exact: true }),
     ).toBeVisible();
+    await page.setViewportSize({ width: 540, height: 900 });
+    const consoleRow = page
+      .getByLabel("Run orchestration events")
+      .getByLabel("agent:tool_result", { exact: true })
+      .locator("..");
+    expect(
+      await consoleRow.evaluate((row) => ({
+        whitespace: getComputedStyle(row).whiteSpace,
+        height: row.getBoundingClientRect().height,
+      })),
+    ).toEqual({ whitespace: "nowrap", height: 20 });
+    await page.setViewportSize({ width: 1776, height: 1291 });
     await page.getByRole("button", { name: "Inspect step 2: Actual writer" }).click();
     await expect(inspector.getByText("Writer input", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "More pipeline options" }).click();

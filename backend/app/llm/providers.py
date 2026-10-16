@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
 from app.core.config import Settings, get_settings
+from app.demo.responses import demo_plan, demo_response
 from app.llm.planning import PLANNER_SYSTEM_PROMPT
 from app.llm.provider import LLMChunk, LLMResponse, LLMUsage, ToolCall
 from app.llm.registry import get_model_registry
@@ -331,6 +332,10 @@ class MockLLMProvider:
         del model, temperature, max_tokens
         if system_prompt == PLANNER_SYSTEM_PROMPT:
             request = json.loads(user_prompt)
+            if get_settings().demo_mode:
+                response = await asyncio.to_thread(demo_plan, request)
+                if response is not None:
+                    return response
             return LLMResponse(
                 content=json.dumps(
                     {
@@ -348,6 +353,10 @@ class MockLLMProvider:
                 ),
                 usage=LLMUsage(input_tokens=max(1, len(user_prompt.split())), output_tokens=5),
             )
+        if get_settings().demo_mode:
+            response = await asyncio.to_thread(demo_response, system_prompt, user_prompt)
+            if response is not None:
+                return response
         return LLMResponse(
             content=f"Mock response: {user_prompt[:500]}",
             usage=LLMUsage(input_tokens=max(1, len(user_prompt.split())), output_tokens=5),

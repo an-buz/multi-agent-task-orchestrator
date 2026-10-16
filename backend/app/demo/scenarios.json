@@ -1,0 +1,104 @@
+{
+  "sequential": {
+    "dependencies": [[], [1], [2], [3], [4]],
+    "planning_usage": {"input_tokens": 420, "output_tokens": 260},
+    "summary": "Simulated sequential release: Analyst defines scope, Developer implements it, QA verifies the handoff, Reviewer approves it, and Technical Writer prepares release notes. All results and usage are fixtures.",
+    "subtasks": {
+      "analyst": "Define task board acceptance criteria and hand them to Developer.",
+      "developer": "Implement task creation and status filters from the Analyst handoff.",
+      "qa": "Verify the Developer handoff against task board acceptance criteria.",
+      "reviewer": "Review the QA evidence and approve the sequential release.",
+      "writer": "Compile the approved sequential handoff into release notes."
+    },
+    "results": {
+      "analyst": {
+        "content": "## Requirements handoff\n\n*Simulated output — no external systems were accessed.*\n\nThe release adds task creation and status filtering to the task board.\n\n| Criterion | Expected behavior |\n| --- | --- |\n| Create a task | A non-empty title creates a task in PENDING |\n| Validate a title | Whitespace-only titles show an inline error |\n| Filter tasks | All, Pending, In progress, and Completed update the list |\n| Empty result | The board shows a helpful empty state |\n\n**Handoff to Developer:** implement the form, filter controls, and accessible feedback. Preserve the selected filter after creating a task.",
+        "usage": {"input_tokens": 310, "output_tokens": 166}
+      },
+      "developer": {
+        "content": "## Implementation handoff\n\n*Simulated output — files were not actually changed.*\n\nImplemented the Analyst acceptance criteria in the fictional task board.\n\n- Added a validated task creation form with an explicit submit state.\n- Added status filters and a count for the visible results.\n- Kept the current filter after task creation.\n- Added keyboard focus handling and an empty state.\n\n```ts\nconst visibleTasks = tasks.filter(\n  (task) => filter === 'ALL' || task.status === filter,\n);\n```\n\n**Handoff to QA:** check blank titles, keyboard submission, filter switching, and creation while a filter is active.",
+        "usage": {"input_tokens": 540, "output_tokens": 185}
+      },
+      "qa": {
+        "content": "## QA verification\n\n*Simulated evidence — these checks were not executed against a real application.*\n\n| Check | Fixture outcome |\n| --- | --- |\n| Create a task with a valid title | PASS |\n| Reject a whitespace-only title | PASS |\n| Switch all status filters | PASS |\n| Preserve the filter after creation | PASS |\n| Submit and navigate with a keyboard | PASS |\n| Show an empty filtered list | PASS |\n\n**Result:** 6 fictional checks passed, 0 failed. Developer handoff satisfies the acceptance criteria.\n\n**Handoff to Reviewer:** assess scope, maintainability, and release readiness.",
+        "usage": {"input_tokens": 610, "output_tokens": 172}
+      },
+      "reviewer": {
+        "content": "## Review decision\n\n*Simulated review — no repository or pull request was inspected.*\n\n**Decision: approved for the demo release.**\n\n- The implementation handoff covers task creation and every requested status filter.\n- QA reports six passing acceptance checks.\n- Validation and keyboard feedback are included.\n- No blocking findings remain in this fictional scenario.\n\n**Follow-up:** add pagination before expanding the board to a large dataset. This does not block the demonstrated release.\n\n**Handoff to Technical Writer:** publish the user-facing feature summary and the known limitation.",
+        "usage": {"input_tokens": 580, "output_tokens": 153}
+      },
+      "writer": {
+        "content": "# Task board release — Sequential demo\n\n*Fictional release notes assembled from prepared agent handoffs.*\n\n## What's included\n\nCreate tasks with validated titles and filter the board by status. Keyboard submission and clear empty states make the flow accessible. Your selected filter stays active when you add a task.\n\n## Delivery trail\n\n1. Analyst defined four acceptance criteria.\n2. Developer supplied the implementation handoff.\n3. QA supplied six passing simulated checks.\n4. Reviewer approved the release with one non-blocking follow-up.\n5. Technical Writer prepared these release notes.\n\n## Known limitation\n\nPagination remains future work.\n\n**Demo outcome:** the five-step sequential workflow is complete. No actual code, tests, or deployment was performed.",
+        "usage": {"input_tokens": 720, "output_tokens": 205}
+      }
+    }
+  },
+  "parallel": {
+    "dependencies": [[], [], [], [], [1, 2, 3, 4]],
+    "planning_usage": {"input_tokens": 420, "output_tokens": 260},
+    "summary": "Simulated parallel assessment: Analyst, Developer, QA, and Reviewer work independently from the same task; Technical Writer waits for all four and consolidates their findings. All results and usage are fixtures.",
+    "subtasks": {
+      "analyst": "Independently assess task board requirements and release scope.",
+      "developer": "Independently propose a task board implementation approach.",
+      "qa": "Independently prepare a risk-based task board test matrix.",
+      "reviewer": "Independently assess task board design risks and safeguards.",
+      "writer": "Consolidate all four independent assessments into a release brief."
+    },
+    "results": {
+      "analyst": {
+        "content": "## Independent product assessment\n\n*Simulated parallel branch — no other branch output was assumed.*\n\n**Goal:** help a small team create tasks and focus on work by status.\n\n- Required: validated task title, default PENDING status, and status filters.\n- Required: visible result count and an empty state.\n- Out of scope: assignments, due dates, and pagination.\n\n**Success criteria:** a user creates a task, finds it under Pending, changes filters, and understands when no tasks match.\n\n**Contribution to the final brief:** a bounded release scope and four acceptance checks.",
+        "usage": {"input_tokens": 290, "output_tokens": 149}
+      },
+      "developer": {
+        "content": "## Independent implementation proposal\n\n*Simulated parallel branch — no code was executed or changed.*\n\nUse a validated task form, a typed status filter, and derived visible results. Keep server task data in the query cache and filter selection in local UI state.\n\n```ts\ntype Filter = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';\n```\n\n**Proposed work:** form validation, create mutation, list invalidation, filter controls, loading and empty states.\n\n**Integration risk:** a new task may be hidden under a different active filter; show a creation confirmation.\n\n**Contribution to the final brief:** implementation approach and the hidden-task UX safeguard.",
+        "usage": {"input_tokens": 315, "output_tokens": 183}
+      },
+      "qa": {
+        "content": "## Independent test strategy\n\n*Simulated parallel branch — this is a proposed matrix, not executed tests.*\n\n| Priority | Proposed check |\n| --- | --- |\n| High | Valid title creates exactly one task |\n| High | Blank title blocks submission |\n| High | Each filter shows only matching statuses |\n| Medium | Active filter persists after creation |\n| Medium | Empty and loading states are distinguishable |\n| Medium | Keyboard focus returns predictably |\n\n**Risk:** accidental double submission. Include an in-flight submit guard.\n\n**Contribution to the final brief:** six proposed checks and the double-submit safeguard.",
+        "usage": {"input_tokens": 300, "output_tokens": 164}
+      },
+      "reviewer": {
+        "content": "## Independent design review\n\n*Simulated parallel branch — no implementation or QA branch result was reviewed.*\n\n**Assessment:** the proposed task board scope is small enough for a focused release.\n\nRecommended safeguards:\n\n1. Derive filtered rows from one authoritative task list.\n2. Validate titles at both form and API boundaries.\n3. Disable repeated submission while a request is pending.\n4. Keep status labels and empty states accessible.\n\n**Release gate:** implementation review and actual acceptance checks are still required outside this simulation.\n\n**Contribution to the final brief:** design guardrails, without claiming approval of unseen code.",
+        "usage": {"input_tokens": 325, "output_tokens": 166}
+      },
+      "writer": {
+        "content": "# Task board release brief — Parallel demo\n\n*Fictional consolidation of four independent agent assessments.*\n\n## Agreed scope\n\nTask creation, title validation, status filters, result counts, and helpful empty states. Assignments, due dates, and pagination are deferred.\n\n## Consolidated safeguards\n\n- Developer: confirm creation when the current filter hides a new task.\n- QA: prevent double submission and verify six proposed checks.\n- Reviewer: use one authoritative task list and validate both UI and API input.\n- Analyst: keep the release focused on creating and finding tasks.\n\n## Next action\n\nImplement the agreed scope, run real acceptance checks, and request a code review.\n\n**Demo outcome:** four branches ran independently; this final step waited for all four. No real implementation or verification is claimed.",
+        "usage": {"input_tokens": 1050, "output_tokens": 226}
+      }
+    }
+  },
+  "hybrid": {
+    "dependencies": [[], [1], [1], [2, 3], [4]],
+    "planning_usage": {"input_tokens": 420, "output_tokens": 260},
+    "summary": "Simulated hybrid release: Analyst defines scope; Developer and QA prepare implementation and test coverage in parallel; Reviewer joins both handoffs; Technical Writer prepares the release summary. All results and usage are fixtures.",
+    "subtasks": {
+      "analyst": "Define shared task board requirements for Developer and QA.",
+      "developer": "Prepare the implementation handoff from Analyst requirements alongside QA.",
+      "qa": "Prepare acceptance coverage from Analyst requirements alongside Developer.",
+      "reviewer": "Join Developer and QA handoffs and check requirements-to-test traceability.",
+      "writer": "Turn the joined review decision into a hybrid release summary."
+    },
+    "results": {
+      "analyst": {
+        "content": "## Shared release specification\n\n*Simulated output for the hybrid workflow.*\n\n| ID | Requirement |\n| --- | --- |\n| R1 | Create a task with a non-empty trimmed title |\n| R2 | Initialize new tasks as PENDING |\n| R3 | Filter by All, Pending, In progress, and Completed |\n| R4 | Preserve active filters and show useful empty states |\n\n**Parallel handoff:** Developer prepares the implementation; QA prepares acceptance coverage from this same specification. Neither branch waits for the other.\n\n**Join gate:** Reviewer must receive both handoffs before deciding release readiness.",
+        "usage": {"input_tokens": 310, "output_tokens": 153}
+      },
+      "developer": {
+        "content": "## Development branch handoff\n\n*Simulated implementation based on Analyst R1–R4; no files were changed.*\n\n- R1: trim input and reject blank titles with inline validation.\n- R2: create tasks with PENDING status.\n- R3: derive visible rows from the selected status.\n- R4: preserve filter state and show creation feedback plus an empty state.\n\n```ts\nconst title = values.title.trim();\nif (!title) return showTitleError();\nawait createTask({ title, status: 'PENDING' });\n```\n\n**Handoff to Reviewer:** requirement coverage is R1–R4. QA is preparing its coverage independently; this branch does not claim those checks passed.",
+        "usage": {"input_tokens": 520, "output_tokens": 185}
+      },
+      "qa": {
+        "content": "## Acceptance coverage branch\n\n*Simulated test design based on Analyst R1–R4; implementation tests were not executed.*\n\n| Requirement | Prepared cases |\n| --- | --- |\n| R1 | Valid title, whitespace-only title, trimmed title |\n| R2 | Initial status is PENDING |\n| R3 | All four filter selections |\n| R4 | Filter persistence, empty state, creation feedback |\n\n**Prepared:** 11 fictional acceptance cases, covering all four requirements.\n\n**Handoff to Reviewer:** compare this matrix with Developer's implementation handoff. Actual pass/fail evidence is deferred to a real implementation run.",
+        "usage": {"input_tokens": 490, "output_tokens": 159}
+      },
+      "reviewer": {
+        "content": "## Joined handoff review\n\n*Simulated review after both parallel branches completed.*\n\n| Requirement | Developer handoff | QA coverage |\n| --- | --- | --- |\n| R1: title validation | Covered | 3 prepared cases |\n| R2: default status | Covered | 1 prepared case |\n| R3: status filters | Covered | 4 prepared cases |\n| R4: filter UX | Covered | 3 prepared cases |\n\n**Decision:** the fictional design and test plan are aligned. Approve the handoff for implementation verification.\n\n**Open release gate:** execute the 11 acceptance cases against real code before shipping.\n\n**Handoff to Technical Writer:** distinguish the completed simulation from the pending real release gate.",
+        "usage": {"input_tokens": 910, "output_tokens": 196}
+      },
+      "writer": {
+        "content": "# Task board release summary — Hybrid demo\n\n*Fictional release preparation; no code was deployed.*\n\n## Prepared scope\n\nTask creation with trimmed titles, default Pending status, four status filters, persistent filter selection, and clear empty states.\n\n## Coordination trail\n\n1. Analyst defined R1–R4.\n2. Developer and QA worked in parallel from that shared specification.\n3. Reviewer waited for both branches and matched implementation coverage to 11 prepared acceptance cases.\n4. Technical Writer assembled this summary from the joined review.\n\n## Before a real release\n\nExecute acceptance checks against implemented code and record their results. The simulation confirms workflow coordination only.\n\n**Demo outcome:** sequential setup, two concurrent branches, a review join, and final documentation are complete.",
+        "usage": {"input_tokens": 740, "output_tokens": 210}
+      }
+    }
+  }
+}

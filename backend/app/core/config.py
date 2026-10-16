@@ -3,9 +3,9 @@
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, RedisDsn, field_validator
+from pydantic import AnyHttpUrl, Field, PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     context_file_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
     run_context_max_chars: int = Field(default=200000, ge=1)
     llm_provider_mode: Literal["real", "mock"] = "mock"
+    demo_mode: bool = False
     mock_stream_chunk_chars: int = Field(default=12, ge=1, le=10000)
     mock_stream_delay: float = Field(default=0.2, ge=0, le=5)
     code_executor_backend: Literal["docker", "disabled"] = "disabled"
@@ -89,6 +90,14 @@ class Settings(BaseSettings):
         if value.scheme != "postgresql+asyncpg":
             raise ValueError("DATABASE_URL must use postgresql+asyncpg")
         return value
+
+    @model_validator(mode="after")
+    def enforce_demo_simulation(self) -> Self:
+        if self.demo_mode:
+            self.llm_provider_mode = "mock"
+            self.code_executor_backend = "disabled"
+            self.run_token_budget = None
+        return self
 
 
 @lru_cache

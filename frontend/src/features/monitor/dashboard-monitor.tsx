@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import type { RunDetails, RunSummary, RunEvent, RunStep } from "@/features/runs/types";
 import { eventKey, runSteps } from "@/features/runs/model";
+import { consoleEvents, eventPresentation } from "./console-events";
 
 const statusLabels = {
   PENDING: "Pending",
@@ -35,41 +36,6 @@ const statusLabels = {
   FAILED: "Failed",
   CANCELLED: "Cancelled",
 };
-
-function eventPresentation(event: RunEvent, steps: RunStep[]) {
-  const data = event.data ?? event.payload ?? {};
-  const agent = steps.find((step) => step.step_number === data.stepNumber)?.agent_name;
-  const tool = event.event.includes("tool");
-  const tone = tool
-    ? "cyan"
-    : event.event.startsWith("agent:") && !event.event.endsWith("completed")
-      ? "violet"
-      : "emerald";
-  const tag = tool
-    ? `Tool: ${typeof data.toolName === "string" ? data.toolName : "Call"}`
-    : tone === "violet"
-      ? `Agent: ${agent ?? "Update"}`
-      : `Status: ${event.event.split(":").at(-1)?.replaceAll("_", " ")}`;
-  let message: string;
-  if (typeof data.summary === "string") message = data.summary;
-  else if (event.event === "agent:stream_chunk")
-    message = data.reset
-      ? "Starting a new response."
-      : typeof data.textDelta === "string"
-        ? data.textDelta
-        : "Response updated.";
-  else if (event.event === "run:snapshot") message = "Persisted run state restored.";
-  else if (event.event === "plan:ready")
-    message = "Execution plan prepared and awaiting confirmation.";
-  else if (event.event === "task:started") message = "Workflow execution started.";
-  else if (event.event === "task:finished")
-    message = `Workflow completed${typeof data.totalTokens === "number" ? ` · ${data.totalTokens.toLocaleString()} tokens` : ""}.`;
-  else if (event.event === "agent:status_change" && typeof data.status === "string")
-    message = `${agent ?? "Agent"}: ${data.status.toLowerCase().replaceAll("_", " ")}.`;
-  else if (event.event === "agent:completed") message = `${agent ?? "Agent"} completed the step.`;
-  else message = JSON.stringify(data);
-  return { tag, tone, message };
-}
 
 export function RunPipeline({
   run,
@@ -221,7 +187,7 @@ export function RunConsole({
   steps: RunStep[];
 }) {
   const [hidden, setHidden] = useState<{ runId?: string; keys: Set<string> }>({ keys: new Set() });
-  const visible = events.filter(
+  const visible = consoleEvents(events).filter(
     (event) => hidden.runId !== runId || !hidden.keys.has(eventKey(event)),
   );
   return (
@@ -241,7 +207,7 @@ export function RunConsole({
       </div>
       <div
         aria-label="Run orchestration events"
-        className="dashboard-console-scroll h-91 space-y-3 overflow-auto p-4 font-mono text-[11px] leading-5"
+        className="dashboard-console-scroll flex h-91 flex-col gap-3 overflow-auto p-4 font-mono text-[11px] leading-5"
       >
         {!visible.length && (
           <p className="text-muted-foreground">
@@ -253,22 +219,23 @@ export function RunConsole({
         {visible.map((event) => {
           const { tag, tone, message } = eventPresentation(event, steps);
           return (
-            <div key={eventKey(event)} className="grid grid-cols-[58px_98px_minmax(0,1fr)] gap-2">
-              <time className="text-muted-foreground">
+            <div
+              key={eventKey(event)}
+              className="flex min-w-max shrink-0 items-center gap-3 whitespace-nowrap"
+            >
+              <time className="w-20 shrink-0 text-muted-foreground">
                 {event.ts || event.timestamp
                   ? new Date(event.ts ?? event.timestamp!).toLocaleTimeString()
                   : "—"}
               </time>
               <span
-                title={event.event}
+                title={tag}
                 aria-label={event.event}
-                className={`w-fit self-start rounded px-1.5 py-0.5 text-[10px] leading-4 ${tone === "cyan" ? "bg-status-progress/15 text-status-progress" : tone === "violet" ? "bg-status-highlight/20 text-status-highlight" : "bg-status-completed/15 text-status-completed"}`}
+                className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-4 ${tone === "cyan" ? "bg-status-progress/15 text-status-progress" : tone === "violet" ? "bg-status-highlight/20 text-status-highlight" : "bg-status-completed/15 text-status-completed"}`}
               >
                 {tag}
               </span>
-              <span className="min-w-0 whitespace-pre-wrap wrap-break-words text-foreground">
-                {message}
-              </span>
+              <span className="text-foreground">{message}</span>
             </div>
           );
         })}

@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: orchestrator_demo
+    ports:
+      - "127.0.0.1:${DEMO_DATABASE_PORT:-15432}:5432"
+    volumes:
+      - demo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d orchestrator_demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${DEMO_REDIS_PORT:-17379}:6379"
+    volumes:
+      - demo_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  demo_postgres_data:
+  demo_redis_data:

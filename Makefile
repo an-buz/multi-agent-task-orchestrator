@@ -1,4 +1,4 @@
-.PHONY: up backend-dev worker frontend-dev migrate migration lint test test-e2e
+.PHONY: up backend-dev worker frontend-dev migrate migration lint test test-e2e demo demo-prepare demo-stop
 
 BACKEND_HOST ?= 0.0.0.0
 BACKEND_PORT ?= 8000
@@ -34,3 +34,12 @@ test-e2e:
 
 frontend-install:
 	cd frontend && pnpm install
+
+demo:
+	cd backend && uv run python -m app.demo.launcher
+
+demo-prepare:
+	cd backend && uv run python -m app.demo.launcher --prepare-only
+
+demo-stop:
+	docker compose -p orchestrator-demo -f docker-compose.demo.yml stop

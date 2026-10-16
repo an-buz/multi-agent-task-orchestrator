@@ -409,7 +409,7 @@ export default function DashboardPage() {
             />
             <RunConsole
               runId={monitor.runId}
-              events={monitor.events}
+                events={monitor.activityEvents}
               connectionError={monitor.connectionError}
               steps={monitoredSteps}
             />
