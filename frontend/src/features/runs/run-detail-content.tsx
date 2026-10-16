@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import Link from "next/link";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
@@ -92,6 +92,18 @@ export default function RunDetailContent({ id }: { id: string }) {
           )}
           {run && (
             <>
+              {run.planning_error && (
+                <Alert variant="destructive">
+                  <AlertTitle>Planning failed</AlertTitle>
+                  <AlertDescription>
+                    <p>{run.planning_error.message}</p>
+                    <p>Create a new run to generate another plan.</p>
+                    <Link href="/" className={buttonVariants({ variant: "outline" })}>
+                      Create new run
+                    </Link>
+                  </AlertDescription>
+                </Alert>
+              )}
               {run.status === "PAUSED" && (
                 <Alert>
                   <AlertTitle>Waiting for agent reconfiguration</AlertTitle>

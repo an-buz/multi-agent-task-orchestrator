@@ -122,9 +122,12 @@ test("workflow inference covers sequential, parallel aggregator and hybrid graph
   assert.equal(inferType(nodes, [edge(1, 2), edge(1, 3)]), "hybrid");
 });
 
-test("graph validation rejects empty, disconnected, cyclic and dangling graphs", () => {
+test("graph validation allows independent branches and rejects empty, cyclic and dangling graphs", () => {
   assert.ok(graphErrors([], []).length);
-  assert.ok(graphErrors(nodes, [edge(1, 2)]).some((error) => error.includes("connected")));
+  assert.deepEqual(graphErrors(nodes, [edge(1, 2)]), []);
+  assert.deepEqual(graphErrors(nodes, []), []);
+  assert.equal(inferType(nodes, []), "parallel");
+  assert.equal(inferType(nodes, [edge(1, 2)]), "hybrid");
   assert.ok(
     graphErrors(nodes, [edge(1, 2), edge(2, 3), edge(3, 1)]).some((error) =>
       error.includes("cycle"),

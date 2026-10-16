@@ -8,11 +8,12 @@ import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialo
 import { StatusBadge } from "@/components/status-badge";
 import { AppShell } from "@/components/app-shell";
 import { useRuns, useDeleteRun } from "./queries";
-import type { RunDetails } from "@/features/runs/types";
+import type { RunSummary } from "@/features/runs/types";
 
 export default function RunsContent() {
-  const [deleting, setDeleting] = useState<RunDetails | null>(null);
-  const query = useRuns();
+  const [deleting, setDeleting] = useState<RunSummary | null>(null);
+  const [offset, setOffset] = useState(0);
+  const query = useRuns(offset);
   const deletion = useDeleteRun();
   return (
     <AppShell>
@@ -69,9 +70,30 @@ export default function RunsContent() {
           ))}
           {query.data?.items.length === 0 && (
             <div className="rounded-xl border border-dashed border-(--border) p-8 text-center text-sm text-muted-foreground">
-              No runs yet. Start a workflow from the dashboard.
+              {offset
+                ? "No runs on this page. Go back to the previous page."
+                : "No runs yet. Start a workflow from the dashboard."}
             </div>
           )}
+          <nav aria-label="Run history pages" className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              disabled={offset === 0 || query.isFetching}
+              onClick={() => setOffset(Math.max(0, offset - 50))}
+            >
+              Previous page
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {Math.floor(offset / 50) + 1}
+            </span>
+            <Button
+              variant="outline"
+              disabled={query.isFetching || !query.data || offset + 50 >= query.data.total}
+              onClick={() => setOffset(offset + 50)}
+            >
+              Next page
+            </Button>
+          </nav>
         </div>
       </section>
       {deleting && (
@@ -82,7 +104,10 @@ export default function RunsContent() {
           description="Its results, steps, and event history will also be deleted. Uploaded files will be kept."
           pending={deletion.isPending}
           onClose={() => setDeleting(null)}
-          onConfirm={() => deletion.mutateAsync(deleting.id)}
+          onConfirm={async () => {
+            await deletion.mutateAsync(deleting.id);
+            if (query.data?.items.length === 1 && offset > 0) setOffset(offset - 50);
+          }}
         />
       )}
     </AppShell>

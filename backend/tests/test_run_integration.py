@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections.abc import Generator
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -28,10 +29,85 @@ from app.workers.runner import OrchestratorWorker
 from app.workers.tasks import execute_run, plan_run, recover_runs
 from arq.connections import RedisSettings, create_pool
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
+
+
+async def test_run_history_uses_two_queries_and_compact_pages(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_url, _ = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_session():
+        async with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    statements: list[str] = []
+
+    def record_query(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            workflow = Workflow(
+                id=uuid4(),
+                title="History probe",
+                execution_type="parallel",
+                steps=[],
+                graph_layout={},
+            )
+            session.add(workflow)
+            await session.flush()
+            ids = sorted(uuid4() for _ in range(51))
+            session.add_all(
+                Run(
+                    id=run_id,
+                    workflow_id=workflow.id,
+                    task="Compact history",
+                    context_text="Private context",
+                    plan={"summary": "Private plan", "steps": []},
+                    final_report="Private report",
+                    status="COMPLETED",
+                    created_at=datetime(2100, 1, 1, tzinfo=UTC),
+                )
+                for run_id in ids
+            )
+            await session.commit()
+        event.listen(engine.sync_engine, "before_cursor_execute", record_query)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            for offset, expected in [(0, ids[:50]), (50, ids[50:])]:
+                statements.clear()
+                response = await client.get(f"/api/v1/runs?limit=50&offset={offset}")
+                assert response.status_code == 200
+                assert len(statements) == 2
+                assert response.json()["total"] == 51
+                assert [row["id"] for row in response.json()["items"]] == list(map(str, expected))
+                assert "Private" not in response.text
+                for row in response.json()["items"]:
+                    assert row["workflow_title"] == "History probe"
+                    assert not {"plan", "context_text", "files", "final_report"}.intersection(row)
+            detail = await client.get(f"/api/v1/runs/{ids[0]}")
+            assert detail.status_code == 200
+            assert detail.json()["context_text"] == "Private context"
+            assert detail.json()["final_report"] == "Private report"
+            assert detail.json()["plan"]["summary"] == "Private plan"
+        async with sessions() as session:
+            for run_id in ids:
+                await RunRepository(session).delete(await session.get(Run, run_id))
+            await session.delete(await session.get(Workflow, workflow.id))
+            await session.commit()
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
+        await engine.dispose()
 
 
 @pytest.fixture(scope="module")

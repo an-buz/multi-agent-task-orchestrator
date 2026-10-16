@@ -15,7 +15,15 @@ from app.llm.registry import get_model_registry
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.schemas.context_file import ContextFileRead
-from app.schemas.run import RunCreate, RunPlan, RunPlanStep, RunPlanUpdate, RunRead, StepStatus
+from app.schemas.run import (
+    RunCreate,
+    RunList,
+    RunPlan,
+    RunPlanStep,
+    RunPlanUpdate,
+    RunRead,
+    StepStatus,
+)
 from app.schemas.workflow import WorkflowStepInput
 from app.services.files import FileError, FileService
 from app.services.models import ModelService
@@ -289,6 +297,6 @@ class RunService:
         await self.repository.save()
         return await self.read(run)
 
-    async def list(self, limit: int, offset: int) -> dict[str, object]:
-        runs, total = await self.repository.list(limit, offset)
-        return {"items": [await self.read(run) for run in runs], "total": total}
+    async def list(self, limit: int, offset: int) -> RunList:
+        items, total = await self.repository.summaries(limit, offset)
+        return RunList(items=items, total=total)

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
+import { loadCatalogue } from "@/lib/pagination";
 import { removeItem, upsertItem } from "@/lib/collection";
 
 export const agentsQueryKey = ["agents"] as const;
@@ -11,7 +12,7 @@ import type { Agent, AgentModel, AgentTool } from "./types";
 export function useAgents() {
   return useQuery({
     queryKey: agentsQueryKey,
-    queryFn: ({ signal }) => apiRequest<{ items: Agent[]; total: number }>("/agents", { signal }),
+    queryFn: ({ signal }) => loadCatalogue<Agent>("/agents", signal),
     staleTime: 30_000,
     refetchInterval: 5000,
   });

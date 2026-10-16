@@ -63,7 +63,12 @@ class RecordingMock(MockLLMProvider):
 async def make_run(dependencies: list[list[int]]) -> tuple[MemoryRunRepository, Run]:
     repository = MemoryRunRepository()
     repository.saved_workflow.steps = [
-        {"step_number": number, "agent_id": str(repository.agent.id), "depends_on": values}
+        {
+            "step_number": number,
+            "agent_id": str(repository.agent.id),
+            "depends_on": values,
+            "input_transform": "",
+        }
         for number, values in enumerate(dependencies, 1)
     ]
     service = RunService(repository)

@@ -14,6 +14,9 @@ export interface RunSummary {
   status: RunStatus;
   created_at: string;
   total_tokens: number;
+  task: string;
+  workflow_title?: string;
+  total_time_ms?: number;
 }
 
 export interface RunStep {
@@ -54,7 +57,7 @@ export interface RunDetails extends RunSummary {
 }
 
 export interface RunListResponse {
-  items: RunDetails[];
+  items: RunSummary[];
   total: number;
 }
 export interface CreateRunInput {

@@ -1,8 +1,8 @@
 import { apiRequest, apiResponse, apiUrl } from "@/lib/api";
 import type { CreateRunInput, CreatedRun, RunDetails, RunEvent, RunListResponse } from "./types";
 
-export function listRuns(signal?: AbortSignal): Promise<RunListResponse> {
-  return apiRequest<RunListResponse>("/runs", { signal });
+export function listRuns(signal?: AbortSignal, offset = 0): Promise<RunListResponse> {
+  return apiRequest<RunListResponse>(`/runs?limit=50&offset=${offset}`, { signal });
 }
 
 export function getRun(id: string, signal?: AbortSignal): Promise<RunDetails> {

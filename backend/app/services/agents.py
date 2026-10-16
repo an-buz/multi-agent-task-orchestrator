@@ -64,12 +64,12 @@ class AgentService:
             ) from exception
         return await self.representation(agent)
 
-    async def representation(self, agent: Agent) -> AgentRead:
+    async def representation(self, agent: Agent, available: set[str] | None = None) -> AgentRead:
         value = AgentRead.model_validate(agent)
-        value.available = (
-            not agent.requires_reconfiguration
-            and agent.model
-            in await ModelService(ModelRepository(self.repository.session)).available()
+        value.available = not agent.requires_reconfiguration and agent.model in (
+            available
+            if available is not None
+            else await ModelService(ModelRepository(self.repository.session)).available()
         )
         return value
 
@@ -98,5 +98,10 @@ class AgentService:
         await self.repository.delete(await self.require(agent_id))
 
     async def list(self, limit: int, offset: int) -> dict[str, object]:
+        # Keep policy stable while reading agents, without resolving it for each row.
+        available = await ModelService(ModelRepository(self.repository.session)).available()
         agents, total = await self.repository.list(limit, offset)
-        return {"items": [await self.representation(agent) for agent in agents], "total": total}
+        return {
+            "items": [await self.representation(agent, available) for agent in agents],
+            "total": total,
+        }

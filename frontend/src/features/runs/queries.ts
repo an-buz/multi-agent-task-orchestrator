@@ -2,18 +2,16 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteRun, getRun, listRuns } from "./api";
-import type { RunListResponse } from "./types";
-import { removeItem } from "@/lib/collection";
 
 export const runsQueryKey = ["runs"] as const;
 export const runQueryKey = (id: string | undefined) => [...runsQueryKey, id] as const;
 export const runEventsQueryKey = (id: string | undefined) =>
   [...runQueryKey(id), "events"] as const;
 
-export function useRuns() {
+export function useRuns(offset = 0) {
   return useQuery({
-    queryKey: runsQueryKey,
-    queryFn: ({ signal }) => listRuns(signal),
+    queryKey: [...runsQueryKey, "list", offset],
+    queryFn: ({ signal }) => listRuns(signal, offset),
     refetchInterval: 5000,
   });
 }
@@ -34,8 +32,7 @@ export function useDeleteRun() {
     onSuccess: async (_, id) => {
       await client.cancelQueries({ queryKey: runsQueryKey });
       client.removeQueries({ queryKey: runQueryKey(id) });
-      client.setQueryData<RunListResponse>(runsQueryKey, (current) => removeItem(current, id));
-      await client.invalidateQueries({ queryKey: runsQueryKey, exact: true });
+      await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
     },
   });
 }

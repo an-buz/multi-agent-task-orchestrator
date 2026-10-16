@@ -49,25 +49,6 @@ export function graphErrors(nodes: AgentNode[], edges: Edge[]): string[] {
     errors.push("Every edge must reference existing nodes.");
     return errors;
   }
-  if (nodes.length > 1) {
-    const connected = new Set<string>([nodes[0].id]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      edges.forEach((edge) => {
-        if (connected.has(edge.source) && !connected.has(edge.target)) {
-          connected.add(edge.target);
-          changed = true;
-        }
-        if (connected.has(edge.target) && !connected.has(edge.source)) {
-          connected.add(edge.source);
-          changed = true;
-        }
-      });
-    }
-    if (connected.size !== nodes.length)
-      errors.push("Every node must be connected to the workflow.");
-  }
   const remaining = new Map(
     nodes.map((node) => [node.id, edges.filter((edge) => edge.target === node.id).length]),
   );

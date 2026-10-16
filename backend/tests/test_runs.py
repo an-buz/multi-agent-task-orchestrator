@@ -15,7 +15,7 @@ from app.models.run import Run
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.orchestrator.planner import PlannerExecutor
-from app.schemas.run import RunCreate
+from app.schemas.run import RunCreate, RunSummary
 from app.services.runs import RunError, RunService
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,6 +81,24 @@ class MemoryRunRepository(RunRepository):
 
     async def list(self, limit: int, offset: int) -> tuple[list[Run], int]:
         return list(self.runs.values())[offset : offset + limit], len(self.runs)
+
+    async def summaries(self, limit: int, offset: int) -> tuple[list[RunSummary], int]:
+        runs, total = await self.list(limit, offset)
+        return [
+            RunSummary(
+                id=run.id,
+                workflow_id=run.workflow_id,
+                workflow_title=self.saved_workflow.title,
+                task=run.task,
+                status=run.status,
+                total_tokens=run.total_tokens,
+                total_time_ms=run.total_time_ms,
+                created_at=run.created_at,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+            )
+            for run in runs
+        ], total
 
     async def save(self) -> None:
         return None
@@ -186,6 +204,9 @@ def test_runs_list_returns_total_and_items(test_client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["workflow_title"] == "Repository review"
+    assert not {"plan", "files", "context_text", "final_report", "planning_error"}.intersection(
+        response.json()["items"][0]
+    )
 
 
 def test_run_creation_rejects_unknown_workflow(test_client: TestClient) -> None:

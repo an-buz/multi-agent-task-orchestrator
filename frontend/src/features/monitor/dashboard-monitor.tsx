@@ -22,7 +22,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
-import type { RunDetails, RunEvent, RunStep } from "@/features/runs/types";
+import type { RunDetails, RunSummary, RunEvent, RunStep } from "@/features/runs/types";
 import { eventKey, runSteps } from "@/features/runs/model";
 
 const statusLabels = {
@@ -81,7 +81,7 @@ export function RunPipeline({
   failed,
 }: {
   run?: RunDetails;
-  runs: RunDetails[];
+  runs: RunSummary[];
   selectRun: (id: string) => void;
   step?: RunStep;
   selectStep: (number: number) => void;

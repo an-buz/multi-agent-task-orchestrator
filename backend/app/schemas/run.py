@@ -65,6 +65,26 @@ class RunPlanUpdate(BaseModel):
     steps: list[RunPlanStep] = Field(min_length=1, max_length=100)
 
 
+class RunSummary(BaseModel):
+    """Compact history row; execution content is available from the detail endpoint."""
+
+    id: UUID
+    workflow_id: UUID
+    workflow_title: str
+    task: str
+    status: RunStatus
+    total_tokens: int
+    total_time_ms: int
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class RunList(BaseModel):
+    items: list[RunSummary]
+    total: int
+
+
 class RunRead(BaseModel):
     """Public run representation consumed by the frontend."""
 

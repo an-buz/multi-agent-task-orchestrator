@@ -120,7 +120,7 @@ export default function WorkflowsContent() {
           role: agent.role,
           model: agent.model,
           step,
-          inputTransform: "{{subtask}}",
+          inputTransform: "",
         },
       },
     ]);
@@ -438,7 +438,8 @@ export default function WorkflowsContent() {
                     className="mt-2 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-xs"
                   />
                   <p className="mt-2 text-[10px] text-muted-foreground">
-                    Available: task, subtask, context, steps.N.output
+                    Leave empty to include the subtask, context and dependency outputs
+                    automatically. Available variables: task, subtask, context, steps.N.output.
                   </p>
                   <Button
                     variant="ghost"

@@ -1,7 +1,11 @@
 """Model switches and safe pause/resume integration; all LLM calls are mocks."""
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -15,6 +19,7 @@ from app.db.session import get_session
 from app.llm.provider import LLMResponse
 from app.llm.providers import MockLLMProvider
 from app.main import app
+from app.models.agent import Agent
 from app.models.run_step import RunStep
 from app.orchestrator.executor import DAGExecutor
 from app.orchestrator.planner import PlannerExecutor
@@ -22,7 +27,7 @@ from app.schemas.run import RunCreate
 from app.services.models import ModelService
 from app.services.runs import RunService
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from test_run_integration import infrastructure as _infrastructure
@@ -97,7 +102,9 @@ async def model_client(
 
 
 async def create_confirmed(
-    client: AsyncClient, sessions: async_sessionmaker[AsyncSession]
+    client: AsyncClient,
+    sessions: async_sessionmaker[AsyncSession],
+    file_ids: list[UUID] | None = None,
 ) -> tuple[UUID, dict[str, object]]:
     payload: dict[str, object] = {
         "name": f"Model test {uuid4()}",
@@ -125,12 +132,136 @@ async def create_confirmed(
     async with sessions() as session:
         repository = RunRepository(session)
         service = RunService(repository)
-        created = await service.create(RunCreate(workflow_id=workflow.json()["id"], task="Review"))
+        created = await service.create(
+            RunCreate(workflow_id=workflow.json()["id"], task="Review", file_ids=file_ids or [])
+        )
         run = await repository.get(created.id)
         assert run is not None
         await PlannerExecutor(repository).execute(run)
         await service.confirm(run.id)
     return created.id, {**payload, "id": agent_id}
+
+
+@pytest.mark.parametrize("retry", [False, True])
+async def test_repaired_file_reader_reads_attachment_and_preserves_completed_step(
+    model_client: tuple[AsyncClient, async_sessionmaker[AsyncSession]], retry: bool
+) -> None:
+    client, sessions = model_client
+    uploaded = await client.post(
+        "/files", files={"file": ("evidence.txt", b"Attached evidence", "text/plain")}
+    )
+    assert uploaded.status_code == 201
+    file_id = uploaded.json()["id"]
+    run_id, agent = await create_confirmed(client, sessions, [UUID(file_id)])
+    async with sessions() as session:
+        repository = RunRepository(session)
+        run = await repository.get(run_id)
+        assert run is not None
+        steps = await repository.steps(run_id)
+        steps[0].status = "COMPLETED"
+        steps[0].output = "Preserved result"
+        steps[0].attempt = 1
+        steps[0].tokens_prompt = 7
+        if retry:
+            run.status = "FAILED"
+            steps[1].status = "FAILED"
+            steps[1].error = {"code": "llm_error", "message": "Previous failure"}
+        await repository.save()
+    assert (
+        await client.patch("/settings/models/claude-sonnet", json={"enabled": False})
+    ).status_code == 200
+    repaired = await client.put(
+        f"/agents/{agent['id']}",
+        json={
+            **{key: value for key, value in agent.items() if key != "id"},
+            "model": "claude-haiku",
+            "tools": ["file_reader"],
+        },
+    )
+    assert repaired.status_code == 200
+    if retry:
+        async with sessions() as session:
+            await RunService(RunRepository(session)).retry(run_id, 2)
+    fixture = json.loads((Path(__file__).parent / "fixtures/llm/file_reader.json").read_text())
+    received: list[dict[str, object]] = []
+
+    class FileReaderMock(MockLLMProvider):
+        async def complete_tools(
+            self,
+            system_prompt: str,
+            messages: list[dict[str, Any]],
+            model: str,
+            tools: list[dict[str, Any]],
+            *,
+            temperature: float,
+            max_tokens: int,
+        ) -> LLMResponse:
+            assert model == "claude-haiku"
+            assert [tool["name"] for tool in tools] == ["file_reader"]
+            if messages[-1]["role"] == "user":
+                response = LLMResponse.model_validate(fixture[0])
+                response.tool_calls[0].arguments["file_id"] = file_id
+                return response
+            received.append(json.loads(messages[-1]["content"]))
+            return LLMResponse.model_validate(fixture[1])
+
+    async with sessions() as session:
+        repository = RunRepository(session)
+        run = await repository.get(run_id)
+        assert run is not None
+        await DAGExecutor(repository, lambda _: FileReaderMock()).execute(run)
+    assert received == [{"text": "Attached evidence", "total_chars": 17, "offset": 0}]
+    detail = (await client.get(f"/runs/{run_id}")).json()
+    assert detail["status"] == "COMPLETED"
+    first, second = detail["plan"]["steps"]
+    assert first["output"] == "Preserved result" and first["attempt"] == 1
+    assert second["output"] == fixture[1]["content"]
+    assert second["model"] == "claude-haiku"
+    assert detail["total_tokens"] == (
+        detail["planning_prompt_tokens"] + detail["planning_completion_tokens"] + 7 + 38
+    )
+
+
+@pytest.mark.parametrize("limit", [1, 50])
+async def test_agent_list_has_constant_policy_query_count(
+    model_client: tuple[AsyncClient, async_sessionmaker[AsyncSession]], limit: int
+) -> None:
+    client, sessions = model_client
+    async with sessions() as session:
+        session.add_all(
+            Agent(
+                id=uuid4(),
+                name=f"Catalogue {index:02d} {uuid4()}",
+                role="Review",
+                system_prompt="Be precise",
+                model="claude-sonnet",
+                temperature=0.2,
+                max_tokens=1024,
+                context_window=128000,
+                tools=[],
+                requires_reconfiguration=index == 0,
+                created_at=datetime(2100, 1, 1, tzinfo=UTC),
+            )
+            for index in range(50)
+        )
+        await session.commit()
+    statements: list[str] = []
+
+    def record_query(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    engine = sessions.kw["bind"]
+    event.listen(engine.sync_engine, "before_cursor_execute", record_query)
+    try:
+        response = await client.get(f"/agents?limit={limit}")
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record_query)
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == limit
+    assert len(statements) == 4
+    assert sum("pg_advisory_xact_lock_shared" in statement for statement in statements) == 1
+    for agent in response.json()["items"]:
+        assert agent["available"] is not agent["requires_reconfiguration"]
 
 
 async def test_disable_pause_reconfigure_resume_and_preserve_completed(

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.run_repository import RunRepository
 from app.db.session import get_session
 from app.schemas.context_file import ContextFileRead
-from app.schemas.run import RunCreate, RunPlanUpdate, RunRead
+from app.schemas.run import RunCreate, RunList, RunPlanUpdate, RunRead
 from app.services.export import ExportFormat, export_result
 from app.services.runs import RunService
 from app.workers.queue import enqueue_plan, enqueue_run
@@ -32,12 +32,12 @@ async def create_run(payload: RunCreate, service: Service) -> RunRead:
     return run
 
 
-@router.get("")
+@router.get("", response_model=RunList)
 async def list_runs(
     service: Service,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
-) -> dict[str, object]:
+) -> RunList:
     return await service.list(limit, offset)
 
 

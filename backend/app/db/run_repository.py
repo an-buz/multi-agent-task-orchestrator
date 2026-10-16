@@ -15,6 +15,7 @@ from app.models.run_event import RunEvent
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.event import EventEnvelope, EventName
+from app.schemas.run import RunSummary
 
 
 class RunRepository:
@@ -75,6 +76,28 @@ class RunRepository:
             select(Run).order_by(Run.created_at.desc(), Run.id).limit(limit).offset(offset)
         )
         return list(values), total or 0
+
+    async def summaries(self, limit: int, offset: int) -> tuple[builtins.list[RunSummary], int]:
+        total = await self.session.scalar(select(func.count()).select_from(Run))
+        rows = await self.session.execute(
+            select(
+                Run.id,
+                Run.workflow_id,
+                Workflow.title.label("workflow_title"),
+                Run.task,
+                Run.status,
+                Run.total_tokens,
+                Run.total_time_ms,
+                Run.created_at,
+                Run.started_at,
+                Run.finished_at,
+            )
+            .join(Workflow, Run.workflow_id == Workflow.id)
+            .order_by(Run.created_at.desc(), Run.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return [RunSummary.model_validate(row) for row in rows.mappings()], total or 0
 
     def add(self, value: Run | RunStep) -> None:
         self.session.add(value)

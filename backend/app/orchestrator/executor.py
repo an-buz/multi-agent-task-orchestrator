@@ -347,11 +347,7 @@ class DAGExecutor:
         budget = run.planner_config.get("token_budget")
         # Serialize budgeted runs so parallel steps cannot spend the same remainder.
         limit = 1 if budget is not None else self.limit
-        files = (
-            await FileRepository(self.repository.session).text_for_run(run.id)
-            if any("file_reader" in step.agent_config.get("tools", []) for step in steps)
-            else {}
-        )
+        files: dict[str, str] | None = None
         # A worker owns this run exclusively; recover only unfinished calls.
         for step in steps:
             if step.status == "IN_PROGRESS":
@@ -439,6 +435,9 @@ class DAGExecutor:
                         self.result_event(run, step)
                         await self.repository.save()
                         continue
+                    # Snapshot repair can add file_reader after execution starts.
+                    if files is None and "file_reader" in step.agent_config.get("tools", []):
+                        files = await FileRepository(self.repository.session).text_for_run(run.id)
                     step.status = "IN_PROGRESS"
                     step.error = None
                     step.output = None

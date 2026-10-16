@@ -101,7 +101,7 @@ export default function DashboardPage() {
       setAttachments([]);
       if (controller.signal.aborted) return;
       router.replace(`/?run=${encodeURIComponent(created.id)}`, { scroll: false });
-      await client.invalidateQueries({ queryKey: runsQueryKey, exact: true });
+      await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
       const draft =
         "plan" in created && created.plan
           ? created
@@ -128,7 +128,7 @@ export default function DashboardPage() {
       client.setQueryData([...runsQueryKey, run.id], run);
       setRunDraft(null);
       router.replace(`/?run=${encodeURIComponent(run.id)}`, { scroll: false });
-      await client.invalidateQueries({ queryKey: runsQueryKey, exact: true });
+      await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
     } catch (error) {
       setRunError(error instanceof Error ? error.message : "Could not start the run.");
     } finally {
@@ -143,7 +143,7 @@ export default function DashboardPage() {
     try {
       const cancelled = await cancelRun(runDraft.id);
       client.setQueryData([...runsQueryKey, cancelled.id], cancelled);
-      await client.invalidateQueries({ queryKey: runsQueryKey, exact: true });
+      await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
       setRunDraft(null);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : "Could not cancel the run.");

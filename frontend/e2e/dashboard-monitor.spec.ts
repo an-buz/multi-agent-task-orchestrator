@@ -260,7 +260,7 @@ for (const theme of ["dark", "light"]) {
     ).toBeVisible();
     await expect(page.getByText("Active Nodes: 0")).toBeVisible();
     await expect(page.getByText(/QA Tester|Repo Analyzer|sample data/)).toHaveCount(0);
-    await page.route("**/api/v1/runs", (route) =>
+    await page.route(/\/api\/v1\/runs(?:\?.*)?$/, (route) =>
       route.fulfill({
         status: 503,
         headers: { "access-control-allow-origin": "http://localhost:3000" },
