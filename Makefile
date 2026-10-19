@@ -1,4 +1,4 @@
-.PHONY: up backend-dev worker frontend-dev migrate migration lint test test-e2e demo demo-prepare demo-stop
+.PHONY: up backend-dev worker frontend-dev migrate migration lint test test-e2e test-e2e-live demo demo-prepare demo-stop
 
 BACKEND_HOST ?= 0.0.0.0
 BACKEND_PORT ?= 8000
@@ -31,6 +31,9 @@ test:
 
 test-e2e:
 	cd frontend && pnpm test:e2e
+
+test-e2e-live:
+	cd backend && uv run python tests/run_live_e2e.py
 
 frontend-install:
 	cd frontend && pnpm install
