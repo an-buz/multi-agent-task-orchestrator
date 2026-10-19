@@ -24,13 +24,13 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     # Provider model identifiers stay configurable as providers retire model versions.
     anthropic_model_haiku: str = Field(
-        default="claude-3-5-haiku-latest", validation_alias="ANTHROPIC_MODEL_HAIKU"
+        default="claude-haiku-4-5-20251001", validation_alias="ANTHROPIC_MODEL_HAIKU"
     )
     anthropic_model_sonnet: str = Field(
-        default="claude-sonnet-4-5", validation_alias="ANTHROPIC_MODEL_SONNET"
+        default="claude-sonnet-4-6", validation_alias="ANTHROPIC_MODEL_SONNET"
     )
     anthropic_model_opus: str = Field(
-        default="claude-opus-4-1", validation_alias="ANTHROPIC_MODEL_OPUS"
+        default="claude-opus-4-6", validation_alias="ANTHROPIC_MODEL_OPUS"
     )
     openai_model_default: str = Field(default="gpt-4o", validation_alias="OPENAI_MODEL_DEFAULT")
     tavily_api_key: str | None = None

@@ -91,6 +91,8 @@ async def test_all_fifteen_responses_stream_and_regular_mock_stays_unchanged(
                 **load_scenarios()[workflow.execution_type]["results"][role],
                 "tool_calls": [],
                 "message": {},
+                "stop_reason": "stop",
+                "refused": False,
             }
             assert "".join(chunk.text_delta for chunk in chunks) == response.content
             assert len(chunks) > 2

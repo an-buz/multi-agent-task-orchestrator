@@ -17,7 +17,7 @@ from app.core.config import get_settings
 from app.db.run_repository import RunRepository
 from app.llm.context import ContextTooLarge, check_context
 from app.llm.planning import PLANNER_SYSTEM_PROMPT, PlannedWorkflow
-from app.llm.provider import LLMProvider, LLMResponse
+from app.llm.provider import IncompleteLLMResponse, LLMProvider, LLMResponse
 from app.llm.providers import create_provider
 from app.llm.retry import llm_retrying
 from app.models.run import Run
@@ -166,6 +166,7 @@ class LLMPlanner:
                     }
                     return result
                 try:
+                    response.require_complete()
                     parsed = PlannedWorkflow.model_validate_json(response.content)
                     by_number = {step.step_number: step for step in parsed.steps}
                     if len(by_number) != len(parsed.steps) or set(by_number) != {
@@ -185,6 +186,8 @@ class LLMPlanner:
                         step.subtask = by_number[step.step_number].subtask
                     result.plan = validated
                     return result
+                except IncompleteLLMResponse:
+                    raise
                 except ValidationError, ValueError:
                     continue
             result.error = {
@@ -197,6 +200,11 @@ class LLMPlanner:
             )
             result.error = (
                 {
+                    "code": "llm_incomplete_response",
+                    "message": "The provider returned an incomplete or refused planning response.",
+                }
+                if isinstance(exception, IncompleteLLMResponse)
+                else {
                     "code": "context_too_large",
                     "message": (
                         "Planning input and reserved response exceed the model context window. "

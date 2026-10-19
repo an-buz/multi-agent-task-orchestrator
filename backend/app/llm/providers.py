@@ -28,6 +28,12 @@ def anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "tool_use_id": message["tool_call_id"],
                 "content": message["content"],
             }
+            try:
+                result = json.loads(message["content"])
+                if isinstance(result, dict) and "error" in result:
+                    block["is_error"] = True
+            except ValueError, TypeError:
+                pass
             if native and native[-1]["role"] == "user" and isinstance(native[-1]["content"], list):
                 native[-1]["content"].append(block)
             else:
@@ -105,6 +111,8 @@ class AnthropicProvider:
         max_tokens: int = 4096,
     ) -> LLMResponse:
         info = get_model_registry()[model]
+        if not 1 <= max_tokens <= info.max_output_tokens:
+            raise ValueError("Requested response exceeds the model output limit")
         response = await self._client.messages.create(
             model=info.model_id,
             max_tokens=max_tokens,
@@ -115,6 +123,7 @@ class AnthropicProvider:
         content = "".join(block.text for block in response.content if block.type == "text")
         return LLMResponse(
             content=content,
+            stop_reason=response.stop_reason or "unknown",
             usage=LLMUsage(
                 input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens
             ),
@@ -149,8 +158,11 @@ class AnthropicProvider:
         max_tokens: int,
     ) -> LLMResponse:
         native = anthropic_messages(messages)
+        info = get_model_registry()[model]
+        if not 1 <= max_tokens <= info.max_output_tokens:
+            raise ValueError("Requested response exceeds the model output limit")
         response = await self._client.messages.create(
-            model=get_model_registry()[model].model_id,
+            model=info.model_id,
             system=system_prompt,
             messages=cast(list[MessageParam], native),
             tools=cast(list[ToolParam], tools),
@@ -159,13 +171,14 @@ class AnthropicProvider:
         )
         return LLMResponse(
             content="".join(block.text for block in response.content if block.type == "text"),
+            stop_reason=response.stop_reason or "unknown",
             usage=LLMUsage(
                 input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens
             ),
             tool_calls=[
                 ToolCall(id=block.id, name=block.name, arguments=cast(dict[str, Any], block.input))
                 for block in response.content
-                if block.type == "tool_use"
+                if block.type == "tool_use" and response.stop_reason == "tool_use"
             ],
             message={
                 "role": "assistant",
@@ -192,9 +205,11 @@ class OpenAIProvider:
         max_tokens: int = 4096,
     ) -> LLMResponse:
         info = get_model_registry()[model]
+        if not 1 <= max_tokens <= info.max_output_tokens:
+            raise ValueError("Requested response exceeds the model output limit")
         response = await self._client.chat.completions.create(
             model=info.model_id,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -207,6 +222,8 @@ class OpenAIProvider:
             raise ValueError("Provider response has no token usage")
         return LLMResponse(
             content=content,
+            stop_reason=response.choices[0].finish_reason,
+            refused=bool(response.choices[0].message.refusal),
             usage=LLMUsage(
                 input_tokens=usage.prompt_tokens,
                 output_tokens=usage.completion_tokens,
@@ -242,8 +259,11 @@ class OpenAIProvider:
         temperature: float,
         max_tokens: int,
     ) -> LLMResponse:
+        info = get_model_registry()[model]
+        if not 1 <= max_tokens <= info.max_output_tokens:
+            raise ValueError("Requested response exceeds the model output limit")
         response = await self._client.chat.completions.create(
-            model=get_model_registry()[model].model_id,
+            model=info.model_id,
             messages=cast(
                 list[ChatCompletionMessageParam],
                 [{"role": "system", "content": system_prompt}, *messages],
@@ -253,7 +273,7 @@ class OpenAIProvider:
                 openai_tools(tools),
             ),
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
         )
         message = response.choices[0].message
         calls = [call for call in message.tool_calls or [] if call.type == "function"]
@@ -262,6 +282,8 @@ class OpenAIProvider:
             raise ValueError("Provider response has no token usage")
         return LLMResponse(
             content=message.content or "",
+            stop_reason=response.choices[0].finish_reason,
+            refused=bool(message.refusal),
             usage=LLMUsage(
                 input_tokens=usage.prompt_tokens,
                 output_tokens=usage.completion_tokens,

@@ -118,7 +118,8 @@ async def test_planner_checks_initial_input_and_repair(
 ) -> None:
     repository, _, run = await planning_run()
     provider = ScriptedMock(["invalid"])
-    counts = [0, 200001] if repair else [200001]
+    over_window = get_model_registry()["claude-sonnet"].context_window + 1
+    counts = [0, over_window] if repair else [over_window]
     monkeypatch.setattr(
         provider, "count_input_tokens", AsyncMock(side_effect=counts), raising=False
     )

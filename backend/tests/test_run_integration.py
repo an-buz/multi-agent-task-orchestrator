@@ -16,6 +16,7 @@ from app.db.session import get_session
 from app.events.stream import stream_run
 from app.llm.provider import LLMResponse
 from app.llm.providers import MockLLMProvider
+from app.llm.registry import get_model_registry
 from app.main import app
 from app.models.agent import Agent
 from app.models.context_file import ContextFile, RunFile
@@ -907,7 +908,10 @@ async def test_catalogue_domain_errors_and_sse_cursor(
             duplicate = await client.post("/api/v1/agents", json=payload)
             assert duplicate.status_code == 409
             assert duplicate.json()["error"]["code"] == "duplicate_agent_name"
-            for extra in [{"tools": ["terminal_access"]}, {"context_window": 200001}]:
+            for extra in [
+                {"tools": ["terminal_access"]},
+                {"context_window": get_model_registry()["claude-sonnet"].context_window + 1},
+            ]:
                 invalid = await client.put(f"/api/v1/agents/{agent_id}", json={**payload, **extra})
                 assert invalid.status_code == 422
                 assert invalid.json()["error"]["code"] == "invalid_agent"

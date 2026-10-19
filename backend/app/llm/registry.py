@@ -13,6 +13,7 @@ class ModelInfo:
     model_id: str
     tier: Literal["fast", "balanced", "powerful"]
     context_window: int
+    max_output_tokens: int
 
 
 @dataclass(frozen=True)
@@ -25,17 +26,35 @@ class ToolInfo:
 def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]:
     """Build public model keys mapped to current provider API model IDs."""
     active = settings or get_settings()
+    # Only reviewed model IDs may reuse these limits and sampling parameters.
+    profiles: dict[str, tuple[str, int, int]] = {
+        "claude-haiku-4-5-20251001": ("anthropic", 200_000, 64_000),
+        "claude-haiku-4-5": ("anthropic", 200_000, 64_000),
+        "claude-sonnet-4-6": ("anthropic", 1_000_000, 128_000),
+        "claude-opus-4-6": ("anthropic", 1_000_000, 128_000),
+        "gpt-4o": ("openai", 128_000, 16_384),
+    }
+
+    def reviewed(
+        key: str,
+        provider: Literal["anthropic", "openai"],
+        model_id: str,
+        tier: Literal["fast", "balanced", "powerful"],
+    ) -> ModelInfo:
+        profile = profiles.get(model_id)
+        if profile is None or profile[0] != provider:
+            raise ValueError("Configured provider model has no reviewed compatibility profile")
+        return ModelInfo(key, provider, model_id, tier, profile[1], profile[2])
+
     return {
-        "claude-haiku": ModelInfo(
-            "claude-haiku", "anthropic", active.anthropic_model_haiku, "fast", 200_000
+        "claude-haiku": reviewed("claude-haiku", "anthropic", active.anthropic_model_haiku, "fast"),
+        "claude-sonnet": reviewed(
+            "claude-sonnet", "anthropic", active.anthropic_model_sonnet, "balanced"
         ),
-        "claude-sonnet": ModelInfo(
-            "claude-sonnet", "anthropic", active.anthropic_model_sonnet, "balanced", 200_000
+        "claude-opus": reviewed(
+            "claude-opus", "anthropic", active.anthropic_model_opus, "powerful"
         ),
-        "claude-opus": ModelInfo(
-            "claude-opus", "anthropic", active.anthropic_model_opus, "powerful", 200_000
-        ),
-        "gpt-4o": ModelInfo("gpt-4o", "openai", active.openai_model_default, "balanced", 128_000),
+        "gpt-4o": reviewed("gpt-4o", "openai", active.openai_model_default, "balanced"),
     }
 
 

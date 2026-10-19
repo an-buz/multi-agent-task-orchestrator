@@ -19,7 +19,7 @@ from app.db.file_repository import FileRepository
 from app.db.model_repository import ModelRepository
 from app.db.run_repository import RunRepository
 from app.llm.context import ContextTooLarge, check_context
-from app.llm.provider import LLMProvider, LLMResponse, StreamingLLMProvider
+from app.llm.provider import IncompleteLLMResponse, LLMProvider, LLMResponse, StreamingLLMProvider
 from app.llm.providers import create_provider
 from app.llm.retry import llm_retrying
 from app.models.run import Run
@@ -223,6 +223,7 @@ class DAGExecutor:
                 ):
                     error_code = "token_budget_exceeded"
                     raise ValueError("Budget exceeded")
+                response.require_complete()
                 if not response.tool_calls:
                     return StepResult(
                         response,
@@ -285,6 +286,8 @@ class DAGExecutor:
                     )
             raise ValueError("Tool loop did not finish")
         except Exception as exception:
+            if isinstance(exception, IncompleteLLMResponse):
+                error_code = "llm_incomplete_response"
             if isinstance(exception, ContextTooLarge):
                 error_code = "context_too_large"
             # Provider exception strings may contain prompts/keys; persist a safe message.
@@ -308,6 +311,8 @@ class DAGExecutor:
                         if error_code == "tool_execution_interrupted"
                         else "Provider outcome is unknown. Retry the step explicitly."
                         if error_code == "llm_execution_interrupted"
+                        else "The provider returned an incomplete or refused response."
+                        if error_code == "llm_incomplete_response"
                         else "The step could not be completed."
                     ),
                 },

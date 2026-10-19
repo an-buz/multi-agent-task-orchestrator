@@ -42,6 +42,7 @@ async def test_anthropic_adapter_parameters_and_usage(monkeypatch: pytest.Monkey
     create = AsyncMock(
         return_value=SimpleNamespace(
             content=[SimpleNamespace(type="text", text="Fixture")],
+            stop_reason="end_turn",
             usage=SimpleNamespace(input_tokens=17, output_tokens=11),
         )
     )
@@ -63,7 +64,11 @@ async def test_anthropic_adapter_parameters_and_usage(monkeypatch: pytest.Monkey
 async def test_openai_adapter_parameters_and_usage(monkeypatch: pytest.MonkeyPatch) -> None:
     create = AsyncMock(
         return_value=SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="Fixture"))],
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="Fixture", refusal=None), finish_reason="stop"
+                )
+            ],
             usage=SimpleNamespace(prompt_tokens=17, completion_tokens=11),
         )
     )
@@ -82,5 +87,5 @@ async def test_openai_adapter_parameters_and_usage(monkeypatch: pytest.MonkeyPat
     )
     constructor.assert_called_once_with(api_key="test-placeholder", max_retries=0, timeout=60.0)
     assert create.call_args.kwargs["temperature"] == 0.2
-    assert create.call_args.kwargs["max_tokens"] == 1024
+    assert create.call_args.kwargs["max_completion_tokens"] == 1024
     assert response.usage.output_tokens == 11

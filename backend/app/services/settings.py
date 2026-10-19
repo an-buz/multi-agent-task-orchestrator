@@ -21,7 +21,9 @@ class SettingsService:
 
     def validate(self, defaults: AgentDefaults) -> None:
         model = get_model_registry(self.settings).get(defaults.default_model)
-        if model is None or defaults.max_tokens > model.context_window:
+        if model is None or defaults.max_tokens > min(
+            model.context_window, model.max_output_tokens
+        ):
             raise SettingsError("Choose a registered model and a supported token limit.")
 
     def public(self, defaults: AgentDefaults) -> AppConfigRead:

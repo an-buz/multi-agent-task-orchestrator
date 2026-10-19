@@ -31,8 +31,8 @@ class AgentService:
         details: dict[str, object] = {}
         if model is None:
             details = {"field": "model", "reason": "unknown_model"}
-        elif payload.max_tokens > model.context_window:
-            details = {"field": "max_tokens", "reason": "exceeds_model_context_window"}
+        elif payload.max_tokens > model.max_output_tokens:
+            details = {"field": "max_tokens", "reason": "exceeds_model_output_limit"}
         elif payload.context_window > model.context_window:
             details = {"field": "context_window", "reason": "exceeds_model_context_window"}
         elif payload.max_tokens >= payload.context_window:

@@ -42,6 +42,8 @@ async def check_context(
 ) -> None:
     settings = get_settings()
     info = get_model_registry(settings)[model]
+    if not 1 <= max_tokens <= info.max_output_tokens:
+        raise ValueError("Requested response exceeds the model output limit")
     window = min(info.context_window, context_window or info.context_window)
     reserve = max_tokens + settings.context_safety_margin_tokens
     if reserve >= window:

@@ -317,7 +317,10 @@ async def test_native_openai_tool_wire_format(monkeypatch: pytest.MonkeyPatch) -
     create = AsyncMock(
         return_value=SimpleNamespace(
             choices=[
-                SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[native_call]))
+                SimpleNamespace(
+                    message=SimpleNamespace(content=None, tool_calls=[native_call], refusal=None),
+                    finish_reason="tool_calls",
+                )
             ],
             usage=SimpleNamespace(prompt_tokens=4, completion_tokens=2),
         )
@@ -361,7 +364,9 @@ async def test_native_anthropic_groups_tool_results(monkeypatch: pytest.MonkeyPa
     )
     create = AsyncMock(
         return_value=SimpleNamespace(
-            content=[block], usage=SimpleNamespace(input_tokens=4, output_tokens=2)
+            content=[block],
+            usage=SimpleNamespace(input_tokens=4, output_tokens=2),
+            stop_reason="tool_use",
         )
     )
     monkeypatch.setattr(
