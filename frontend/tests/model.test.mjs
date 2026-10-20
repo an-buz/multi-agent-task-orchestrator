@@ -6,6 +6,7 @@ import {
   appendRunEvent,
   applyStreamChunk,
   canRetryStep,
+  dashboardInspectorStep,
   runSteps,
 } from "../src/features/runs/model.ts";
 import { graphErrors, inferType } from "../src/features/workflows/graph.ts";
@@ -18,6 +19,77 @@ const run = { id: "run", plan: { summary: "Keep summary", steps: [step] } };
 const chunk = (output, attempt = 2) => ({
   event: "agent:stream_chunk",
   data: { stepNumber: 1, output, attempt },
+});
+
+const activation = (stepNumber, id) => ({
+  id: String(id),
+  event: "agent:status_change",
+  data: { stepNumber, status: "IN_PROGRESS" },
+});
+
+test("dashboard follows activation order rather than plan order or manual selection", () => {
+  const steps = [1, 2, 3].map((step_number) => ({ step_number, status: "IN_PROGRESS" }));
+  const run = { plan: { steps } };
+  let log = { events: [], activityEvents: [], after: 0 };
+  for (const [number, id] of [
+    [3, 1],
+    [1, 2],
+    [2, 3],
+  ]) {
+    log = appendRunEvent(log, activation(number, id));
+    assert.equal(dashboardInspectorStep(run, log.activationOrder, 3).step_number, number);
+  }
+  // Output from an older parallel step must not steal focus.
+  log = appendRunEvent(log, chunk("Older agent still streaming"));
+  assert.equal(dashboardInspectorStep(run, log.activationOrder).step_number, 2);
+  steps[1].status = "COMPLETED";
+  assert.equal(dashboardInspectorStep(run, log.activationOrder).step_number, 1);
+  steps[0].status = "FAILED";
+  assert.equal(dashboardInspectorStep(run, log.activationOrder).step_number, 3);
+  steps[2].status = "COMPLETED";
+  assert.equal(dashboardInspectorStep(run, log.activationOrder).step_number, 2);
+  assert.equal(dashboardInspectorStep(run, log.activationOrder, 1).step_number, 1);
+  steps[0].status = "IN_PROGRESS";
+  log = appendRunEvent(log, activation(1, 4));
+  assert.equal(dashboardInspectorStep(run, log.activationOrder).step_number, 1);
+});
+
+test("activation order survives eviction, duplicates, stale replay and non-activation events", () => {
+  let log = { events: [], activityEvents: [], after: 0 };
+  log = appendRunEvent(appendRunEvent(log, activation(2, 1)), activation(1, 2));
+  for (let id = 3; id <= 203; id++)
+    log = appendRunEvent(log, { id: String(id), event: "agent:tool_result" });
+  for (const event of [
+    activation(2, 1),
+    { ...activation(2, 204), data: { stepNumber: 2, status: "COMPLETED" } },
+    { ...activation(2, 205), payload: {}, data: {} },
+    activation(-1, 206),
+  ])
+    log = appendRunEvent(log, event);
+  assert.deepEqual(log.activationOrder, [2, 1]);
+  const retry = activation(2, 207);
+  log = appendRunEvent(appendRunEvent(log, retry), retry);
+  assert.deepEqual(log.activationOrder, [1, 2]);
+});
+
+test("inspector handles empty runs, legacy plans, snapshots and separate run histories", () => {
+  assert.equal(dashboardInspectorStep(undefined, []), undefined);
+  assert.equal(dashboardInspectorStep({ plan: [] }, [1]), undefined);
+  const steps = [
+    { step_number: 1, status: "FAILED" },
+    { step_number: 2, status: "IN_PROGRESS" },
+  ];
+  assert.equal(dashboardInspectorStep({ plan: steps }, [], 1), steps[1]);
+  steps[1].status = "PENDING";
+  assert.equal(dashboardInspectorStep({ plan: steps }, []), steps[0]);
+  let log = { events: [], activityEvents: [], after: 0 };
+  log = appendRunEvent(log, {
+    ...activation(2, 1),
+    data: undefined,
+    payload: activation(2, 1).data,
+  });
+  assert.equal(dashboardInspectorStep({ plan: steps }, log.activationOrder), steps[1]);
+  assert.equal(dashboardInspectorStep({ plan: steps }, []), steps[0]);
 });
 
 test("retry is available only for a failed step in a failed run without a retryable flag", () => {

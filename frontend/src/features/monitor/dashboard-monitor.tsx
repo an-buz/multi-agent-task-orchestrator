@@ -25,6 +25,7 @@ import {
 import type { RunDetails, RunSummary, RunEvent, RunStep } from "@/features/runs/types";
 import { eventKey, runSteps } from "@/features/runs/model";
 import { consoleEvents, eventPresentation } from "./console-events";
+import { cn } from "@/lib/utils";
 
 const statusLabels = {
   PENDING: "Pending",
@@ -254,6 +255,14 @@ export function RunConsole({
 
 export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }) {
   const [help, setHelp] = useState(false);
+  const tone =
+    step?.status === "COMPLETED"
+      ? "text-status-completed"
+      : step?.status === "FAILED"
+        ? "text-destructive"
+        : step?.status === "IN_PROGRESS" || step?.status === "PLANNING"
+          ? "text-status-warning"
+          : "text-muted-foreground";
   const prompt = step?.prompt_tokens ?? 0,
     completion = step?.completion_tokens ?? 0;
   const steps = runSteps(run),
@@ -268,23 +277,23 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
       <h2 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Active agent inspector
       </h2>
-      <section className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-full border border-status-warning bg-status-warning/70 text-status-warning">
+      <section
+        className={cn("flex items-center gap-3 rounded-lg border border-border bg-card p-3", tone)}
+      >
+        <span className="grid size-10 shrink-0 place-items-center rounded-full border border-current bg-current/70">
           <Bot size={20} />
         </span>
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold">{step?.agent_name ?? "No agent selected"}</h3>
-          <p className="truncate font-mono text-[10px] text-status-warning">
-            {step?.model ?? "Model unavailable"}
-          </p>
+          <h3 className="text-sm font-semibold text-foreground">
+            {step?.agent_name ?? "No agent selected"}
+          </h3>
+          <p className="truncate font-mono text-[10px]">{step?.model ?? "Model unavailable"}</p>
         </div>
       </section>
-      <section className="py-1">
+      <section className={cn("py-1", tone)}>
         <div className="mb-2 flex justify-between text-xs">
-          <span className="text-muted-foreground">
-            {step ? statusLabels[step.status] : "Waiting for a run"}
-          </span>
-          <span className="font-mono text-status-warning">{progress}%</span>
+          <span>{step ? statusLabels[step.status] : "Waiting for a run"}</span>
+          <span className="font-mono">{progress}%</span>
         </div>
         <div
           role="progressbar"
@@ -294,7 +303,7 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
           aria-valuenow={progress}
           className="h-1.5 overflow-hidden rounded-full bg-secondary"
         >
-          <div className="h-full bg-status-warning" style={{ width: `${progress}%` }} />
+          <div className="h-full bg-current" style={{ width: `${progress}%` }} />
         </div>
       </section>
       <section className="rounded-lg border border-border bg-card p-3">

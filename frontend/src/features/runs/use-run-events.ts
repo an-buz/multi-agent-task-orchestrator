@@ -66,6 +66,7 @@ export function useRunEvents(runId: string | undefined) {
   return {
     events: log.data.events,
     activityEvents: log.data.activityEvents,
+    activationOrder: log.data.activationOrder ?? [],
     connectionError: Boolean(runId) && connectionError === runId,
   };
 }

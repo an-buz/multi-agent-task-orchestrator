@@ -101,6 +101,119 @@ async function emit(
 }
 
 for (const theme of ["dark", "light"]) {
+  test(`Dashboard inspector colors follow agent status in ${theme}`, async ({ page }) => {
+    await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+    await installSSE(page);
+    const active = makeRun();
+    await page.route("**/api/v1/**", (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      return route.fulfill({
+        headers: { "access-control-allow-origin": "http://localhost:3000" },
+        json:
+          pathname === `/api/v1/runs/${firstId}`
+            ? active
+            : { items: pathname === "/api/v1/runs" ? [active] : [], total: 1 },
+      });
+    });
+    await page.goto("/");
+    const inspector = page.getByLabel("Agent inspector");
+    const pipeline = page.getByRole("region", { name: "Execution pipeline" });
+    await expect(inspector.getByText("snapshot-model", { exact: true })).toBeVisible();
+    const statuses = ["IN_PROGRESS", "COMPLETED", "FAILED", "PENDING", "CANCELLED", "IN_PROGRESS"];
+    for (const [index, status] of statuses.entries()) {
+      active.plan.steps[0].status = status;
+      await emit(page, "run:snapshot", { run: active }, String(index + 1));
+      const label = status
+        .toLowerCase()
+        .split("_")
+        .map((word) => word[0].toUpperCase() + word.slice(1))
+        .join(" ");
+      const badge = pipeline.locator("article").first().locator("button > span");
+      await expect(badge).toHaveText(label);
+      const expectedColor = await badge.evaluate((element) => getComputedStyle(element).color);
+      await expect
+        .poll(() =>
+          inspector.evaluate((aside) => {
+            const profile = aside.querySelector(":scope > section")!;
+            const progress = aside.querySelector('[role="progressbar"]')!;
+            return [
+              profile.querySelector(":scope > span")!,
+              profile.querySelector("p")!,
+              progress.previousElementSibling!.firstElementChild!,
+              progress.previousElementSibling!.lastElementChild!,
+              progress.firstElementChild!,
+            ].map((element) => getComputedStyle(element).color);
+          }),
+        )
+        .toEqual(Array(5).fill(expectedColor));
+      await expect
+        .poll(() =>
+          inspector
+            .getByRole("progressbar")
+            .locator("div")
+            .evaluate((fill) => getComputedStyle(fill).backgroundColor),
+        )
+        .toBe(expectedColor);
+    }
+  });
+
+  test(`Dashboard follows the latest active agent in ${theme}`, async ({ page }) => {
+    await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+    await installSSE(page);
+    const active = makeRun();
+    active.plan.steps[0].status = "PENDING";
+    await page.route("**/api/v1/**", (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      const headers = { "access-control-allow-origin": "http://localhost:3000" };
+      return route.fulfill({
+        headers,
+        json:
+          pathname === `/api/v1/runs/${firstId}`
+            ? active
+            : { items: pathname === "/api/v1/runs" ? [active] : [], total: 1 },
+      });
+    });
+    await page.goto("/");
+    const inspector = page.getByLabel("Agent inspector");
+    await expect(
+      inspector.getByRole("heading", { name: "Actual reviewer", exact: true }),
+    ).toBeVisible();
+    active.plan.steps[1].status = "IN_PROGRESS";
+    await emit(page, "agent:status_change", { stepNumber: 2, status: "IN_PROGRESS" }, "1");
+    await expect(inspector.getByText("writer-model", { exact: true })).toBeVisible();
+    active.plan.steps[0].status = "IN_PROGRESS";
+    await emit(page, "agent:status_change", { stepNumber: 1, status: "IN_PROGRESS" }, "2");
+    await expect(page.getByText("Active Nodes: 2")).toBeVisible();
+    await expect(inspector.getByText("snapshot-model", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Inspect step 2: Actual writer" }).click();
+    await expect(inspector.getByText("snapshot-model", { exact: true })).toBeVisible();
+    await emit(
+      page,
+      "agent:stream_chunk",
+      {
+        stepNumber: 2,
+        attempt: 1,
+        output: "Parallel writer output",
+        textDelta: "output",
+        reset: false,
+      },
+      "3",
+    );
+    await expect(inspector.getByText("snapshot-model", { exact: true })).toBeVisible();
+    active.plan.steps[0].status = "COMPLETED";
+    active.plan.steps[1].output = "Parallel writer output";
+    await emit(page, "agent:completed", { stepNumber: 1 }, "4");
+    await expect(inspector.getByText("writer-model", { exact: true })).toBeVisible();
+    await expect(inspector.getByLabel("Output for step 2")).toHaveText("Parallel writer output");
+    await page.reload();
+    await expect(inspector.getByText("writer-model", { exact: true })).toBeVisible();
+    active.plan.steps[0].status = "IN_PROGRESS";
+    active.plan.steps[0].attempt = 2;
+    await emit(page, "agent:status_change", { stepNumber: 1, status: "IN_PROGRESS" }, "5");
+    await expect(inspector.getByText("snapshot-model", { exact: true })).toBeVisible();
+    await expect(inspector.getByText("Actual persisted input", { exact: true })).toBeVisible();
+  });
+
   test(`Dashboard uses persisted runs and live events in ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1776, height: 1291 });
     await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
@@ -235,7 +348,7 @@ for (const theme of ["dark", "light"]) {
     ).toEqual({ whitespace: "nowrap", height: 20 });
     await page.setViewportSize({ width: 1776, height: 1291 });
     await page.getByRole("button", { name: "Inspect step 2: Actual writer" }).click();
-    await expect(inspector.getByText("Writer input", { exact: true })).toBeVisible();
+    await expect(inspector.getByText("Actual persisted input", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "More pipeline options" }).click();
     await page.getByRole("combobox", { name: "Monitored run" }).click();
     await page.getByRole("option", { name: /Previous workflow/ }).click();

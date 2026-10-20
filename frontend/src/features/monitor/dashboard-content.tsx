@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWorkflows } from "@/features/workflows/queries";
 import { cancelRun, confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
 import { runsQueryKey } from "@/features/runs/queries";
-import { runSteps } from "@/features/runs/model";
+import { dashboardInspectorStep, runSteps } from "@/features/runs/model";
 import { useRunMonitor } from "@/features/monitor/use-run-monitor";
 import { RunPipeline, RunConsole, RunInspector } from "@/features/monitor/dashboard-monitor";
 import type { RunDetails } from "@/features/runs/types";
@@ -41,13 +41,11 @@ export default function DashboardPage() {
   const monitoredRun = monitor.run;
   const monitoredSteps = runSteps(monitoredRun);
   const [inspected, setInspected] = useState<{ runId: string; number: number } | null>(null);
-  const inspectedStep =
-    (inspected?.runId === monitoredRun?.id
-      ? monitoredSteps.find((step) => step.step_number === inspected?.number)
-      : undefined) ??
-    monitoredSteps.find((step) => step.status === "IN_PROGRESS") ??
-    monitoredSteps.find((step) => step.status === "FAILED") ??
-    monitoredSteps[0];
+  const inspectedStep = dashboardInspectorStep(
+    monitoredRun,
+    monitor.activationOrder,
+    inspected?.runId === monitoredRun?.id ? inspected?.number : undefined,
+  );
   const workflowsQuery = useWorkflows();
   const [workflowId, setWorkflowId] = useState("");
   const [runDraft, setRunDraft] = useState<RunDetails | null>(null);

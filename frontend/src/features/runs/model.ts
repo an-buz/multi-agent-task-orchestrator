@@ -16,6 +16,7 @@ export interface RunEventLog {
   events: RunEvent[];
   activityEvents: RunEvent[];
   after: number;
+  activationOrder?: number[];
 }
 
 export function appendRunEvent(log: RunEventLog, event: RunEvent): RunEventLog {
@@ -24,12 +25,48 @@ export function appendRunEvent(log: RunEventLog, event: RunEvent): RunEventLog {
       ? events
       : [...events, event].slice(-150);
   const cursor = event.id && /^\d+$/.test(event.id) ? Number(event.id) : 0;
+  const data = event.data ?? event.payload;
+  const activationOrder = log.activationOrder ?? [];
+  const activated =
+    event.event === "agent:status_change" &&
+    data?.status === "IN_PROGRESS" &&
+    typeof data.stepNumber === "number" &&
+    Number.isInteger(data.stepNumber) &&
+    data.stepNumber > 0 &&
+    (!cursor || cursor > log.after) &&
+    !log.activityEvents.some((item) => eventKey(item) === eventKey(event));
   return {
     events: append(log.events),
     activityEvents:
       event.event === "agent:stream_chunk" ? log.activityEvents : append(log.activityEvents),
     after: Math.max(log.after, cursor),
+    activationOrder: activated
+      ? [
+          ...activationOrder.filter((number) => number !== data.stepNumber),
+          data.stepNumber as number,
+        ]
+      : activationOrder,
   };
+}
+
+export function dashboardInspectorStep(
+  run: RunDetails | undefined,
+  activationOrder: number[],
+  selectedNumber?: number,
+): RunStep | undefined {
+  const steps = runSteps(run);
+  const activatedSteps = activationOrder
+    .map((number) => steps.find((step) => step.step_number === number))
+    .filter((step): step is RunStep => Boolean(step))
+    .reverse();
+  return (
+    activatedSteps.find((step) => step.status === "IN_PROGRESS") ??
+    steps.find((step) => step.status === "IN_PROGRESS") ??
+    steps.find((step) => step.step_number === selectedNumber) ??
+    activatedSteps[0] ??
+    steps.find((step) => step.status === "FAILED") ??
+    steps[0]
+  );
 }
 
 export function applyStreamChunk(
