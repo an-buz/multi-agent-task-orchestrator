@@ -150,7 +150,7 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
 for (const theme of ["light", "dark"]) {
   test(`model switches persist and agent repair excludes disabled choices (${theme})`, async ({
     page,
-  }, testInfo) => {
+  }) => {
     const requests = await setup(page, theme);
     await page.goto("/models");
     await expect(page.getByRole("heading", { name: "Anthropic provider" })).toBeVisible();
@@ -162,7 +162,6 @@ for (const theme of ["light", "dark"]) {
     await expect(toggle).not.toBeChecked();
     await page.reload();
     await expect(page.getByRole("switch", { name: "claude-sonnet-test" })).not.toBeChecked();
-    await page.screenshot({ path: testInfo.outputPath(`models-${theme}.png`), fullPage: true });
     await page.getByRole("link", { name: "Agents", exact: true }).click();
     await expect(page.getByText("UNAVAILABLE", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Edit Model reviewer", exact: true }).click();

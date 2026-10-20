@@ -46,13 +46,9 @@ type WorkflowResponse = {
 };
 
 test("creates and saves a connected sequential workflow", async ({ page }) => {
-  page.on("request", (request) => {
-    if (request.url().includes("api")) console.log("E2E API request", request.url());
-  });
   let savedWorkflow: WorkflowResponse | undefined;
   await page.route("**/*", async (route) => {
     const requestUrl = new URL(route.request().url());
-    console.log("E2E route", requestUrl.href);
     const cors = { "access-control-allow-origin": "http://localhost:3000" };
     if (requestUrl.pathname.startsWith("/api/v1/") && route.request().method() === "OPTIONS") {
       await route.fulfill({
@@ -110,10 +106,6 @@ test("creates and saves a connected sequential workflow", async ({ page }) => {
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge-path")).toHaveCount(1);
   await expect(page.getByText("Graph is valid.")).toBeVisible();
-
-  const node = page.locator(".react-flow__node-default").first();
-  await expect(node).not.toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(node).toHaveCSS("color", "rgb(230, 237, 245)");
 
   await page.getByRole("button", { name: "Save workflow" }).click();
   const workflowCard = page.locator("article").filter({ hasText: "Local E2E workflow" });

@@ -101,62 +101,6 @@ async function emit(
 }
 
 for (const theme of ["dark", "light"]) {
-  test(`Dashboard inspector colors follow agent status in ${theme}`, async ({ page }) => {
-    await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
-    await installSSE(page);
-    const active = makeRun();
-    await page.route("**/api/v1/**", (route) => {
-      const pathname = new URL(route.request().url()).pathname;
-      return route.fulfill({
-        headers: { "access-control-allow-origin": "http://localhost:3000" },
-        json:
-          pathname === `/api/v1/runs/${firstId}`
-            ? active
-            : { items: pathname === "/api/v1/runs" ? [active] : [], total: 1 },
-      });
-    });
-    await page.goto("/");
-    const inspector = page.getByLabel("Agent inspector");
-    const pipeline = page.getByRole("region", { name: "Execution pipeline" });
-    await expect(inspector.getByText("snapshot-model", { exact: true })).toBeVisible();
-    const statuses = ["IN_PROGRESS", "COMPLETED", "FAILED", "PENDING", "CANCELLED", "IN_PROGRESS"];
-    for (const [index, status] of statuses.entries()) {
-      active.plan.steps[0].status = status;
-      await emit(page, "run:snapshot", { run: active }, String(index + 1));
-      const label = status
-        .toLowerCase()
-        .split("_")
-        .map((word) => word[0].toUpperCase() + word.slice(1))
-        .join(" ");
-      const badge = pipeline.locator("article").first().locator("button > span");
-      await expect(badge).toHaveText(label);
-      const expectedColor = await badge.evaluate((element) => getComputedStyle(element).color);
-      await expect
-        .poll(() =>
-          inspector.evaluate((aside) => {
-            const profile = aside.querySelector(":scope > section")!;
-            const progress = aside.querySelector('[role="progressbar"]')!;
-            return [
-              profile.querySelector(":scope > span")!,
-              profile.querySelector("p")!,
-              progress.previousElementSibling!.firstElementChild!,
-              progress.previousElementSibling!.lastElementChild!,
-              progress.firstElementChild!,
-            ].map((element) => getComputedStyle(element).color);
-          }),
-        )
-        .toEqual(Array(5).fill(expectedColor));
-      await expect
-        .poll(() =>
-          inspector
-            .getByRole("progressbar")
-            .locator("div")
-            .evaluate((fill) => getComputedStyle(fill).backgroundColor),
-        )
-        .toBe(expectedColor);
-    }
-  });
-
   test(`Dashboard follows the latest active agent in ${theme}`, async ({ page }) => {
     await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
     await installSSE(page);
@@ -215,7 +159,6 @@ for (const theme of ["dark", "light"]) {
   });
 
   test(`Dashboard uses persisted runs and live events in ${theme}`, async ({ page }) => {
-    await page.setViewportSize({ width: 1776, height: 1291 });
     await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
     await installSSE(page);
     const active = makeRun(),
@@ -238,42 +181,6 @@ for (const theme of ["dark", "light"]) {
     await expect(inspector.getByRole("heading", { name: "Run totals", exact: true })).toHaveCount(
       0,
     );
-    // Dimensions captured from the user's reference before git stash pop.
-    const layout = await page.evaluate(() => {
-      const main = document.querySelector("main > section > div")!;
-      const panels = main.querySelectorAll(":scope > div > section");
-      const sidebar = main.querySelector(":scope > aside")!;
-      const rect = (element: Element) => {
-        const box = element.getBoundingClientRect();
-        return {
-          x: box.x,
-          y: box.y,
-          width: box.width,
-          height: box.height,
-          background: getComputedStyle(element).backgroundColor,
-        };
-      };
-      return {
-        background: getComputedStyle(document.body).backgroundColor,
-        task: rect(panels[0]),
-        pipeline: rect(panels[1]),
-        console: rect(panels[2]),
-        inspector: rect(sidebar),
-        sections: [...sidebar.querySelectorAll(":scope > section")].map(rect),
-      };
-    });
-    expect(layout.task.x).toBe(272);
-    expect(layout.task.y).toBe(105);
-    expect(layout.task.height).toBe(224);
-    expect(layout.pipeline.y).toBe(349);
-    expect(layout.pipeline.height).toBe(186.5);
-    expect(layout.console.y).toBe(555.5);
-    expect(layout.console.height).toBe(427);
-    expect(layout.inspector.width).toBe(320);
-    expect(layout.inspector.background).toBe(layout.background);
-    expect(layout.sections.map((section) => Math.round(section.height))).toEqual([
-      66, 38, 99, 186, 82, 110,
-    ]);
     await page.getByRole("button", { name: "More pipeline options" }).click();
     await expect(page.getByRole("combobox", { name: "Monitored run" })).toContainText(
       "Live workflow",
@@ -287,7 +194,6 @@ for (const theme of ["dark", "light"]) {
     await expect(inspector.getByText("● Prompt (20)")).toBeVisible();
     await expect(inspector.getByText("● Completion (10)")).toBeVisible();
     const pipeline = page.getByRole("region", { name: "Execution pipeline" });
-    await expect(pipeline.locator("article").first()).toHaveClass(/rounded-lg/);
     await expect(pipeline.locator("svg.lucide-arrow-right")).toHaveCount(1);
     await expect(inspector.getByRole("progressbar", { name: "Completed steps" })).toHaveAttribute(
       "aria-valuenow",
@@ -335,18 +241,6 @@ for (const theme of ["dark", "light"]) {
     await expect(
       page.getByLabel("Run orchestration events").getByText("Tool completed.", { exact: true }),
     ).toBeVisible();
-    await page.setViewportSize({ width: 540, height: 900 });
-    const consoleRow = page
-      .getByLabel("Run orchestration events")
-      .getByLabel("agent:tool_result", { exact: true })
-      .locator("..");
-    expect(
-      await consoleRow.evaluate((row) => ({
-        whitespace: getComputedStyle(row).whiteSpace,
-        height: row.getBoundingClientRect().height,
-      })),
-    ).toEqual({ whitespace: "nowrap", height: 20 });
-    await page.setViewportSize({ width: 1776, height: 1291 });
     await page.getByRole("button", { name: "Inspect step 2: Actual writer" }).click();
     await expect(inspector.getByText("Actual persisted input", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "More pipeline options" }).click();

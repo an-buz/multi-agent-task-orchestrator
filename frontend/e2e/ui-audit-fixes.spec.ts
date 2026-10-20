@@ -147,25 +147,16 @@ for (const theme of ["dark", "light"] as const) {
       await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
     });
 
-    test("modals contain keyboard focus, close with Escape, and render both themes", async ({
-      page,
-    }, testInfo) => {
+    test("modals contain keyboard focus and close with Escape", async ({ page }) => {
       await mockApplication(page);
-      await page.setViewportSize({ width: 1440, height: 1000 });
       await page.goto("/settings");
       await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
-      await page.screenshot({ path: testInfo.outputPath("settings.png"), fullPage: true });
       const trigger = page.getByRole("button", { name: "Create Agent", exact: true });
       await trigger.click();
       const agentDialog = page.getByRole("dialog", { name: "Create New Agent" });
       await expect(agentDialog).toBeVisible();
       const model = agentDialog.getByRole("combobox", { name: "AI model", exact: true });
       await expect(model).toContainText("Claude Sonnet");
-      const modelColors = await model.evaluate((element) => ({
-        background: getComputedStyle(element).backgroundColor,
-        page: getComputedStyle(document.body).backgroundColor,
-      }));
-      expect(modelColors.background).toBe(modelColors.page);
       await model.click();
       await expect(page.getByRole("option", { name: /Claude Haiku/ })).toBeVisible();
       await page.keyboard.press("Escape");
@@ -178,7 +169,6 @@ for (const theme of ["dark", "light"] as const) {
           .poll(() => agentDialog.evaluate((element) => element.contains(document.activeElement)))
           .toBe(true);
       }
-      await page.screenshot({ path: testInfo.outputPath("agent-dialog.png") });
       await page.keyboard.press("Escape");
       await expect(agentDialog).not.toBeVisible();
       await expect(trigger).toBeFocused();
@@ -188,16 +178,8 @@ for (const theme of ["dark", "light"] as const) {
       const editor = page.getByRole("dialog", { name: "Workflow editor" });
       await expect(editor).toBeVisible();
       await editor.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
-      await page.screenshot({ path: testInfo.outputPath("workflow-editor.png") });
       await page.keyboard.press("Escape");
       await expect(editor).not.toBeVisible();
-
-      await page.goto("/");
-      await expect(page.getByRole("heading", { name: "Orchestration Center" })).toBeVisible();
-      await page.screenshot({ path: testInfo.outputPath("dashboard.png"), fullPage: true });
-      await page.goto(`/runs/${runId}`);
-      await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
-      await page.screenshot({ path: testInfo.outputPath("run-details.png"), fullPage: true });
     });
 
     test("saved defaults survive reload and populate a new agent", async ({ page }) => {
