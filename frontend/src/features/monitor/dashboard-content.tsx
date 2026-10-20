@@ -243,17 +243,19 @@ export default function DashboardPage() {
                 </div>
               )}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                   <Select
                     value={workflowId || null}
                     onValueChange={(value) => setWorkflowId(value ?? "")}
                   >
                     <SelectTrigger
                       aria-label="Workflow"
-                      className="h-auto w-auto rounded-lg border-border bg-background px-3 py-2 text-xs text-foreground"
+                      className="h-auto w-auto max-w-full rounded-lg border-border bg-background px-3 py-2 text-xs text-foreground"
                     >
-                      {workflowsQuery.data?.items.find((workflow) => workflow.id === workflowId)
-                        ?.title ?? "Choose workflow"}
+                      <span className="truncate">
+                        {workflowsQuery.data?.items.find((workflow) => workflow.id === workflowId)
+                          ?.title ?? "Choose workflow"}
+                      </span>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -409,7 +411,7 @@ export default function DashboardPage() {
             />
             <RunConsole
               runId={monitor.runId}
-                events={monitor.activityEvents}
+              events={monitor.activityEvents}
               connectionError={monitor.connectionError}
               steps={monitoredSteps}
             />

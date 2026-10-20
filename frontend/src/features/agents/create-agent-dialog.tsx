@@ -499,9 +499,8 @@ export function CreateAgentDialog({
                             ? `${errorId}-context-window`
                             : undefined
                         }
-                        className="block w-full appearance-none rounded-md border border-border bg-background px-2 py-2 pr-9 text-[16px] text-foreground"
                       >
-                        {Number(contextWindow) / 1000}K tokens
+                        <SelectValue>{Number(contextWindow) / 1000}K tokens</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>

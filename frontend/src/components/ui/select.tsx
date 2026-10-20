@@ -54,7 +54,10 @@ function SelectTrigger({
       {children}
 
       <SelectPrimitive.Icon
-        render={<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />}
+        data-slot="select-icon"
+        render={
+          <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 data-popup-open:rotate-180 motion-reduce:transition-none" />
+        }
       />
     </SelectPrimitive.Trigger>
   );
@@ -88,7 +91,7 @@ function SelectContent({
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}
           className={cn(
-            "relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36",
+            "relative isolate z-50 max-h-(--available-height) w-max max-w-(--available-width) min-w-[min(var(--anchor-width),var(--available-width))]",
             "origin-(--transform-origin) overflow-x-hidden overflow-y-auto",
             "rounded-lg border border-border bg-popover text-popover-foreground shadow-xl",
             "ring-0",
@@ -128,7 +131,7 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
       )}
       {...props}
     >
-      <SelectPrimitive.ItemText className="flex flex-1 shrink-0 gap-2 whitespace-nowrap">
+      <SelectPrimitive.ItemText className="flex min-w-0 flex-1 gap-2 whitespace-normal wrap-anywhere">
         {children}
       </SelectPrimitive.ItemText>
     </SelectPrimitive.Item>

@@ -260,7 +260,8 @@ export default function WorkflowsContent() {
       >
         <DialogContent
           showCloseButton={false}
-          className="flex h-[92vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-7xl"
+          // React Flow must measure handles without an ancestor scale animation.
+          className="flex h-[92vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-7xl data-open:zoom-in-100 data-closed:zoom-out-100"
         >
           <DialogTitle className="sr-only">Workflow editor</DialogTitle>
           <header className="flex flex-wrap items-center gap-3 border-b border-border p-4">

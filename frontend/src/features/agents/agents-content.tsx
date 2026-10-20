@@ -257,9 +257,10 @@ export default function AgentsContent() {
               <Button
                 onClick={() => setSelected(null)}
                 aria-label="Close details"
-                className="rounded-md p-2 text-muted-foreground hover:bg-foreground/5"
+                variant="ghost"
+                size="icon-sm"
               >
-                <X size={17} />
+                <X />
               </Button>
             </div>
             <dl className="mt-8 space-y-5 text-sm">
