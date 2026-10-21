@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -188,9 +188,17 @@ export function RunConsole({
   steps: RunStep[];
 }) {
   const [hidden, setHidden] = useState<{ runId?: string; keys: Set<string> }>({ keys: new Set() });
+  const scrollRef = useRef<HTMLDivElement>(null);
   const visible = consoleEvents(events).filter(
     (event) => hidden.runId !== runId || !hidden.keys.has(eventKey(event)),
   );
+  const latestEvent = visible.at(-1);
+
+  useEffect(() => {
+    const viewport = scrollRef.current;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [latestEvent, runId]);
+
   return (
     <section className="flex min-h-97.5 flex-col overflow-hidden rounded-xl border border-border bg-background">
       <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
@@ -207,6 +215,7 @@ export function RunConsole({
         </Button>
       </div>
       <div
+        ref={scrollRef}
         aria-label="Run orchestration events"
         className="dashboard-console-scroll flex h-91 flex-col gap-3 overflow-auto p-4 font-mono text-[11px] leading-5"
       >
