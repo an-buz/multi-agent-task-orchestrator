@@ -1,0 +1,40 @@
+{
+  "review": {
+    "content": "## Review requires your decision\n\n*Fictional finding: no source code or real application was inspected.*\n\nThe simulated task board accepts whitespace-only titles. Should another agent fix this before the release continues? Assign fixes to Demo Developer, continue without fixes, or cancel this run.",
+    "usage": {"input_tokens": 580, "output_tokens": 180},
+    "stop_reason": "tool_calls",
+    "tool_calls": [
+      {
+        "id": "demo-user-decision",
+        "name": "request_user_decision",
+        "arguments": {
+          "issues": [
+            {
+              "title": "Whitespace-only task titles are accepted",
+              "description": "In this fictional scenario, submitting a title containing only spaces creates a task. Expected: reject the title after trimming and show an inline validation error.",
+              "severity": "high"
+            }
+          ],
+          "suggested_agent_id": null,
+          "suggested_task": "Reject whitespace-only task titles after trimming and add a regression check. Preserve the selected status filter."
+        }
+      }
+    ]
+  },
+  "qa": {
+    "content": "## QA handoff for review\n\n*Fictional test evidence; no application was exercised.*\n\nPrepared checks cover valid task creation, status filters, keyboard submission, and empty states. The whitespace-only title boundary case needs a release decision from Reviewer. Do not treat the prepared checks as release approval.",
+    "usage": {"input_tokens": 610, "output_tokens": 120}
+  },
+  "release": {
+    "content": "# Task board release — User decision demo\n\n*Fictional release notes; no real code, tests, or deployment was performed.*\n\nThe prepared scope includes task creation, status filters, keyboard feedback, and empty states. Reviewer raised a whitespace-only title finding and the workflow waited for an explicit user decision.\n\nThe decision history records whether corrective work was assigned or the finding was accepted without fixes. Any correction and verification handoffs are included in the run report. Completing this simulation does not constitute approval of a real release.",
+    "usage": {"input_tokens": 760, "output_tokens": 160}
+  },
+  "correction": {
+    "content": "## Correction handoff\n\n*Simulated work: no files were changed and no real tests were executed.*\n\n- Trim the title before validation and reject empty results.\n- Display an inline error and keep keyboard focus in the form.\n- Preserve the selected status filter.\n- Add regression coverage for empty, whitespace-only, and valid padded titles.\n\n**Handoff to Reviewer:** the fictional defect has been corrected; verify the prepared cases.",
+    "usage": {"input_tokens": 640, "output_tokens": 155}
+  },
+  "verification": {
+    "content": "## Correction verified\n\n*Prepared fictional results, not tests against a real application.*\n\n| Case | Simulated outcome |\n| --- | --- |\n| Empty title | Rejected |\n| Whitespace-only title | Rejected |\n| Valid padded title | Trimmed and accepted |\n| Selected status filter | Preserved |\n\nThe original finding is resolved in this demonstration. No further decision is requested; pending release work can continue.",
+    "usage": {"input_tokens": 710, "output_tokens": 150}
+  }
+}

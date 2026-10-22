@@ -8,7 +8,14 @@ from alembic import command
 from alembic.config import Config
 from app.core.config import Settings, get_settings
 from app.db.run_repository import RunRepository
-from app.demo.catalogue import DEMO_TASK, ROLES, agent_payloads, seed_demo, workflow_payloads
+from app.demo.catalogue import (
+    DEMO_TASK,
+    ROLES,
+    agent_payloads,
+    demo_id,
+    seed_demo,
+    workflow_payloads,
+)
 from app.demo.launcher import DemoPorts, demo_environment
 from app.demo.responses import load_scenarios
 from app.llm.providers import MockLLMProvider, create_provider
@@ -17,6 +24,7 @@ from app.models.run_event import RunEvent
 from app.models.workflow import Workflow
 from app.orchestrator.executor import DAGExecutor
 from app.orchestrator.planner import PlannerExecutor
+from app.schemas.decision import DecisionResolution
 from app.schemas.run import RunCreate
 from app.schemas.workflow import validate_workflow_graph
 from app.services.runs import RunService
@@ -121,11 +129,9 @@ async def test_seed_and_all_three_demo_workflows_complete_after_confirmation(
             await seed_demo(session, settings)
             await seed_demo(session, settings)
             assert await session.scalar(select(func.count()).select_from(Agent)) == 5
-            assert await session.scalar(select(func.count()).select_from(Workflow)) == 3
+            assert await session.scalar(select(func.count()).select_from(Workflow)) == 6
             for workflow in workflow_payloads():
-                stored = await session.scalar(
-                    select(Workflow).where(Workflow.execution_type == workflow.execution_type)
-                )
+                stored = await session.get(Workflow, demo_id("workflow", workflow.execution_type))
                 assert stored is not None
                 repository = RunRepository(session)
                 service = RunService(repository)
@@ -186,5 +192,94 @@ async def test_seed_and_all_three_demo_workflows_complete_after_confirmation(
                 await seed_demo(session, settings)
                 assert stored.title == f"Edited {workflow.execution_type}"
                 assert (await repository.get(run.id)).status == "COMPLETED"
+    finally:
+        await engine.dispose()
+
+
+async def test_decision_variants_pause_and_support_every_resolution_after_reload(
+    infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_url, redis_url = infrastructure
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", redis_url)
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            await seed_demo(session, get_settings())
+            await seed_demo(session, get_settings())
+            assert await session.scalar(select(func.count()).select_from(Workflow)) == 6
+        for workflow in workflow_payloads(with_decisions=True):
+            assert validate_workflow_graph(workflow) == []
+            for action in ("assign_fixes", "continue", "cancel"):
+                async with sessions() as session:
+                    repository = RunRepository(session)
+                    service = RunService(repository)
+                    created = await service.create(
+                        RunCreate(
+                            workflow_id=demo_id("workflow", workflow.execution_type + "_decision"),
+                            task=DEMO_TASK,
+                        )
+                    )
+                    run = await service.require(created.id)
+                    await PlannerExecutor(repository).execute(run)
+                    assert run.status == "AWAITING_CONFIRMATION"
+                    await DAGExecutor(repository).execute(run)
+                    assert not await repository.decisions(run.id)
+                    await service.confirm(run.id)
+                    await DAGExecutor(repository).execute(run)
+                    assert run.status == "PAUSED"
+                    assert run.pause_reasons == ["USER_DECISION_REQUIRED"]
+                    steps = await repository.steps(run.id)
+                    assert [step.status for step in steps] == ["COMPLETED"] * 4 + ["PENDING"]
+                    decisions = await repository.decisions(run.id)
+                    assert len(decisions) == 1
+                    assert decisions[0].source_step_number == 4
+                    assert decisions[0].suggested_agent_id == demo_id("agent", "developer")
+                    preserved = [
+                        (step.output, step.tokens_prompt, step.attempt) for step in steps[:4]
+                    ]
+                    run_id, decision_id = run.id, decisions[0].id
+                async with sessions() as session:
+                    repository = RunRepository(session)
+                    service = RunService(repository)
+                    run = await service.require(run_id)
+                    await DAGExecutor(repository).execute(run)
+                    assert run.status == "PAUSED"
+                    payload = DecisionResolution(
+                        action=action,
+                        agent_id=demo_id("agent", "developer")
+                        if action == "assign_fixes"
+                        else None,
+                        task="Fix title validation" if action == "assign_fixes" else None,
+                    )
+                    await service.resolve_decision(run_id, decision_id, payload)
+                    await DAGExecutor(repository).execute(run)
+                    assert run.status == ("CANCELLED" if action == "cancel" else "COMPLETED")
+                    steps = await repository.steps(run_id)
+                    assert preserved == [
+                        (step.output, step.tokens_prompt, step.attempt) for step in steps[:4]
+                    ]
+                    decisions = await repository.decisions(run_id)
+                    assert len(decisions) == 1 and decisions[0].status == "RESOLVED"
+                    assert len(steps) == (7 if action == "assign_fixes" else 5)
+                    if action == "assign_fixes":
+                        assert "Correction handoff" in steps[5].output
+                        assert "Correction verified" in steps[6].output
+                        parents = [1, 2, 3, 4] if workflow.execution_type == "parallel" else [4]
+                        assert steps[4].depends_on == [*parents, 6, 7]
+                    if action != "cancel":
+                        assert "User decision demo" in run.final_report
+                        assert run.pause_reasons == []
+                        assert all(step.status == "COMPLETED" for step in steps)
+                        assert (
+                            run.total_tokens
+                            == run.planning_prompt_tokens
+                            + run.planning_completion_tokens
+                            + sum(step.tokens_prompt + step.tokens_completion for step in steps)
+                        )
     finally:
         await engine.dispose()

@@ -52,13 +52,14 @@ def agent_payloads(settings: Settings) -> list[AgentCreate]:
     ]
 
 
-def workflow_payloads() -> list[WorkflowWrite]:
+def workflow_payloads(*, with_decisions: bool = False) -> list[WorkflowWrite]:
     payloads: list[WorkflowWrite] = []
     for execution_type, dependencies in DEPENDENCIES.items():
+        scenario = f"{execution_type}_decision" if with_decisions else execution_type
         steps = []
         for number, (role, parents) in enumerate(zip(ROLES, dependencies, strict=True), 1):
             template = (
-                f"[demo:{execution_type}]\nTask: {{{{task}}}}\n"
+                f"[demo:{scenario}]\nTask: {{{{task}}}}\n"
                 "Subtask: {{subtask}}\nContext: {{context}}"
             )
             for parent in parents:
@@ -73,7 +74,8 @@ def workflow_payloads() -> list[WorkflowWrite]:
             )
         payload = WorkflowWrite.model_validate(
             {
-                "title": f"Demo: Task board release ({execution_type})",
+                "title": f"Demo: Task board release ({execution_type})"
+                + (" with user decision" if with_decisions else ""),
                 "execution_type": execution_type,
                 "steps": steps,
                 "graph_layout": {
@@ -105,8 +107,10 @@ async def seed_demo(session: AsyncSession, settings: Settings) -> None:
                 raise ValueError(f"Demo agent name is already used: {payload.name}")
             session.add(Agent(id=agent_id, **payload.model_dump(), requires_reconfiguration=False))
     await session.flush()
-    for workflow in workflow_payloads():
-        workflow_id = demo_id("workflow", workflow.execution_type)
-        if await session.get(Workflow, workflow_id) is None:
-            session.add(Workflow(id=workflow_id, **workflow.model_dump(mode="json")))
+    for with_decisions in (False, True):
+        for workflow in workflow_payloads(with_decisions=with_decisions):
+            key = workflow.execution_type + ("_decision" if with_decisions else "")
+            workflow_id = demo_id("workflow", key)
+            if await session.get(Workflow, workflow_id) is None:
+                session.add(Workflow(id=workflow_id, **workflow.model_dump(mode="json")))
     await session.commit()

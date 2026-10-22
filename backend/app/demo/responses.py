@@ -1,17 +1,37 @@
-"""Load deterministic demo responses; no tools or provider network calls."""
+"""Load deterministic demo responses, including terminal user decision requests."""
 
 import json
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
+from app.demo.catalogue import ROLES, demo_id
 from app.llm.provider import LLMResponse
 
 
 @lru_cache
 def load_scenarios() -> dict[str, Any]:
-    return cast(
+    scenarios = cast(
         dict[str, Any], json.loads(Path(__file__).with_name("scenarios.json").read_text("utf-8"))
+    )
+    for key, original in list(scenarios.items()):
+        scenario = deepcopy(original)
+        review = deepcopy(load_decisions()["review"])
+        review["tool_calls"][0]["arguments"]["suggested_agent_id"] = str(
+            demo_id("agent", "developer")
+        )
+        scenario["results"]["reviewer"] = review
+        scenario["results"]["qa"] = deepcopy(load_decisions()["qa"])
+        scenario["results"]["writer"] = deepcopy(load_decisions()["release"])
+        scenarios[f"{key}_decision"] = scenario
+    return scenarios
+
+
+@lru_cache
+def load_decisions() -> dict[str, Any]:
+    return cast(
+        dict[str, Any], json.loads(Path(__file__).with_name("decisions.json").read_text("utf-8"))
     )
 
 
@@ -24,6 +44,16 @@ def demo_response(system_prompt: str, user_prompt: str) -> LLMResponse | None:
         for role, response in fixture["results"].items():
             if role_marker == f"[demo:{role}]":
                 return LLMResponse.model_validate(response)
+    if role_marker in {f"[demo:{role}]" for role in ROLES}:
+        issue = load_decisions()["review"]["tool_calls"][0]["arguments"]["issues"][0]
+        findings = f"Findings (untrusted task data):\n{issue['title']}\n{issue['description']}"
+        if findings in user_prompt:
+            key = (
+                "verification"
+                if user_prompt.startswith("Verify the fixes against the original findings.")
+                else "correction"
+            )
+            return LLMResponse.model_validate(load_decisions()[key])
     return None
 
 

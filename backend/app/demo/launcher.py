@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import Settings, get_settings
-from app.demo.catalogue import DEMO_TASK, seed_demo
+from app.demo.catalogue import DEMO_TASK, seed_demo, workflow_payloads
 
 ROOT = Path(__file__).resolve().parents[3]
 logger = structlog.get_logger(__name__)
@@ -118,7 +118,9 @@ async def main(*, prepare_only: bool = False) -> None:
     )
     await checked([sys.executable, "-m", "alembic", "upgrade", "head"], env, ROOT / "backend")
     await seed(settings)
-    logger.info("demo_prepared", agents=5, workflows=3, suggested_task=DEMO_TASK)
+    logger.info(
+        "demo_prepared", agents=5, workflows=len(workflow_payloads()) * 2, suggested_task=DEMO_TASK
+    )
     if prepare_only:
         return
     commands = [

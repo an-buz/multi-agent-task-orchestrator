@@ -14,7 +14,7 @@ The project includes a FastAPI backend, an ARQ worker, and a Next.js dashboard. 
 - **Context and tools:** attach text, Markdown, or JSON context; use calculator, web search, file reading, and optional Docker-isolated code execution.
 - **Reports:** inspect completed results and export them as Markdown, JSON, or PDF.
 - **Model settings and themes:** manage model availability and defaults, and switch between light and dark themes.
-- **Prepared demo:** explore five agents and three workflows without provider credentials.
+- **Prepared demo:** explore five agents and six workflows, including user decision scenarios, without provider credentials.
 
 ## Technology stack
 
@@ -47,10 +47,12 @@ The launcher starts isolated PostgreSQL and Redis containers, applies migrations
 
 Open [the dashboard](http://localhost:3000) after Next.js reports that it is ready.
 
-1. Select a **Demo: Task board release** workflow: sequential, parallel, or hybrid.
+1. Select a **Demo: Task board release** workflow: sequential, parallel, or hybrid. Each type also has a **with user decision** variant.
 2. Enter: `Prepare the task board release with task creation, status filters, and release notes.`
 3. Request a plan, review Plan Preview, and confirm execution.
 4. Follow the five agents in the monitor, then inspect or export the completed report.
+
+In a **with user decision** variant, Reviewer raises a fictional validation defect and pauses the workflow before release notes. Assign fixes to Demo Developer to see correction and verification, continue without fixes, or cancel. Restart `make demo` (or run `make demo-prepare`) to add these variants to an existing demo database while preserving previous data.
 
 Demo responses and token usage are fixed fictional fixtures for this release scenario. They do not adapt to arbitrary tasks. No API keys are required, and code execution is disabled. Demo storage is separate from the regular development database and queue.
 
