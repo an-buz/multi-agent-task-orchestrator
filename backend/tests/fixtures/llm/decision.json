@@ -1,0 +1,22 @@
+{
+  "content": "QA found an email validation defect.",
+  "usage": { "input_tokens": 20, "output_tokens": 8 },
+  "tool_calls": [
+    {
+      "id": "decision-call",
+      "name": "request_user_decision",
+      "arguments": {
+        "issues": [
+          {
+            "title": "Empty email accepted",
+            "description": "Submit an empty email. Expected: validation error. Actual: accepted.",
+            "severity": "high"
+          }
+        ],
+        "suggested_agent_id": null,
+        "suggested_task": "Fix empty email validation."
+      }
+    }
+  ],
+  "stop_reason": "tool_calls"
+}

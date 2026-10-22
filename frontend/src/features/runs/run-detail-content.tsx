@@ -17,6 +17,7 @@ import { useRun, runsQueryKey } from "./queries";
 import { useRunEvents } from "./use-run-events";
 import { canRetryStep, runSteps as getRunSteps } from "./model";
 import { StatusBadge } from "@/components/status-badge";
+import { RunDecisions } from "./run-decisions";
 
 export default function RunDetailContent({ id }: { id: string }) {
   const client = useQueryClient();
@@ -104,15 +105,7 @@ export default function RunDetailContent({ id }: { id: string }) {
                   </AlertDescription>
                 </Alert>
               )}
-              {run.status === "PAUSED" && (
-                <Alert>
-                  <AlertTitle>Waiting for agent reconfiguration</AlertTitle>
-                  <AlertDescription>
-                    Save unavailable agents with an enabled model to resume this run automatically.
-                    Completed steps are preserved. <Link href="/agents">Manage agents</Link>.
-                  </AlertDescription>
-                </Alert>
-              )}
+              <RunDecisions run={run} />
               <section className="rounded-xl border border-border bg-card p-5">
                 <h2 className="text-sm font-semibold">Task</h2>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{run.task}</p>

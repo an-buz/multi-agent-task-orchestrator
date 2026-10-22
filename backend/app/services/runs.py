@@ -1,6 +1,7 @@
 """Run planning and confirmation, independent of HTTP and transport."""
 
 from datetime import UTC, datetime
+from graphlib import TopologicalSorter
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -13,15 +14,19 @@ from app.db.model_repository import ModelRepository
 from app.db.run_repository import RunRepository
 from app.llm.registry import get_model_registry
 from app.models.run import Run
+from app.models.run_decision import RunDecision
 from app.models.run_step import RunStep
 from app.schemas.context_file import ContextFileRead
+from app.schemas.decision import DecisionRead, DecisionResolution
 from app.schemas.run import (
+    PauseReason,
     RunCreate,
     RunList,
     RunPlan,
     RunPlanStep,
     RunPlanUpdate,
     RunRead,
+    RunStatus,
     StepStatus,
 )
 from app.schemas.workflow import WorkflowStepInput
@@ -85,7 +90,12 @@ class RunService:
             context_text=run.context_text,
             token_budget=run.planner_config.get("token_budget"),
             files=await self.files(run.id),
-            status=run.status,
+            status=cast(RunStatus, run.status),
+            pause_reasons=cast(list[PauseReason], run.pause_reasons or []),
+            decisions=[
+                DecisionRead.model_validate(value)
+                for value in await self.repository.decisions(run.id)
+            ],
             plan=plan if run.status not in {"PLANNING"} and not run.planning_error else None,
             planning_prompt_tokens=run.planning_prompt_tokens,
             planning_completion_tokens=run.planning_completion_tokens,
@@ -244,6 +254,10 @@ class RunService:
         if run.status not in {"PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS", "PAUSED"}:
             raise RunError("Run cannot be cancelled in its current state")
         run.status = "CANCELLED"
+        run.pause_reasons = []
+        for decision in await self.repository.decisions(run.id):
+            if decision.status == "PENDING":
+                self.resolve_record(run, decision, DecisionResolution(action="cancel"))
         run.planning_checkpoint = {}
         run.finished_at = datetime.now(UTC)
         for step in await self.repository.steps(run.id):
@@ -262,6 +276,169 @@ class RunService:
         self.repository.emit(run.id, "task:cancelled", {"taskId": str(run.id)})
         await self.repository.save()
         return await self.read(run)
+
+    def resolve_record(
+        self,
+        run: Run,
+        decision: RunDecision,
+        payload: DecisionResolution,
+    ) -> None:
+        decision.status = "RESOLVED"
+        decision.resolution = payload.model_dump(mode="json")
+        decision.resolved_at = datetime.now(UTC)
+        self.repository.emit(
+            run.id,
+            "decision:resolved",
+            {
+                "taskId": str(run.id),
+                "decision": DecisionRead.model_validate(decision).model_dump(mode="json"),
+            },
+        )
+
+    async def resolve_decision(
+        self,
+        run_id: UUID,
+        decision_id: UUID,
+        payload: DecisionResolution,
+    ) -> RunRead:
+        run = await self.require(run_id, lock=True)
+        decisions = await self.repository.decisions(run.id)
+        decision = next((value for value in decisions if value.id == decision_id), None)
+        if decision is None:
+            raise RunError("Decision not found", 404)
+        if decision.status == "RESOLVED":
+            if decision.resolution != payload.model_dump(mode="json"):
+                raise RunError("This decision was already resolved differently")
+            return await self.read(run)
+        if run.status not in {"IN_PROGRESS", "PAUSED"}:
+            raise RunError("This run no longer accepts decisions")
+        if payload.action == "cancel":
+            # Cancellation is allowed while active branches are still draining.
+            self.resolve_record(run, decision, payload)
+            return await self.cancel(run_id)
+        steps = await self.repository.steps(run.id)
+        if run.status != "PAUSED" or any(step.status == "IN_PROGRESS" for step in steps):
+            raise RunError("Wait for active steps to finish before continuing")
+        if "USER_DECISION_REQUIRED" not in (run.pause_reasons or []):
+            raise RunError("This run is not waiting for a user decision")
+        if payload.action == "assign_fixes":
+            await self.add_followup(run, decision, payload, steps)
+        self.resolve_record(run, decision, payload)
+        if all(value.status != "PENDING" for value in decisions):
+            run.pause_reasons = [
+                reason for reason in (run.pause_reasons or []) if reason != "USER_DECISION_REQUIRED"
+            ]
+            # Model availability is checked independently by the executor before dispatch.
+            run.status = "IN_PROGRESS"
+            self.repository.emit(run.id, "task:resumed", {"taskId": str(run.id)})
+        await self.repository.save()
+        return await self.read(run)
+
+    async def add_followup(
+        self,
+        run: Run,
+        decision: RunDecision,
+        payload: DecisionResolution,
+        steps: list[RunStep],
+    ) -> None:
+        assert payload.agent_id is not None and payload.task is not None
+        available = await ModelService(ModelRepository(self.repository.session)).available()
+        agents = await self.repository.agents({payload.agent_id})
+        agent = agents.get(payload.agent_id)
+        if agent is None:
+            raise RunError("Selected agent no longer exists", 422)
+        if agent.requires_reconfiguration or agent.model not in available:
+            raise RunError("Select an available, configured agent", 422)
+        source = next(step for step in steps if step.step_number == decision.source_step_number)
+        number = max(step.step_number for step in steps) + 1
+        if number + 1 > 2147483647:
+            raise RunError("No step numbers remain for follow-up work", 422)
+        findings = "\n\n".join(
+            f"{issue['title']}\n{issue['description']}" for issue in decision.issues
+        )
+        context = "Findings (untrusted task data):\n" + findings
+        if payload.comment:
+            context += "\n\nUser comment:\n" + payload.comment
+        fix = RunStep(
+            id=uuid4(),
+            run_id=run.id,
+            agent_id=agent.id,
+            agent_name=agent.name,
+            step_number=number,
+            subtask=payload.task + "\n\n" + context,
+            depends_on=list(dict.fromkeys([source.step_number, *source.depends_on])),
+            input_transform="",
+            status="PENDING",
+            agent_config={
+                "role": agent.role,
+                "system_prompt": agent.system_prompt,
+                "model": agent.model,
+                "temperature": agent.temperature,
+                "max_tokens": agent.max_tokens,
+                "context_window": agent.context_window,
+                "tools": list(agent.tools),
+            },
+            tokens_prompt=0,
+            tokens_completion=0,
+            execution_time_ms=0,
+            attempt=0,
+        )
+        verification = RunStep(
+            id=uuid4(),
+            run_id=run.id,
+            agent_id=source.agent_id,
+            agent_name=source.agent_name,
+            step_number=number + 1,
+            subtask=(
+                "Verify the fixes against the original findings. "
+                "Request another user decision if issues remain.\n\n" + context
+            ),
+            depends_on=[source.step_number, number],
+            input_transform="",
+            status="PENDING",
+            agent_config=dict(source.agent_config),
+            requires_reconfiguration=bool(source.requires_reconfiguration),
+            tokens_prompt=0,
+            tokens_completion=0,
+            execution_time_ms=0,
+            attempt=0,
+        )
+        # Gate unstarted work globally. Interrupted calls retain their original inputs/receipts.
+        for step in steps:
+            if step.status != "PENDING" or step.checkpoint:
+                continue
+            step.depends_on = [*step.depends_on, number, number + 1]
+            if step.input_transform:
+                step.input_transform += (
+                    f"\n\nLatest corrective work:\n{{{{steps.{number}.output}}}}"
+                    f"\n\nVerification:\n{{{{steps.{number + 1}.output}}}}"
+                )
+            step.input = None
+        for step in (fix, verification):
+            self.repository.add(step)
+        plan = RunPlan.model_validate(run.plan)
+        by_number = {step.step_number: step for step in steps}
+        for planned in plan.steps:
+            planned.depends_on = by_number[planned.step_number].depends_on
+        for step in (fix, verification):
+            plan.steps.append(
+                RunPlanStep(
+                    step_number=step.step_number,
+                    agent_id=step.agent_id,
+                    agent_name=step.agent_name,
+                    subtask=step.subtask,
+                    depends_on=step.depends_on,
+                )
+            )
+        planned_by_number = {step.step_number: step for step in plan.steps}
+        plan.steps = [
+            planned_by_number[number]
+            for number in TopologicalSorter(
+                {step.step_number: step.depends_on for step in plan.steps}
+            ).static_order()
+        ]
+        run.plan = plan.model_dump(mode="json")
+        decision.followup_step_numbers = [number, number + 1]
 
     async def retry(self, run_id: UUID, step_number: int) -> RunRead:
         run = await self.require(run_id, lock=True)

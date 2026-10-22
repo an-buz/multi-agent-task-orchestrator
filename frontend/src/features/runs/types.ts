@@ -42,6 +42,8 @@ export interface RunPlan {
 }
 
 export interface RunDetails extends RunSummary {
+  pause_reasons?: ("MODEL_UNAVAILABLE" | "USER_DECISION_REQUIRED")[];
+  decisions?: RunDecision[];
   total_time_ms?: number;
   token_budget?: number | null;
   files?: import("@/features/files/types").ContextFile[];
@@ -54,6 +56,30 @@ export interface RunDetails extends RunSummary {
   planning_error?: { code: string; message: string } | null;
   final_report?: string | null;
   workflow_title?: string;
+}
+
+export interface DecisionResolution {
+  action: "assign_fixes" | "continue" | "cancel";
+  agent_id?: string;
+  task?: string;
+  comment?: string;
+}
+
+export interface RunDecision {
+  id: string;
+  source_step_number: number;
+  status: "PENDING" | "RESOLVED";
+  issues: {
+    title: string;
+    description: string;
+    severity: "low" | "medium" | "high" | "critical";
+  }[];
+  suggested_agent_id: string | null;
+  suggested_task: string;
+  resolution: DecisionResolution | null;
+  created_at: string;
+  resolved_at: string | null;
+  followup_step_numbers: number[];
 }
 
 export interface RunListResponse {

@@ -11,6 +11,7 @@ from app.models.model_setting import ModelSetting  # noqa: F401
 from app.models.app_config import AppConfig  # noqa: F401
 from app.models.context_file import ContextFile, RunFile  # noqa: F401
 from app.models.run import Run  # noqa: F401
+from app.models.run_decision import RunDecision  # noqa: F401
 from app.models.run_event import RunEvent  # noqa: F401
 from app.models.run_step import RunStep  # noqa: F401
 from app.models.workflow import Workflow  # noqa: F401

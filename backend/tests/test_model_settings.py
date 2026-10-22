@@ -197,7 +197,7 @@ async def test_repaired_file_reader_reads_attachment_and_preserves_completed_ste
             max_tokens: int,
         ) -> LLMResponse:
             assert model == "claude-haiku"
-            assert [tool["name"] for tool in tools] == ["file_reader"]
+            assert [tool["name"] for tool in tools] == ["file_reader", "request_user_decision"]
             if messages[-1]["role"] == "user":
                 response = LLMResponse.model_validate(fixture[0])
                 response.tool_calls[0].arguments["file_id"] = file_id

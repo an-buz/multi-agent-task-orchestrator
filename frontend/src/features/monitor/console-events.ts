@@ -26,7 +26,10 @@ export function eventPresentation(event: RunEvent, steps: RunStep[]) {
     message = "Execution plan prepared and awaiting confirmation.";
   else if (event.event === "task:started") message = "Workflow execution started.";
   else if (event.event === "task:paused")
-    message = "Workflow paused. Agent reconfiguration required.";
+    message = "Workflow paused. Review the pending decisions or agent availability.";
+  else if (event.event === "decision:required")
+    message = "Agent findings require your decision. New steps are blocked.";
+  else if (event.event === "decision:resolved") message = "User decision saved.";
   else if (event.event === "task:resumed") message = "Workflow execution resumed.";
   else if (event.event === "task:cancelled") message = "Workflow execution cancelled.";
   else if (event.event === "task:failed")

@@ -12,6 +12,7 @@ from app.db.run_repository import RunRepository
 from app.main import app
 from app.models.agent import Agent
 from app.models.run import Run
+from app.models.run_decision import RunDecision
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.orchestrator.planner import PlannerExecutor
@@ -51,13 +52,16 @@ class MemoryRunRepository(RunRepository):
         )
         self.runs: dict[UUID, Run] = {}
         self.saved_steps: list[RunStep] = []
+        self.saved_decisions: list[RunDecision] = []
         self.saved_events: list[tuple[str, dict[str, Any]]] = []
         self.session = cast(AsyncSession, AsyncMock())
 
-    def add(self, value: Run | RunStep) -> None:
+    def add(self, value: Run | RunStep | RunDecision) -> None:
         if isinstance(value, Run):
             value.created_at = datetime.now(UTC)
             self.runs[value.id] = value
+        elif isinstance(value, RunDecision):
+            self.saved_decisions.append(value)
         else:
             self.saved_steps.append(value)
 
@@ -78,6 +82,9 @@ class MemoryRunRepository(RunRepository):
             step.step_number: bool(step.requires_reconfiguration)
             for step in await self.steps(run_id)
         }
+
+    async def decisions(self, run_id: UUID) -> list[RunDecision]:
+        return [decision for decision in self.saved_decisions if decision.run_id == run_id]
 
     async def list(self, limit: int, offset: int) -> tuple[list[Run], int]:
         return list(self.runs.values())[offset : offset + limit], len(self.runs)

@@ -1,5 +1,12 @@
 import { apiRequest, apiResponse, apiUrl } from "@/lib/api";
-import type { CreateRunInput, CreatedRun, RunDetails, RunEvent, RunListResponse } from "./types";
+import type {
+  CreateRunInput,
+  CreatedRun,
+  DecisionResolution,
+  RunDetails,
+  RunEvent,
+  RunListResponse,
+} from "./types";
 
 export function listRuns(signal?: AbortSignal, offset = 0): Promise<RunListResponse> {
   return apiRequest<RunListResponse>(`/runs?limit=50&offset=${offset}`, { signal });
@@ -101,6 +108,17 @@ export function cancelRun(id: string): Promise<RunDetails> {
   return apiRequest<RunDetails>(`/runs/${id}/cancel`, { method: "POST" });
 }
 
+export function resolveRunDecision(
+  id: string,
+  decisionId: string,
+  resolution: DecisionResolution,
+): Promise<RunDetails> {
+  return apiRequest<RunDetails>(`/runs/${id}/decisions/${decisionId}/resolve`, {
+    method: "POST",
+    body: JSON.stringify(resolution),
+  });
+}
+
 export function retryRunStep(id: string, step: number): Promise<RunDetails> {
   return apiRequest<RunDetails>(`/runs/${id}/steps/${step}/retry`, { method: "POST" });
 }
@@ -123,6 +141,8 @@ export function subscribeToRun(
     "task:started",
     "task:paused",
     "task:resumed",
+    "decision:required",
+    "decision:resolved",
     "agent:status_change",
     "agent:stream_chunk",
     "agent:tool_call",

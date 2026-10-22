@@ -61,6 +61,8 @@ async def test_ownership_connection_loss_stops_work_and_prevents_duplicate_dispa
 
         async def complete_tools(self, *args, **kwargs):
             nonlocal calls
+            if phase != "tool":
+                return await self.complete(*args, **kwargs)
             calls += 1
             return LLMResponse(
                 content="",

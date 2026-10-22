@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from functools import partial
 from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
 import structlog
 from sqlalchemy.orm.attributes import set_committed_value
@@ -23,7 +24,9 @@ from app.llm.provider import IncompleteLLMResponse, LLMProvider, LLMResponse, St
 from app.llm.providers import create_provider
 from app.llm.retry import llm_retrying
 from app.models.run import Run
+from app.models.run_decision import RunDecision
 from app.models.run_step import RunStep
+from app.schemas.decision import DecisionRead, DecisionRequest, decision_tool
 from app.schemas.event import EventName
 from app.services.models import ModelService
 from app.tools.runtime import ToolRuntime
@@ -64,6 +67,7 @@ class StepResult:
     error: dict[str, str] | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    decision: DecisionRequest | None = None
 
 
 class DAGExecutor:
@@ -117,7 +121,7 @@ class DAGExecutor:
                 raise ValueError("Provider outcome is unknown; explicit retry is required")
             config = step.agent_config
             runtime = ToolRuntime(config.get("tools", []), files)
-            definitions = runtime.definitions()
+            definitions = [*runtime.definitions(), decision_tool()]
             messages: list[dict[str, Any]] = [{"role": "user", "content": step.input or ""}]
             call_count = 0
             for round_number in range(get_settings().tool_max_rounds + 1):
@@ -192,22 +196,13 @@ class DAGExecutor:
                                 if terminal is None:
                                     raise ValueError("Stream ended without response usage")
                                 response = terminal
-                            elif definitions:
+                            else:
                                 async with asyncio.timeout(get_settings().llm_request_timeout):
                                     response = await provider.complete_tools(
                                         str(config["system_prompt"]),
                                         messages,
                                         str(config["model"]),
                                         definitions,
-                                        temperature=float(config["temperature"]),
-                                        max_tokens=max_tokens,
-                                    )
-                            else:
-                                async with asyncio.timeout(get_settings().llm_request_timeout):
-                                    response = await provider.complete(
-                                        str(config["system_prompt"]),
-                                        step.input or "",
-                                        str(config["model"]),
                                         temperature=float(config["temperature"]),
                                         max_tokens=max_tokens,
                                     )
@@ -224,6 +219,21 @@ class DAGExecutor:
                     error_code = "token_budget_exceeded"
                     raise ValueError("Budget exceeded")
                 response.require_complete()
+                requests = [
+                    call for call in response.tool_calls if call.name == "request_user_decision"
+                ]
+                if requests:
+                    error_code = "invalid_decision_request"
+                    if len(response.tool_calls) != 1:
+                        raise ValueError("Decision requests must be terminal and exclusive")
+                    decision = DecisionRequest.model_validate(requests[0].arguments)
+                    return StepResult(
+                        response,
+                        duration(),
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        decision=decision,
+                    )
                 if not response.tool_calls:
                     return StepResult(
                         response,
@@ -337,10 +347,14 @@ class DAGExecutor:
             return
         steps = await self.repository.steps(run.id)
         if current.status == "PAUSED":
+            if "USER_DECISION_REQUIRED" in (current.pause_reasons or []):
+                await self.repository.save()
+                return
             if not await self.models_ready(run, steps):
                 await self.repository.save()
                 return
             current.status = "IN_PROGRESS"
+            current.pause_reasons = []
             self.repository.emit(run.id, "task:resumed", {"taskId": str(run.id)})
         if not steps:
             run.status = "FAILED"
@@ -410,9 +424,10 @@ class DAGExecutor:
             while True:
                 if not await flush_tool_events():
                     return
+                user_blocked = "USER_DECISION_REQUIRED" in (run.pause_reasons or [])
                 models_ready = await self.models_ready(run, steps)
                 for step in steps:
-                    if not models_ready:
+                    if user_blocked or not models_ready:
                         break
                     if len(active) >= limit:
                         break
@@ -472,10 +487,13 @@ class DAGExecutor:
                         )
                     ] = step
                 if not active:
-                    if not models_ready:
+                    if user_blocked or not models_ready:
                         if not await self.still_running(run):
                             return
                         run.status = "PAUSED"
+                        run.pause_reasons = (["USER_DECISION_REQUIRED"] if user_blocked else []) + (
+                            ["MODEL_UNAVAILABLE"] if not models_ready else []
+                        )
                         self.repository.emit(run.id, "task:paused", {"taskId": str(run.id)})
                         await self.repository.save()
                         return
@@ -518,6 +536,43 @@ class DAGExecutor:
                     else:
                         step.status = "COMPLETED"
                         step.output = result.response.content
+                        if result.decision is not None:
+                            request = result.decision
+                            if not step.output:
+                                step.output = "\n\n".join(
+                                    f"{issue.title}\n{issue.description}"
+                                    for issue in request.issues
+                                )
+                            decision = RunDecision(
+                                id=uuid4(),
+                                run_id=run.id,
+                                source_step_number=step.step_number,
+                                issues=[issue.model_dump(mode="json") for issue in request.issues],
+                                suggested_agent_id=request.suggested_agent_id,
+                                suggested_task=request.suggested_task,
+                                status="PENDING",
+                                created_at=datetime.now(UTC),
+                                followup_step_numbers=[],
+                            )
+                            self.repository.add(decision)
+                            run.pause_reasons = list(
+                                dict.fromkeys(
+                                    [
+                                        *(run.pause_reasons or []),
+                                        "USER_DECISION_REQUIRED",
+                                    ]
+                                )
+                            )
+                            self.repository.emit(
+                                run.id,
+                                "decision:required",
+                                {
+                                    "taskId": str(run.id),
+                                    "decision": DecisionRead.model_validate(decision).model_dump(
+                                        mode="json"
+                                    ),
+                                },
+                            )
                     self.update_totals(run, steps)
                     self.result_event(run, step)
                     await self.repository.save()

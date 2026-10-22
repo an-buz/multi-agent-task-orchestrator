@@ -24,7 +24,7 @@ from app.models.run import Run
 from app.models.run_event import RunEvent
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
-from app.orchestrator.executor import build_input
+from app.orchestrator.executor import DAGExecutor, build_input
 from app.orchestrator.planner import LLMPlanner, PlannerExecutor
 from app.workers.runner import OrchestratorWorker
 from app.workers.tasks import execute_run, plan_run, recover_runs
@@ -34,6 +34,138 @@ from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
+
+from test_decisions import FindingMock
+
+
+async def test_decision_survives_sessions_and_concurrent_http_resolution(
+    infrastructure: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.schemas.run import RunCreate
+    from app.services.runs import RunService
+
+    database_url, _ = infrastructure
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_session():
+        async with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    enqueue = AsyncMock()
+    monkeypatch.setattr("app.api.v1.runs.enqueue_run", enqueue)
+    run_id = workflow_id = agent_id = None
+    try:
+        await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+        async with sessions() as session:
+            agent = Agent(
+                id=uuid4(),
+                name=f"Decision reviewer {uuid4()}",
+                role="Review",
+                system_prompt="Be precise",
+                model="claude-sonnet",
+                temperature=0.2,
+                max_tokens=1024,
+                context_window=128000,
+                tools=[],
+            )
+            workflow = Workflow(
+                id=uuid4(),
+                title="Human decision integration",
+                execution_type="sequential",
+                steps=[
+                    {"step_number": 1, "agent_id": str(agent.id), "depends_on": []},
+                    {"step_number": 2, "agent_id": str(agent.id), "depends_on": [1]},
+                ],
+                graph_layout={},
+            )
+            workflow_id, agent_id = workflow.id, agent.id
+            session.add_all([agent, workflow])
+            await session.commit()
+            repository = RunRepository(session)
+            service = RunService(repository)
+            created = await service.create(RunCreate(workflow_id=workflow.id, task="Review email"))
+            run_id, agent_id = created.id, agent.id
+            run = await service.require(run_id)
+            await PlannerExecutor(repository).execute(run)
+            for step in await repository.steps(run_id):
+                step.subtask = f"Task {step.step_number}"
+            await repository.save()
+            await service.confirm(run_id)
+            await DAGExecutor(repository, lambda _: FindingMock()).execute(run)
+        # Simulate recovery in a fresh session: user waiting cannot dispatch provider calls.
+        async with sessions() as session:
+            repository = RunRepository(session)
+            run = await repository.get(run_id)
+            factory = AsyncMock(side_effect=AssertionError("User decision must block recovery"))
+            await DAGExecutor(repository, factory).execute(run)
+            factory.assert_not_called()
+            decision = (await repository.decisions(run_id))[0]
+            decision_id = decision.id
+            assert run.status == "PAUSED"
+            assert (await repository.steps(run_id))[
+                0
+            ].output == "QA found an email validation defect."
+        stream = stream_run(sessions, run_id, None)
+        try:
+            snapshot = json.loads((await anext(stream))["data"])["data"]["run"]
+            assert snapshot["pause_reasons"] == ["USER_DECISION_REQUIRED"]
+            assert snapshot["decisions"][0]["id"] == str(decision_id)
+        finally:
+            await stream.aclose()
+        url = f"/api/v1/runs/{run_id}/decisions/{decision_id}/resolve"
+        payload = {
+            "action": "assign_fixes",
+            "agent_id": str(agent_id),
+            "task": "Fix validation",
+            "comment": "Confirmed",
+        }
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            invalid = await client.post(url, json={"action": "assign_fixes"})
+            assert invalid.status_code == 422
+            wrong_run = await client.post(url.replace(str(run_id), str(uuid4())), json=payload)
+            assert wrong_run.status_code == 404
+            first, duplicate = await asyncio.gather(
+                client.post(url, json=payload),
+                client.post(url, json=payload),
+            )
+            assert first.status_code == duplicate.status_code == 200
+            assert len(first.json()["plan"]["steps"]) == len(duplicate.json()["plan"]["steps"]) == 4
+            conflict = await client.post(url, json={"action": "continue"})
+            assert conflict.status_code == 409
+        async with sessions() as session:
+            repository = RunRepository(session)
+            decisions = await repository.decisions(run_id)
+            assert len(decisions) == 1 and decisions[0].status == "RESOLVED"
+            events = await repository.events(run_id, 0)
+            assert sum(event.event == "decision:required" for event in events) == 1
+            assert sum(event.event == "decision:resolved" for event in events) == 1
+            run = await repository.get(run_id)
+            await DAGExecutor(repository, lambda _: FindingMock(set())).execute(run)
+            assert run.status == "COMPLETED"
+            steps = await repository.steps(run_id)
+            assert steps[0].attempt == 1
+            assert steps[1].depends_on == [1, 3, 4]
+            assert all(step.status == "COMPLETED" for step in steps)
+    finally:
+        app.dependency_overrides.clear()
+        async with sessions() as session:
+            if run_id is not None:
+                saved_run = await session.get(Run, run_id)
+                if saved_run is not None:
+                    await RunRepository(session).delete(saved_run)
+            for model, record_id in ((Workflow, workflow_id), (Agent, agent_id)):
+                if record_id is not None:
+                    record = await session.get(model, record_id)
+                    if record is not None:
+                        await session.delete(record)
+            await session.commit()
+        get_settings.cache_clear()
+        await engine.dispose()
 
 
 async def test_run_history_uses_two_queries_and_compact_pages(

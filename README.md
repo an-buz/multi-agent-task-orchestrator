@@ -211,3 +211,13 @@ docs/             Architecture, API, UX, testing, demo, and progress notes
 ```
 
 Backend dependencies follow `api → services → repositories / orchestrator / llm / tools`. Workflow execution runs in the worker, outside HTTP request handlers. Run checkpoints and events are persisted in PostgreSQL; SSE replays durable events after reconnects.
+
+## Agent findings and user decisions
+
+Agents can finish a review with the built-in `request_user_decision` control tool
+when they find problems requiring another agent's work. New steps stop immediately;
+active branches finish before the run becomes paused. The dashboard and Run details
+show the findings and offer **Assign fixes**, **Continue without fixes**, and
+**Cancel run**. Assigning fixes adds a task for the selected available agent and a
+verification by the original reviewer, then resumes pending work. Previous results
+and usage are preserved. Every new finding requires a fresh explicit decision.

@@ -1,4 +1,5 @@
 "use client";
+import { RunDecisions } from "@/features/runs/run-decisions";
 
 import { Check, CloudUpload, FileText, Paperclip, Play, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -182,6 +183,7 @@ export default function DashboardPage() {
         </header>
         <div className="grid min-h-[calc(100vh-80px)] xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-5 p-5 lg:p-6">
+            {monitoredRun && <RunDecisions run={monitoredRun} />}
             <section className="rounded-xl border border-border bg-card p-4 lg:p-5">
               <label
                 htmlFor="workflow-task"

@@ -50,6 +50,8 @@ test("console presents lifecycle, tool calls and failures without raw JSON paylo
     "task:failed",
     "task:cancelled",
     "run:snapshot",
+    "decision:required",
+    "decision:resolved",
   ]) {
     const result = eventPresentation({ event, data: { taskId: "internal-id" } }, steps);
     assert.ok(result.message.length > 10);

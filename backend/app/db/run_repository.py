@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent
 from app.models.run import Run
+from app.models.run_decision import RunDecision
 from app.models.run_event import RunEvent
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
@@ -70,6 +71,15 @@ class RunRepository:
         )
         return {number: required for number, required in rows}
 
+    async def decisions(self, run_id: UUID) -> list[RunDecision]:
+        return list(
+            await self.session.scalars(
+                select(RunDecision)
+                .where(RunDecision.run_id == run_id)
+                .order_by(RunDecision.created_at, RunDecision.id)
+            )
+        )
+
     async def list(self, limit: int, offset: int) -> tuple[list[Run], int]:
         total = await self.session.scalar(select(func.count()).select_from(Run))
         values = await self.session.scalars(
@@ -99,7 +109,7 @@ class RunRepository:
         )
         return [RunSummary.model_validate(row) for row in rows.mappings()], total or 0
 
-    def add(self, value: Run | RunStep) -> None:
+    def add(self, value: Run | RunStep | RunDecision) -> None:
         self.session.add(value)
 
     async def save(self) -> None:

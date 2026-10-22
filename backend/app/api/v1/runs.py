@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.run_repository import RunRepository
 from app.db.session import get_session
 from app.schemas.context_file import ContextFileRead
+from app.schemas.decision import DecisionResolution
 from app.schemas.run import RunCreate, RunList, RunPlanUpdate, RunRead
 from app.services.export import ExportFormat, export_result
 from app.services.runs import RunService
@@ -84,6 +85,19 @@ async def confirm_run(run_id: UUID, service: Service) -> RunRead:
 @router.post("/{run_id}/cancel", response_model=RunRead)
 async def cancel_run(run_id: UUID, service: Service) -> RunRead:
     return await service.cancel(run_id)
+
+
+@router.post("/{run_id}/decisions/{decision_id}/resolve", response_model=RunRead)
+async def resolve_decision(
+    run_id: UUID,
+    decision_id: UUID,
+    payload: DecisionResolution,
+    service: Service,
+) -> RunRead:
+    run = await service.resolve_decision(run_id, decision_id, payload)
+    if run.status == "IN_PROGRESS":
+        await enqueue_run(run.id)
+    return run
 
 
 @router.post("/{run_id}/steps/{step_number}/retry", response_model=RunRead)

@@ -24,6 +24,7 @@ class Run(Base):
     task: Mapped[str] = mapped_column(Text, nullable=False)
     context_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="AWAITING_CONFIRMATION")
+    pause_reasons: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     planner_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     planning_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

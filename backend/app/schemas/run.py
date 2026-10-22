@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.schemas.base import StepNumber, StorageModel
 from app.schemas.context_file import ContextFileRead
+from app.schemas.decision import DecisionRead
 
 RunStatus = Literal[
     "PLANNING",
@@ -19,6 +20,7 @@ RunStatus = Literal[
     "CANCELLED",
 ]
 StepStatus = Literal["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "CANCELLED"]
+PauseReason = Literal["MODEL_UNAVAILABLE", "USER_DECISION_REQUIRED"]
 
 
 class RunCreate(StorageModel):
@@ -98,6 +100,8 @@ class RunRead(BaseModel):
     token_budget: int | None = None
     files: list[ContextFileRead] = Field(default_factory=list)
     status: RunStatus
+    pause_reasons: list[PauseReason] = Field(default_factory=list)
+    decisions: list[DecisionRead] = Field(default_factory=list)
     plan: RunPlan | None
     planning_prompt_tokens: int = 0
     planning_completion_tokens: int = 0

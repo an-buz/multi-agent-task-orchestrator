@@ -106,7 +106,7 @@ class FixtureTools(MockLLMProvider):
     async def complete_tools(
         self, system_prompt, messages, model, tools, *, temperature, max_tokens
     ):
-        assert [tool["name"] for tool in tools] == ["calculator"]
+        assert [tool["name"] for tool in tools] == ["calculator", "request_user_decision"]
         self.calls += 1
         if self.calls > 1:
             assert json.loads(messages[-1]["content"]) == {"value": 20.0}

@@ -48,7 +48,11 @@ export function useRunEvents(runId: string | undefined) {
           return;
         }
         void client.invalidateQueries({ queryKey: key, exact: true });
-        if (event.event.startsWith("task:") || event.event === "plan:ready") {
+        if (
+          event.event.startsWith("task:") ||
+          event.event.startsWith("decision:") ||
+          event.event === "plan:ready"
+        ) {
           void client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
         }
       },
