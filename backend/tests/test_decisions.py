@@ -1,6 +1,7 @@
 """Human decisions stop dispatch, survive recovery, and preserve finished work."""
 
 import asyncio
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -104,6 +105,7 @@ async def test_assignment_inserts_fix_verification_and_updates_explicit_input() 
     assert "Latest corrective work:\nFixture result" in provider.calls[2]
     assert "Verification:\nFixture result" in provider.calls[2]
     assert original == (source.output, source.attempt, source.agent_config, source.tokens_prompt)
+    assert re.findall(r"^## Step (\d+):", run.final_report, re.MULTILINE) == ["1", "3", "4", "2"]
 
 
 async def test_continue_skips_corrections_without_repeating_review() -> None:

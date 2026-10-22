@@ -26,8 +26,10 @@ from app.llm.retry import llm_retrying
 from app.models.run import Run
 from app.models.run_decision import RunDecision
 from app.models.run_step import RunStep
+from app.orchestrator.snapshots import snapshot_agent
 from app.schemas.decision import DecisionRead, DecisionRequest, decision_tool
 from app.schemas.event import EventName
+from app.schemas.run import RunPlan
 from app.services.models import ModelService
 from app.tools.runtime import ToolRuntime
 
@@ -583,10 +585,12 @@ class DAGExecutor:
                 "COMPLETED" if all(step.status == "COMPLETED" for step in steps) else "FAILED"
             )
             if run.status == "COMPLETED":
-                # Deterministic report compilation adds no fabricated provider usage.
+                # Follow-up numbers are allocated last, but the plan places them before dependants.
+                plan = RunPlan.model_validate(run.plan)
                 run.final_report = "\n\n".join(
-                    f"## Step {step.step_number}: {step.agent_name}\n\n{step.output or ''}"
-                    for step in steps
+                    f"## Step {planned.step_number}: {by_number[planned.step_number].agent_name}"
+                    f"\n\n{by_number[planned.step_number].output or ''}"
+                    for planned in plan.steps
                 )
             run.finished_at = datetime.now(UTC)
             if run.status == "COMPLETED":
@@ -642,15 +646,7 @@ class DAGExecutor:
             ):
                 ready = False
                 continue
-            step.agent_config = {
-                "role": agent.role,
-                "system_prompt": agent.system_prompt,
-                "model": agent.model,
-                "temperature": agent.temperature,
-                "max_tokens": agent.max_tokens,
-                "context_window": agent.context_window,
-                "tools": list(agent.tools),
-            }
+            step.agent_config = snapshot_agent(agent)
             step.agent_name = agent.name
             step.requires_reconfiguration = False
         return ready

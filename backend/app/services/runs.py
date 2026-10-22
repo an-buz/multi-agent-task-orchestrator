@@ -16,6 +16,7 @@ from app.llm.registry import get_model_registry
 from app.models.run import Run
 from app.models.run_decision import RunDecision
 from app.models.run_step import RunStep
+from app.orchestrator.snapshots import snapshot_agent
 from app.schemas.context_file import ContextFileRead
 from app.schemas.decision import DecisionRead, DecisionResolution
 from app.schemas.run import (
@@ -182,15 +183,7 @@ class RunService:
                     depends_on=definition.get("depends_on", []),
                     input_transform=definition.get("input_transform", ""),
                     status="PENDING",
-                    agent_config={
-                        "role": agent.role,
-                        "system_prompt": agent.system_prompt,
-                        "model": agent.model,
-                        "temperature": agent.temperature,
-                        "max_tokens": agent.max_tokens,
-                        "context_window": agent.context_window,
-                        "tools": agent.tools,
-                    },
+                    agent_config=snapshot_agent(agent),
                     tokens_prompt=0,
                     tokens_completion=0,
                     execution_time_ms=0,
@@ -369,15 +362,7 @@ class RunService:
             depends_on=list(dict.fromkeys([source.step_number, *source.depends_on])),
             input_transform="",
             status="PENDING",
-            agent_config={
-                "role": agent.role,
-                "system_prompt": agent.system_prompt,
-                "model": agent.model,
-                "temperature": agent.temperature,
-                "max_tokens": agent.max_tokens,
-                "context_window": agent.context_window,
-                "tools": list(agent.tools),
-            },
+            agent_config=snapshot_agent(agent),
             tokens_prompt=0,
             tokens_completion=0,
             execution_time_ms=0,
