@@ -210,7 +210,8 @@ for (const theme of ["dark", "light"] as const) {
     });
 
     test("dashboard selection is controlled and monitoring controls respond", async ({ page }) => {
-      await mockApplication(page);
+      const state = await mockApplication(page);
+      state.run.status = "IN_PROGRESS";
       const errors: string[] = [];
       page.on("console", (message) => {
         if (message.type() === "error") errors.push(message.text());
@@ -234,22 +235,33 @@ for (const theme of ["dark", "light"] as const) {
     test("Cancel in Plan preview cancels the saved run", async ({ page }) => {
       const state = await mockApplication(page);
       await page.goto("/");
+      await expect(page.getByRole("dialog", { name: "Plan preview" })).toBeVisible();
+      await page.keyboard.press("Escape");
       await page.getByRole("combobox", { name: "Workflow", exact: true }).click();
       await page.getByRole("option", { name: "QA workflow" }).click();
       await page.getByRole("button", { name: "Decompose and Run" }).click();
-      await expect(page.getByRole("region", { name: "Plan preview" })).toBeVisible();
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(page.getByRole("region", { name: "Plan preview" })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Plan preview" })).toBeVisible();
+      await page.getByRole("button", { name: "Cancel run", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Plan preview" })).toHaveCount(0);
       expect(state.run.status).toBe("CANCELLED");
     });
 
     test("existing unconfirmed run can be edited, confirmed, or cancelled", async ({ page }) => {
       const state = await mockApplication(page);
       await page.goto(`/runs/${runId}`);
+      const dialog = page.getByRole("dialog", { name: "Plan preview" });
+      await expect(dialog).toBeVisible();
       await page
         .getByRole("textbox", { name: "Task for Reviewer" })
         .fill("Edited from run details");
-      await page.getByRole("button", { name: "Confirm and run" }).click();
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(dialog).toBeHidden();
+      expect(state.run.status).toBe("AWAITING_CONFIRMATION");
+      await page.getByRole("button", { name: "Review plan", exact: true }).click();
+      await expect(page.getByRole("textbox", { name: "Task for Reviewer" })).toHaveValue(
+        "Edited from run details",
+      );
+      await page.getByRole("button", { name: "Start run" }).click();
       await expect(page.getByText("IN_PROGRESS", { exact: true })).toBeVisible();
       expect(state.run.plan.steps[0].subtask).toBe("Edited from run details");
       state.run.status = "AWAITING_CONFIRMATION";

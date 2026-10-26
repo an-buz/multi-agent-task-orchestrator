@@ -8,16 +8,15 @@ import { AppShell } from "@/components/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import Link from "next/link";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Textarea } from "@/components/ui/textarea";
-import type { RunStep } from "@/features/runs/types";
 import { contextFileDownloadUrl } from "@/features/files/queries";
-import { cancelRun, confirmRun, editRunPlan, exportRun, retryRunStep } from "@/features/runs/api";
+import { cancelRun, exportRun, retryRunStep } from "@/features/runs/api";
 
 import { useRun, runsQueryKey } from "./queries";
 import { useRunEvents } from "./use-run-events";
 import { canRetryStep, runSteps as getRunSteps } from "./model";
 import { StatusBadge } from "@/components/status-badge";
 import { RunDecisions } from "./run-decisions";
+import { PlanPreview } from "./plan-preview";
 
 export default function RunDetailContent({ id }: { id: string }) {
   const client = useQueryClient();
@@ -25,14 +24,12 @@ export default function RunDetailContent({ id }: { id: string }) {
   const { activityEvents: events, connectionError: streamError } = useRunEvents(id);
   const [actionError, setActionError] = useState("");
   const [pending, setPending] = useState(false);
-  const [planDraft, setPlanDraft] = useState<RunStep[] | null>(null);
   async function perform(action: () => Promise<unknown>, refresh = true) {
     setPending(true);
     setActionError("");
     try {
       await action();
       if (refresh) {
-        setPlanDraft(null);
         await client.invalidateQueries({ queryKey: runsQueryKey });
       }
     } catch (error) {
@@ -129,48 +126,8 @@ export default function RunDetailContent({ id }: { id: string }) {
                   </pre>
                 )}
               </section>
-              {run.status === "AWAITING_CONFIRMATION" && (
-                <section
-                  aria-label="Plan preview"
-                  className="flex flex-col gap-3 rounded-xl border border-border p-5"
-                >
-                  <h2 className="text-sm font-semibold">Plan preview</h2>
-                  {(planDraft ?? runSteps).map((step) => (
-                    <label key={step.step_number} className="flex flex-col gap-2">
-                      {step.step_number}. {step.agent_name}
-                      <Textarea
-                        aria-label={`Task for ${step.agent_name}`}
-                        disabled={pending}
-                        value={step.subtask ?? step.input ?? ""}
-                        onChange={(event) =>
-                          setPlanDraft(
-                            (planDraft ?? runSteps).map((item) =>
-                              item.step_number === step.step_number
-                                ? { ...item, subtask: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                  ))}
-                  <Button
-                    disabled={
-                      pending ||
-                      (planDraft ?? runSteps).some(
-                        (step) => !(step.subtask ?? step.input ?? "").trim(),
-                      )
-                    }
-                    onClick={() =>
-                      void perform(async () => {
-                        if (planDraft) await editRunPlan(id, planDraft);
-                        await confirmRun(id);
-                      })
-                    }
-                  >
-                    Confirm and run
-                  </Button>
-                </section>
+              {run.status === "AWAITING_CONFIRMATION" && run.plan && (
+                <PlanPreview key={run.id} run={run} />
               )}
               <section className="rounded-xl border border-border bg-card p-5">
                 <h2 className="mb-3 text-sm font-semibold">Execution steps</h2>

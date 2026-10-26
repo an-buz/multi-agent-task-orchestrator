@@ -143,8 +143,15 @@ for (const theme of ["light", "dark"]) {
     test(`Assign fixes persists and updates ${surface} in ${theme}`, async ({ page }) => {
       const { requests } = await setup(page, theme);
       await page.goto(surface === "dashboard" ? `/?run=${runId}` : `/runs/${runId}`);
-      const card = page.getByRole("region", { name: "Decision for step 1" });
+      const dialog = page.getByRole("dialog", { name: "Your decision is required" });
+      const card = dialog.getByRole("region", { name: "Decision for step 1" });
+      await expect(dialog).toBeVisible();
       await expect(card.getByText("Empty email accepted", { exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      expect(requests).toEqual([]);
+      await page.getByRole("button", { name: "Review decisions (1)", exact: true }).click();
+      await expect(dialog).toBeVisible();
       await page.reload();
       await expect(card.getByRole("button", { name: "Assign fixes", exact: true })).toBeEnabled();
       await card
@@ -152,6 +159,7 @@ for (const theme of ["light", "dark"]) {
         .fill("Fix email and whitespace validation");
       await card.getByLabel("Comment (optional)").fill("Keep previous QA evidence");
       await card.getByRole("button", { name: "Assign fixes", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
       await expect(card).toHaveCount(0);
       expect(requests).toEqual([
         {
@@ -201,6 +209,7 @@ for (const theme of ["light", "dark"]) {
         id: "1",
       },
     );
+    await expect(page.getByRole("dialog", { name: "Your decision is required" })).toBeVisible();
     await expect(card.getByText(/Active steps are finishing/)).toBeVisible();
     await expect(card.getByRole("button", { name: "Assign fixes", exact: true })).toBeDisabled();
     await expect(card.getByRole("button", { name: "Continue without fixes" })).toBeDisabled();

@@ -24,7 +24,9 @@ const run = {
   ],
 };
 
-test("creates a run, previews the plan, confirms it, and monitors it on Dashboard", async ({ page }) => {
+test("creates a run, previews the plan, confirms it, and monitors it on Dashboard", async ({
+  page,
+}) => {
   let confirmed = false;
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
@@ -99,7 +101,7 @@ test("creates a run, previews the plan, confirms it, and monitors it on Dashboar
   await page.getByRole("option", { name: "Demo workflow" }).click();
   await page.getByRole("button", { name: /Decompose and Run/ }).click();
   await expect(page.getByRole("heading", { name: "Plan preview" })).toBeVisible();
-  await page.getByRole("button", { name: "Confirm and run" }).click();
+  await page.getByRole("button", { name: "Start run" }).click();
   await expect(page).toHaveURL(new RegExp(`\\?run=${runId}`));
   await expect(page.getByRole("heading", { name: "Orchestration Center" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Inspect step 1: Developer" })).toBeVisible();
@@ -146,7 +148,9 @@ test("saves default settings through the settings API", async ({ page }) => {
           anthropic_key_configured: false,
           openai_key_configured: false,
           tavily_key_configured: false,
-          default_model: "claude-sonnet", temperature: 0.7, max_tokens: 4096,
+          default_model: "claude-sonnet",
+          temperature: 0.7,
+          max_tokens: 4096,
         },
         headers: cors,
       });

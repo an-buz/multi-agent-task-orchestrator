@@ -16,12 +16,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkflows } from "@/features/workflows/queries";
-import { cancelRun, confirmRun, createRun, editRunPlan, waitForRunPlan } from "@/features/runs/api";
-import { runsQueryKey } from "@/features/runs/queries";
+import { createRun, waitForRunPlan } from "@/features/runs/api";
+import { cacheRun, runsQueryKey } from "@/features/runs/cache";
 import { dashboardInspectorStep, runSteps } from "@/features/runs/model";
 import { useRunMonitor } from "@/features/monitor/use-run-monitor";
 import { RunPipeline, RunConsole, RunInspector } from "@/features/monitor/dashboard-monitor";
-import type { RunDetails } from "@/features/runs/types";
+import { PlanPreview } from "@/features/runs/plan-preview";
 import type { ContextFile } from "@/features/files/types";
 import { useUploadContextFile, useDeleteContextFile } from "@/features/files/queries";
 
@@ -49,7 +49,6 @@ export default function DashboardPage() {
   );
   const workflowsQuery = useWorkflows();
   const [workflowId, setWorkflowId] = useState("");
-  const [runDraft, setRunDraft] = useState<RunDetails | null>(null);
   const [runError, setRunError] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -105,7 +104,9 @@ export default function DashboardPage() {
         "plan" in created && created.plan
           ? created
           : await waitForRunPlan(created.id, controller.signal);
-      if (!controller.signal.aborted) setRunDraft(draft);
+      if (!controller.signal.aborted) {
+        await cacheRun(client, draft);
+      }
     } catch (error) {
       if (!controller.signal.aborted)
         setRunError(error instanceof Error ? error.message : "Could not create a run.");
@@ -113,49 +114,6 @@ export default function DashboardPage() {
       setBusy(false);
     }
   }
-
-  async function confirmPlan() {
-    if (!runDraft) return;
-    setBusy(true);
-    setRunError("");
-    try {
-      if (runDraft.plan) {
-        const steps = Array.isArray(runDraft.plan) ? runDraft.plan : runDraft.plan.steps;
-        await editRunPlan(runDraft.id, steps);
-      }
-      const run = await confirmRun(runDraft.id);
-      client.setQueryData([...runsQueryKey, run.id], run);
-      setRunDraft(null);
-      router.replace(`/?run=${encodeURIComponent(run.id)}`, { scroll: false });
-      await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
-    } catch (error) {
-      setRunError(error instanceof Error ? error.message : "Could not start the run.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function cancelPlan() {
-    if (!runDraft) return;
-    setBusy(true);
-    setRunError("");
-    try {
-      const cancelled = await cancelRun(runDraft.id);
-      client.setQueryData([...runsQueryKey, cancelled.id], cancelled);
-      await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
-      setRunDraft(null);
-    } catch (error) {
-      setRunError(error instanceof Error ? error.message : "Could not cancel the run.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const planSteps = runDraft?.plan
-    ? Array.isArray(runDraft.plan)
-      ? runDraft.plan
-      : runDraft.plan.steps
-    : [];
 
   return (
     <AppShell>
@@ -184,6 +142,9 @@ export default function DashboardPage() {
         <div className="grid min-h-[calc(100vh-80px)] xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-5 p-5 lg:p-6">
             {monitoredRun && <RunDecisions run={monitoredRun} />}
+            {monitoredRun?.status === "AWAITING_CONFIRMATION" && monitoredRun.plan && (
+              <PlanPreview key={monitoredRun.id} run={monitoredRun} />
+            )}
             <section className="rounded-xl border border-border bg-card p-4 lg:p-5">
               <label
                 htmlFor="workflow-task"
@@ -309,76 +270,6 @@ export default function DashboardPage() {
                 <p role="alert" className="mt-2 text-xs text-destructive">
                   Could not load workflows.
                 </p>
-              )}
-              {runDraft && (
-                <div
-                  role="region"
-                  aria-labelledby="plan-title"
-                  className="mt-4 rounded-lg border border-status-completed/30 bg-background p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <h2 id="plan-title" className="text-sm font-semibold">
-                      Plan preview
-                    </h2>
-                    <Button
-                      variant="ghost"
-                      aria-label="Close plan"
-                      disabled={busy}
-                      onClick={() => void cancelPlan()}
-                    >
-                      <X size={15} />
-                    </Button>
-                  </div>
-                  <ol className="mt-3 space-y-2">
-                    {planSteps.map((step) => (
-                      <li
-                        key={step.step_number}
-                        className="rounded border border-border p-3 text-xs"
-                      >
-                        <span className="font-medium">
-                          {step.step_number}. {step.agent_name}
-                        </span>
-                        <span className="ml-2 text-muted-foreground">
-                          Depends on: {step.depends_on.length ? step.depends_on.join(", ") : "none"}
-                        </span>
-                        <Textarea
-                          aria-label={`Task for ${step.agent_name}`}
-                          className="mt-2 block w-full rounded border border-border bg-background p-2 text-foreground"
-                          value={step.input ?? step.subtask ?? ""}
-                          onChange={(event) =>
-                            setRunDraft({
-                              ...runDraft,
-                              plan: planSteps.map((item) =>
-                                item.step_number === step.step_number
-                                  ? {
-                                      ...item,
-                                      input: event.target.value,
-                                      subtask: event.target.value,
-                                    }
-                                  : item,
-                              ),
-                            })
-                          }
-                        />
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="mt-3 flex justify-end gap-2">
-                    <Button variant="secondary" disabled={busy} onClick={() => void cancelPlan()}>
-                      Cancel
-                    </Button>
-                    <Button
-                      disabled={
-                        busy ||
-                        planSteps.length === 0 ||
-                        planSteps.some((step) => !(step.subtask ?? step.input ?? "").trim())
-                      }
-                      onClick={() => void confirmPlan()}
-                    >
-                      {busy ? "Starting…" : "Confirm and run"}
-                    </Button>
-                  </div>
-                </div>
               )}
             </section>
             {monitor.runs.isError && (

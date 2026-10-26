@@ -2,11 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteRun, getRun, listRuns } from "./api";
+import { runQueryKey, runsQueryKey } from "./cache";
 
-export const runsQueryKey = ["runs"] as const;
-export const runQueryKey = (id: string | undefined) => [...runsQueryKey, id] as const;
-export const runEventsQueryKey = (id: string | undefined) =>
-  [...runQueryKey(id), "events"] as const;
+export { runQueryKey, runsQueryKey, runEventsQueryKey } from "./cache";
 
 export function useRuns(offset = 0) {
   return useQuery({

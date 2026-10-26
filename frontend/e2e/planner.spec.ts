@@ -119,7 +119,23 @@ for (const theme of ["dark", "light"]) {
         await expect(page.getByRole("heading", { name: "Plan preview" })).toBeVisible();
         expect(confirmed).toBe(false);
         await page.getByLabel("Task for Reviewer").fill("Human-approved review task");
-        await page.getByRole("button", { name: "Confirm and run" }).click();
+        const dialog = page.getByRole("dialog", { name: "Plan preview" });
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        expect(confirmed).toBe(false);
+        expect(edited).toBeUndefined();
+        await page.getByRole("button", { name: "Review plan", exact: true }).click();
+        await expect(page.getByLabel("Task for Reviewer")).toHaveValue(
+          "Human-approved review task",
+        );
+        await page.reload();
+        await expect(dialog).toBeVisible();
+        await expect(page.getByLabel("Task for Reviewer")).toHaveValue("Review the API contracts");
+        await page.getByLabel("Task for Reviewer").fill("   ");
+        await expect(dialog.getByRole("button", { name: "Start run", exact: true })).toBeDisabled();
+        await page.getByLabel("Task for Reviewer").fill("Human-approved review task");
+        await page.getByRole("button", { name: "Start run" }).click();
+        await expect(dialog).toHaveCount(0);
         await expect(page).toHaveURL(new RegExp(`\\?run=${runId}`));
         expect(edited?.steps).toEqual([
           expect.objectContaining({ subtask: "Human-approved review task" }),

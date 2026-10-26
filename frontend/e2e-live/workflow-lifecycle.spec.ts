@@ -93,7 +93,7 @@ for (const theme of ["dark", "light"]) {
     await expect(page.getByRole("heading", { name: "Plan preview" })).toBeVisible();
     expect((await readRun()).status).toBe("AWAITING_CONFIRMATION");
     await page.getByLabel(`Task for ${names[0]}`).fill("Analyze release marker HANDOFF_OK.");
-    await page.getByRole("button", { name: "Confirm and run" }).click();
+    await page.getByRole("button", { name: "Start run" }).click();
     await expect(page.getByRole("heading", { name: "Final report" })).toBeVisible();
     const liveEvents = page
       .locator("section")

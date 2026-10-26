@@ -8,6 +8,14 @@ import { z } from "zod";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Select,
@@ -20,7 +28,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAgents } from "@/features/agents/queries";
 import { resolveRunDecision } from "./api";
-import { runQueryKey, runsQueryKey } from "./queries";
+import { cacheRun, runsQueryKey } from "./cache";
 import { runSteps } from "./model";
 import type { DecisionResolution, RunDecision, RunDetails } from "./types";
 
@@ -45,8 +53,7 @@ function PendingDecision({ run, decision }: { run: RunDetails; decision: RunDeci
     mutationFn: (resolution: DecisionResolution) =>
       resolveRunDecision(run.id, decision.id, resolution),
     onSuccess: async (updated) => {
-      await client.cancelQueries({ queryKey: runQueryKey(run.id), exact: true });
-      client.setQueryData(runQueryKey(run.id), updated);
+      await cacheRun(client, updated);
       await client.invalidateQueries({ queryKey: runsQueryKey });
     },
   });
@@ -220,9 +227,25 @@ export function RunDecisions({ run }: { run: RunDetails }) {
           </AlertDescription>
         </Alert>
       )}
-      {pending.map((decision) => (
-        <PendingDecision key={`${run.id}-${decision.id}`} run={run} decision={decision} />
-      ))}
+      {pending.length > 0 && (
+        <Dialog key={`${run.id}-${pending.map((decision) => decision.id).join("-")}`} defaultOpen>
+          <DialogTrigger render={<Button variant="outline" className="self-start" />}>
+            Review decisions ({pending.length})
+          </DialogTrigger>
+          <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader className="pr-8">
+              <DialogTitle>Your decision is required</DialogTitle>
+              <DialogDescription>
+                Review the agent findings and choose how to proceed. Closing this window keeps the
+                workflow waiting for your decision.
+              </DialogDescription>
+            </DialogHeader>
+            {pending.map((decision) => (
+              <PendingDecision key={`${run.id}-${decision.id}`} run={run} decision={decision} />
+            ))}
+          </DialogContent>
+        </Dialog>
+      )}
       {resolved.length > 0 && (
         <details className="rounded-xl border border-border bg-card p-4">
           <summary className="cursor-pointer text-sm font-medium">

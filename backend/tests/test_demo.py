@@ -1,13 +1,14 @@
 """Demo catalogue, canned streaming, and real PostgreSQL workflow lifecycle checks."""
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from app.core.config import Settings, get_settings
 from app.db.run_repository import RunRepository
+from app.demo import launcher
 from app.demo.catalogue import (
     DEMO_TASK,
     ROLES,
@@ -58,6 +59,31 @@ def test_demo_environment_isolates_storage_and_matches_frontend_api() -> None:
     assert env["REDIS_URL"] == "redis://127.0.0.1:17379/0"
     assert env["NEXT_PUBLIC_API_URL"] == "http://localhost:18001/api/v1"
     assert env["CORS_ORIGINS"] == '["http://localhost:3001"]'
+
+
+async def test_launcher_binds_frontend_to_ipv4_and_cleans_up_on_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(launcher.os, "environ", dict(launcher.os.environ))
+    monkeypatch.setattr(launcher.shutil, "which", lambda _: "node")
+    monkeypatch.setattr(launcher.Path, "exists", lambda _: True)
+    monkeypatch.setattr(launcher, "checked", AsyncMock())
+    monkeypatch.setattr(launcher, "seed", AsyncMock())
+    processes = [AsyncMock(pid=pid) for pid in range(3)]
+    for process in processes:
+        process.wait.return_value = 1
+    spawn = AsyncMock(side_effect=processes)
+    stop = AsyncMock()
+    monkeypatch.setattr(launcher.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(launcher, "stop_process", stop)
+    try:
+        with pytest.raises(RuntimeError, match="A demo process exited"):
+            await launcher.main()
+        frontend_command = spawn.call_args_list[2].args
+        assert frontend_command[frontend_command.index("--hostname") + 1] == "127.0.0.1"
+        assert stop.await_args_list == [call(process) for process in reversed(processes)]
+    finally:
+        get_settings.cache_clear()
 
 
 async def test_seed_rejects_regular_mode_before_touching_database() -> None:

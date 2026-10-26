@@ -165,7 +165,7 @@ for (const theme of ["light", "dark"]) {
         "Planning was interrupted. Create a new run.",
       );
       await expect(page.getByRole("link", { name: "Create new run" })).toHaveAttribute("href", "/");
-      await expect(page.getByRole("button", { name: "Confirm and run" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Start run" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Retry step" })).toHaveCount(0);
     }
     await page.getByRole("link", { name: "Create new run" }).click();

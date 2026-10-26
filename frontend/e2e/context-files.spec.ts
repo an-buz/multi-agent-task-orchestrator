@@ -95,7 +95,7 @@ for (const theme of ["dark", "light"]) {
     await page.getByRole("combobox", { name: "Workflow", exact: true }).click();
     await page.getByRole("option", { name: "Files workflow" }).click();
     await page.getByRole("button", { name: "Decompose and Run" }).click();
-    await expect(page.getByRole("region", { name: "Plan preview" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Plan preview" })).toBeVisible();
     expect(submitted?.file_ids).toEqual([fileId]);
     expect(submitted?.context_text).toBe("Keep this note");
   });

@@ -144,7 +144,7 @@ async def main(*, prepare_only: bool = False) -> None:
                 str(next_cli),
                 "dev",
                 "--hostname",
-                "localhost",
+                "127.0.0.1",
                 "--port",
                 str(ports.frontend_port),
             ],
