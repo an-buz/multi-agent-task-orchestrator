@@ -117,8 +117,8 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <section className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4 lg:px-8">
+      <section className="flex min-h-screen min-w-0 flex-col">
+        <header className="flex min-h-20 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4 lg:px-8">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Orchestration Center</h1>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -139,7 +139,7 @@ export default function DashboardPage() {
             </span>
           </div>
         </header>
-        <div className="grid min-h-[calc(100vh-80px)] xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid flex-1 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-5 p-5 lg:p-6">
             {monitoredRun && <RunDecisions run={monitoredRun} />}
             {monitoredRun?.status === "AWAITING_CONFIRMATION" && monitoredRun.plan && (

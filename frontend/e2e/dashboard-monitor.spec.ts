@@ -101,6 +101,46 @@ async function emit(
 }
 
 for (const theme of ["dark", "light"]) {
+  test(`Dashboard cold start fits the viewport in ${theme}`, async ({ page }) => {
+    await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+    await page.route("**/api/v1/**", (route) =>
+      route.fulfill({
+        headers: { "access-control-allow-origin": "*" },
+        json: { items: [], total: 0 },
+      }),
+    );
+    await page.setViewportSize({ width: 1632, height: 1290 });
+    await page.goto("/");
+    await expect(
+      page.getByText("No runs yet. Start a workflow to monitor its execution."),
+    ).toBeVisible();
+    await expect(page.getByText("No events yet.")).toBeVisible();
+    for (const width of [1632, 1440, 1280]) {
+      await page.setViewportSize({ width, height: 1290 });
+      await expect(async () => {
+        const dimensions = await page.evaluate(() => ({
+          height: document.documentElement.scrollHeight,
+          width: document.documentElement.scrollWidth,
+          viewportHeight: window.innerHeight,
+          viewportWidth: window.innerWidth,
+        }));
+        expect(dimensions.height).toBe(dimensions.viewportHeight);
+        expect(dimensions.width).toBe(dimensions.viewportWidth);
+      }).toPass();
+    }
+    // Small windows must retain natural scrolling so every panel stays reachable.
+    await page.setViewportSize({ width: 1024, height: 720 });
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThan(720);
+    const inspectorFooter = page
+      .getByLabel("Agent inspector")
+      .getByText("Waiting for a run", {
+        exact: true,
+      })
+      .last();
+    await inspectorFooter.scrollIntoViewIfNeeded();
+    await expect(inspectorFooter).toBeInViewport();
+  });
+
   test(`Dashboard follows the latest active agent in ${theme}`, async ({ page }) => {
     await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
     await installSSE(page);
