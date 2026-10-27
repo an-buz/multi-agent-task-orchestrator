@@ -61,8 +61,58 @@ async def test_terminal_response_checkpoint_survives_interruption_without_repeat
     assert not first.checkpoint
 
 
+@pytest.mark.parametrize(
+    ("original_model", "replacement_model"),
+    [("claude-sonnet", "gpt-4o"), ("gpt-4o", "claude-sonnet")],
+)
+async def test_checkpoint_model_switch_requires_explicit_retry(
+    monkeypatch: pytest.MonkeyPatch, original_model: str, replacement_model: str
+) -> None:
+    repository, run = await make_run([[]])
+    step = repository.saved_steps[0]
+    step.agent_config = {**step.agent_config, "model": original_model, "tools": ["calculator"]}
+    execute_tool = AsyncMock(return_value=json.dumps({"value": 20}))
+    monkeypatch.setattr("app.orchestrator.executor.ToolRuntime.execute", execute_tool)
+    await interrupt_after_save(
+        repository,
+        DAGExecutor(repository, lambda _: FixtureTools()),
+        run,
+        lambda: (
+            ((step.checkpoint or {}).get("turns") or [{}])[0]
+            .get("tools", {})
+            .get("0", {})
+            .get("state")
+            == "done"
+        ),
+    )
+    checkpoint = dict(step.checkpoint)
+    usage = (step.tokens_prompt, step.tokens_completion)
+    repository.agent.model = replacement_model
+    repository.agent.tools = ["calculator"]
+    step.requires_reconfiguration = True
+    factory = Mock(side_effect=AssertionError("Recovery must not call the replacement provider"))
+    await DAGExecutor(repository, factory).execute(run)
+    assert run.status == step.status == "FAILED"
+    assert step.error["code"] == "checkpoint_configuration_changed"
+    assert step.agent_config["model"] == original_model
+    assert step.checkpoint == checkpoint
+    assert (step.tokens_prompt, step.tokens_completion) == usage
+    factory.assert_not_called()
+    execute_tool.assert_awaited_once()
+    await RunService(repository).retry(run.id, 1)
+    assert not step.checkpoint
+    await DAGExecutor(repository, lambda _: FixtureTools()).execute(run)
+    assert run.status == "COMPLETED"
+    assert step.agent_config["model"] == replacement_model
+    assert execute_tool.await_count == 2
+    assert step.tokens_prompt > usage[0]
+
+
 @pytest.mark.parametrize("boundary", ["response", "started", "done"])
-async def test_tool_checkpoint_recovery(monkeypatch: pytest.MonkeyPatch, boundary: str) -> None:
+@pytest.mark.parametrize("reconfigured", [False, True])
+async def test_tool_checkpoint_recovery(
+    monkeypatch: pytest.MonkeyPatch, boundary: str, reconfigured: bool
+) -> None:
     repository, run = await make_run([[]])
     step = repository.saved_steps[0]
     step.agent_config["tools"] = ["calculator"]
@@ -85,6 +135,9 @@ async def test_tool_checkpoint_recovery(monkeypatch: pytest.MonkeyPatch, boundar
         repository, DAGExecutor(repository, lambda _: provider), run, reached
     )
     assert step.tokens_prompt == 10 and step.tokens_completion == 4
+    if reconfigured:
+        repository.agent.tools = ["calculator"]
+        step.requires_reconfiguration = True
     resumed = FixtureTools()
     resumed.calls = 1
     await DAGExecutor(repository, lambda _: resumed).execute(run)

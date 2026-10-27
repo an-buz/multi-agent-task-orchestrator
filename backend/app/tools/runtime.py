@@ -52,7 +52,7 @@ SCHEMAS: dict[str, tuple[type[Arguments], str]] = {
 }
 
 
-def calculate(expression: str) -> float:
+def calculate(expression: str) -> int | float:
     """Evaluate a small arithmetic AST, never Python code."""
     root = ast.parse(expression, mode="eval")
     if len(list(ast.walk(root))) > 100:
@@ -67,9 +67,9 @@ def calculate(expression: str) -> float:
         ast.Pow: operator.pow,
     }
 
-    def visit(node: ast.AST) -> float:
+    def visit(node: ast.AST) -> int | float:
         if isinstance(node, ast.Constant) and type(node.value) in {int, float}:
-            value = float(cast(int | float, node.value))
+            value = cast(int | float, node.value)
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd | ast.USub):
             value = visit(node.operand) * (-1 if isinstance(node.op, ast.USub) else 1)
         elif isinstance(node, ast.BinOp) and type(node.op) in binary:
@@ -79,9 +79,9 @@ def calculate(expression: str) -> float:
             value = binary[type(node.op)](left, right)
         else:
             raise ToolError("Only arithmetic expressions are supported.")
-        if not isinstance(value, float | int) or not math.isfinite(value) or abs(value) > 1e100:
+        if not isinstance(value, float | int) or abs(value) > 10**100 or not math.isfinite(value):
             raise ToolError("Result is outside the supported range.")
-        return float(value)
+        return value
 
     return visit(root.body)
 

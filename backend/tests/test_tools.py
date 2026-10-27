@@ -41,6 +41,31 @@ def test_calculator_arithmetic() -> None:
     assert calculate("7 // 2 + 7 % 2 + 2 ** 3") == 12
 
 
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("9007199254740993 - 9007199254740992", 1),
+        ("9007199254740993", 9007199254740993),
+        ("-(9007199254740993) + 9007199254740992", -1),
+        ("(10 ** 30 + 1) % 10", 1),
+        ("(10 ** 30 + 1) // 3", (10**30 + 1) // 3),
+    ],
+)
+async def test_calculator_preserves_integer_precision(expression: str, expected: int) -> None:
+    assert calculate(expression) == expected
+    result = json.loads(
+        await ToolRuntime(["calculator"]).execute(call("calculator", expression=expression))
+    )
+    assert result == {"value": expected}
+    assert type(result["value"]) is int
+
+
+@pytest.mark.parametrize("expression", ["(10 ** 100) ** 100", "10 ** 101", "1e309"])
+def test_calculator_rejects_large_intermediate_results(expression: str) -> None:
+    with pytest.raises(ToolError):
+        calculate(expression)
+
+
 async def test_tool_permissions_file_scope_and_strict_arguments() -> None:
     runtime = ToolRuntime(["calculator", "file_reader"], {"attached": "abcdef"})
     assert json.loads(await runtime.execute(call("calculator", expression="2+3"))) == {"value": 5}

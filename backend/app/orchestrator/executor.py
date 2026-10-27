@@ -646,7 +646,21 @@ class DAGExecutor:
             ):
                 ready = False
                 continue
-            step.agent_config = snapshot_agent(agent)
+            replacement = snapshot_agent(agent)
+            if step.checkpoint and replacement != step.agent_config:
+                # Native conversations and tool receipts belong to the original snapshot.
+                # Only an explicit retry may discard them and start with new permissions.
+                step.status = "FAILED"
+                step.error = {
+                    "code": "checkpoint_configuration_changed",
+                    "message": (
+                        "Agent configuration changed during interrupted execution. "
+                        "Retry the step explicitly to use the new configuration."
+                    ),
+                }
+                self.result_event(run, step)
+                continue
+            step.agent_config = replacement
             step.agent_name = agent.name
             step.requires_reconfiguration = False
         return ready
