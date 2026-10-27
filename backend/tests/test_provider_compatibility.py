@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from anthropic.types import Message
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.llm.context import check_context
 from app.llm.provider import IncompleteLLMResponse, ToolCall
 from app.llm.providers import AnthropicProvider, OpenAIProvider, anthropic_messages
@@ -23,10 +23,15 @@ from test_planner import ScriptedMock, planning_run
 from test_tools import tool_step
 
 
-@pytest.mark.parametrize("provider_name", ["anthropic", "openai"])
 @pytest.mark.parametrize("tools", [False, True])
 @pytest.mark.parametrize(
-    "ending", ["normal", "truncated", "refused", "filtered", "tool", "truncated_tool"]
+    ("provider_name", "ending"),
+    [
+        (provider, ending)
+        for provider in ("anthropic", "openai")
+        for ending in ("normal", "truncated", "refused", "filtered", "tool", "truncated_tool")
+        if not (provider == "anthropic" and ending == "filtered")
+    ],
 )
 async def test_sdk_requests_and_stop_metadata(
     monkeypatch: pytest.MonkeyPatch, provider_name: str, tools: bool, ending: str
@@ -38,7 +43,6 @@ async def test_sdk_requests_and_stop_metadata(
             "normal": "end_turn",
             "truncated": "max_tokens",
             "refused": "refusal",
-            "filtered": "refusal",
             "tool": "tool_use",
             "truncated_tool": "max_tokens",
         }[ending]
@@ -53,10 +57,8 @@ async def test_sdk_requests_and_stop_metadata(
             ]
         native = Message.model_validate(raw)
         create = AsyncMock(return_value=native)
-        monkeypatch.setattr(
-            "app.llm.providers.AsyncAnthropic",
-            Mock(return_value=SimpleNamespace(messages=SimpleNamespace(create=create))),
-        )
+        constructor = Mock(return_value=SimpleNamespace(messages=SimpleNamespace(create=create)))
+        monkeypatch.setattr("app.llm.providers.AsyncAnthropic", constructor)
         provider = AnthropicProvider("fixture-placeholder")
         key = "claude-sonnet"
     else:
@@ -84,14 +86,12 @@ async def test_sdk_requests_and_stop_metadata(
             )
         native = ChatCompletion.model_validate(raw)
         create = AsyncMock(return_value=native)
-        monkeypatch.setattr(
-            "app.llm.providers.AsyncOpenAI",
-            Mock(
-                return_value=SimpleNamespace(
-                    chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-                )
-            ),
+        constructor = Mock(
+            return_value=SimpleNamespace(
+                chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+            )
         )
+        monkeypatch.setattr("app.llm.providers.AsyncOpenAI", constructor)
         provider = OpenAIProvider("fixture-placeholder")
         key = "gpt-4o"
     if tools:
@@ -111,6 +111,9 @@ async def test_sdk_requests_and_stop_metadata(
         )
     else:
         response = await provider.complete("System", "User", key, temperature=0.2, max_tokens=1024)
+    constructor.assert_called_once_with(
+        api_key="fixture-placeholder", max_retries=0, timeout=get_settings().llm_request_timeout
+    )
     kwargs = create.await_args.kwargs
     assert kwargs["model"] == get_model_registry()[key].model_id
     assert kwargs["temperature"] == 0.2

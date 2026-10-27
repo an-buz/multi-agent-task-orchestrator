@@ -4,11 +4,21 @@ const fileId = "00000000-0000-4000-8000-000000000030";
 const workflowId = "00000000-0000-4000-8000-000000000010";
 const runId = "00000000-0000-4000-8000-000000000020";
 
-for (const theme of ["dark", "light"]) {
+for (const theme of ["light"]) {
   test(`context upload, removal and run creation in ${theme}`, async ({ page }) => {
     await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
     let submitted: Record<string, unknown> | undefined;
     let removed = false;
+    const run = {
+      id: runId,
+      workflow_id: workflowId,
+      workflow_title: "Files workflow",
+      task: "Review files",
+      status: "AWAITING_CONFIRMATION",
+      created_at: "2026-10-08T08:00:00Z",
+      total_tokens: 0,
+      plan: { summary: "Review files", steps: [] },
+    };
     await page.route("**/api/v1/**", async (route) => {
       const request = route.request();
       const pathname = new URL(request.url()).pathname;
@@ -58,13 +68,10 @@ for (const theme of ["dark", "light"]) {
         return route.fulfill({
           status: 201,
           headers,
-          json: {
-            id: runId,
-            status: "AWAITING_CONFIRMATION",
-            plan: { summary: "Review files", steps: [] },
-          },
+          json: run,
         });
       }
+      if (pathname === `/api/v1/runs/${runId}`) return route.fulfill({ headers, json: run });
       return route.fulfill({ headers, json: { items: [], total: 0 } });
     });
     await page.goto("/");

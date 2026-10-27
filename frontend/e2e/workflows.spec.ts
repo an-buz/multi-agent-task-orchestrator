@@ -45,71 +45,85 @@ type WorkflowResponse = {
   updated_at: string;
 };
 
-test("creates and saves a connected sequential workflow", async ({ page }) => {
-  let savedWorkflow: WorkflowResponse | undefined;
-  await page.route("**/*", async (route) => {
-    const requestUrl = new URL(route.request().url());
-    const cors = { "access-control-allow-origin": "http://localhost:3000" };
-    if (requestUrl.pathname.startsWith("/api/v1/") && route.request().method() === "OPTIONS") {
-      await route.fulfill({
-        status: 204,
-        headers: {
-          ...cors,
-          "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-          "access-control-allow-headers": "content-type",
-        },
-      });
-      return;
-    }
-    if (requestUrl.pathname === "/api/v1/agents") {
-      await route.fulfill({ json: { items: agents, total: agents.length }, headers: cors });
-      return;
-    }
-
-    if (requestUrl.pathname === "/api/v1/workflows") {
-      if (route.request().method() === "POST") {
-        const input = route.request().postDataJSON() as Omit<
-          WorkflowResponse,
-          "id" | "created_at" | "updated_at"
-        >;
-        savedWorkflow = {
-          ...input,
-          id: "00000000-0000-4000-8000-000000000010",
-          created_at: timestamp,
-          updated_at: timestamp,
-        };
-        await route.fulfill({ status: 201, json: savedWorkflow, headers: cors });
+for (const preset of [
+  { label: "Sequential chain", dependencies: [[], [1], [2]], executionType: "sequential" },
+  { label: "Parallel + aggregator", dependencies: [[], [], [1, 2]], executionType: "parallel" },
+  // The freeform preset clears edges; independent nodes are inferred as parallel on save.
+  { label: "Hybrid graph", dependencies: [[], [], []], executionType: "parallel" },
+]) {
+  test(`creates and saves the graph selected by ${preset.label}`, async ({ page }) => {
+    let savedWorkflow: WorkflowResponse | undefined;
+    await page.route("**/*", async (route) => {
+      const requestUrl = new URL(route.request().url());
+      const cors = { "access-control-allow-origin": "http://localhost:3000" };
+      if (requestUrl.pathname.startsWith("/api/v1/") && route.request().method() === "OPTIONS") {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            ...cors,
+            "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+            "access-control-allow-headers": "content-type",
+          },
+        });
+        return;
+      }
+      if (requestUrl.pathname === "/api/v1/agents") {
+        await route.fulfill({ json: { items: agents, total: agents.length }, headers: cors });
         return;
       }
 
-      await route.fulfill({
-        json: {
-          items: savedWorkflow ? [savedWorkflow] : [],
-          total: savedWorkflow ? 1 : 0,
-        },
-        headers: cors,
-      });
-      return;
-    }
+      if (requestUrl.pathname === "/api/v1/workflows") {
+        if (route.request().method() === "POST") {
+          const input = route.request().postDataJSON() as Omit<
+            WorkflowResponse,
+            "id" | "created_at" | "updated_at"
+          >;
+          savedWorkflow = {
+            ...input,
+            id: "00000000-0000-4000-8000-000000000010",
+            created_at: timestamp,
+            updated_at: timestamp,
+          };
+          await route.fulfill({ status: 201, json: savedWorkflow, headers: cors });
+          return;
+        }
 
-    await route.continue();
+        await route.fulfill({
+          json: {
+            items: savedWorkflow ? [savedWorkflow] : [],
+            total: savedWorkflow ? 1 : 0,
+          },
+          headers: cors,
+        });
+        return;
+      }
+
+      await route.continue();
+    });
+
+    await page.goto("/workflows");
+    await page.getByRole("button", { name: "New workflow" }).click();
+    await page.getByPlaceholder("Workflow title").fill("Local E2E workflow");
+    await page.getByRole("button", { name: "Developer claude-sonnet" }).click();
+    await page.getByRole("button", { name: "Developer claude-sonnet" }).click();
+    await page.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
+    await page.getByRole("combobox", { name: "Arrange preset" }).click();
+    await page.getByRole("option", { name: preset.label, exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Arrange preset" })).toContainText(
+      preset.label,
+    );
+
+    await expect(page.locator(".react-flow__node")).toHaveCount(3);
+    await expect(page.locator(".react-flow__edge-path")).toHaveCount(
+      preset.dependencies.flat().length,
+    );
+    await expect(page.getByText("Graph is valid.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Save workflow" }).click();
+    const workflowCard = page.locator("article").filter({ hasText: "Local E2E workflow" });
+    await expect(workflowCard).toContainText(preset.executionType);
+    await expect(workflowCard).toContainText("3 steps");
+    expect(savedWorkflow?.execution_type).toBe(preset.executionType);
+    expect(savedWorkflow?.steps.map((step) => step.depends_on)).toEqual(preset.dependencies);
   });
-
-  await page.goto("/workflows");
-  await page.getByRole("button", { name: "New workflow" }).click();
-  await page.getByPlaceholder("Workflow title").fill("Local E2E workflow");
-  await page.getByRole("button", { name: "Developer claude-sonnet" }).click();
-  await page.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
-  await page.getByRole("combobox", { name: "Arrange preset" }).click();
-  await page.getByRole("option", { name: "Sequential chain" }).click();
-
-  await expect(page.locator(".react-flow__node")).toHaveCount(2);
-  await expect(page.locator(".react-flow__edge-path")).toHaveCount(1);
-  await expect(page.getByText("Graph is valid.")).toBeVisible();
-
-  await page.getByRole("button", { name: "Save workflow" }).click();
-  const workflowCard = page.locator("article").filter({ hasText: "Local E2E workflow" });
-  await expect(workflowCard).toContainText("sequential");
-  await expect(workflowCard).toContainText("2 steps");
-  expect(savedWorkflow?.steps.map((step) => step.depends_on)).toEqual([[], [1]]);
-});
+}

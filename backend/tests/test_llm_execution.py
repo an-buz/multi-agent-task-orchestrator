@@ -1,10 +1,8 @@
-"""Transient failures use one retry policy; SDK adapters preserve agent options."""
+"""Transient failures use one retry policy with bounded attempts."""
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
-from app.llm.providers import AnthropicProvider, OpenAIProvider
 from app.llm.retry import llm_retrying
 from tenacity import wait_none
 
@@ -36,56 +34,3 @@ async def test_retry_exhaustion_and_non_retryable_failure() -> None:
                 with attempt:
                     await call()
         assert call.await_count == expected
-
-
-async def test_anthropic_adapter_parameters_and_usage(monkeypatch: pytest.MonkeyPatch) -> None:
-    create = AsyncMock(
-        return_value=SimpleNamespace(
-            content=[SimpleNamespace(type="text", text="Fixture")],
-            stop_reason="end_turn",
-            usage=SimpleNamespace(input_tokens=17, output_tokens=11),
-        )
-    )
-    constructor = Mock(return_value=SimpleNamespace(messages=SimpleNamespace(create=create)))
-    monkeypatch.setattr("app.llm.providers.AsyncAnthropic", constructor)
-    response = await AnthropicProvider("test-placeholder").complete(
-        "System",
-        "User",
-        "claude-sonnet",
-        temperature=0.2,
-        max_tokens=1024,
-    )
-    constructor.assert_called_once_with(api_key="test-placeholder", max_retries=0, timeout=60.0)
-    assert create.call_args.kwargs["temperature"] == 0.2
-    assert create.call_args.kwargs["max_tokens"] == 1024
-    assert response.usage.input_tokens == 17
-
-
-async def test_openai_adapter_parameters_and_usage(monkeypatch: pytest.MonkeyPatch) -> None:
-    create = AsyncMock(
-        return_value=SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content="Fixture", refusal=None), finish_reason="stop"
-                )
-            ],
-            usage=SimpleNamespace(prompt_tokens=17, completion_tokens=11),
-        )
-    )
-    constructor = Mock(
-        return_value=SimpleNamespace(
-            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-        )
-    )
-    monkeypatch.setattr("app.llm.providers.AsyncOpenAI", constructor)
-    response = await OpenAIProvider("test-placeholder").complete(
-        "System",
-        "User",
-        "gpt-4o",
-        temperature=0.2,
-        max_tokens=1024,
-    )
-    constructor.assert_called_once_with(api_key="test-placeholder", max_retries=0, timeout=60.0)
-    assert create.call_args.kwargs["temperature"] == 0.2
-    assert create.call_args.kwargs["max_completion_tokens"] == 1024
-    assert response.usage.output_tokens == 11

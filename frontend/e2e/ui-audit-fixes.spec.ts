@@ -18,8 +18,9 @@ const agent = {
   updated_at: timestamp,
 };
 
-async function mockApplication(page: Page) {
+async function mockApplication(page: Page, existingRun = true) {
   const state = {
+    listedRun: existingRun,
     config: {
       default_model: "claude-sonnet",
       temperature: 0.7,
@@ -54,6 +55,7 @@ async function mockApplication(page: Page) {
       },
     },
     exportFailure: false,
+    savedConfig: null as Record<string, unknown> | null,
   };
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -69,7 +71,10 @@ async function mockApplication(page: Page) {
         },
       });
     if (url.pathname.endsWith("/settings/config")) {
-      if (request.method() === "PATCH") Object.assign(state.config, request.postDataJSON());
+      if (request.method() === "PATCH") {
+        state.savedConfig = request.postDataJSON();
+        Object.assign(state.config, state.savedConfig);
+      }
       return route.fulfill({ json: state.config, headers });
     }
     if (url.pathname.endsWith("/agents/models"))
@@ -99,7 +104,14 @@ async function mockApplication(page: Page) {
     if (url.pathname.endsWith("/agents"))
       return route.fulfill({ headers, json: { items: [agent], total: 1 } });
     if (url.pathname === "/api/v1/runs" && request.method() === "GET")
-      return route.fulfill({ headers, json: { items: [state.run], total: 1 } });
+      return route.fulfill({
+        headers,
+        json: { items: state.listedRun ? [state.run] : [], total: state.listedRun ? 1 : 0 },
+      });
+    if (url.pathname === "/api/v1/runs" && request.method() === "POST") {
+      state.listedRun = true;
+      return route.fulfill({ status: 201, headers, json: state.run });
+    }
     if (url.pathname.endsWith("/workflows"))
       return route.fulfill({
         headers,
@@ -190,7 +202,7 @@ for (const theme of ["dark", "light"] as const) {
     });
 
     test("saved defaults survive reload and populate a new agent", async ({ page }) => {
-      await mockApplication(page);
+      const state = await mockApplication(page);
       await page.goto("/settings");
       await expect(page.getByRole("combobox", { name: "Default model" })).toContainText(
         "Claude Sonnet",
@@ -201,6 +213,11 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByLabel("Default max tokens (1–8192)").fill("2048");
       await page.getByRole("button", { name: "Save changes" }).click();
       await expect(page.getByText("Settings saved successfully.")).toBeVisible();
+      expect(state.savedConfig).toEqual({
+        default_model: "claude-haiku",
+        temperature: 0.3,
+        max_tokens: 2048,
+      });
       await page.reload();
       await expect(page.getByRole("combobox", { name: "Default model" })).toContainText(
         "Claude Haiku",
@@ -240,10 +257,11 @@ for (const theme of ["dark", "light"] as const) {
     });
 
     test("Cancel in Plan preview cancels the saved run", async ({ page }) => {
-      const state = await mockApplication(page);
+      const state = await mockApplication(page, false);
       await page.goto("/");
-      await expect(page.getByRole("dialog", { name: "Plan preview" })).toBeVisible();
-      await page.keyboard.press("Escape");
+      await expect(
+        page.getByText("No runs yet. Start a workflow to monitor its execution."),
+      ).toBeVisible();
       await page.getByRole("combobox", { name: "Workflow", exact: true }).click();
       await page.getByRole("option", { name: "QA workflow" }).click();
       await page.getByRole("button", { name: "Decompose and Run" }).click();
@@ -298,20 +316,6 @@ for (const theme of ["dark", "light"] as const) {
         );
       }
       expect(pageErrors).toEqual([]);
-    });
-
-    test("preset label follows the selected graph arrangement", async ({ page }) => {
-      await mockApplication(page);
-      await page.goto("/workflows");
-      await page.getByRole("button", { name: "New workflow" }).click();
-      await page.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
-      await page.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
-      const preset = page.getByRole("combobox", { name: "Arrange preset" });
-      for (const label of ["Sequential chain", "Parallel + aggregator", "Hybrid graph"]) {
-        await preset.click();
-        await page.getByRole("option", { name: label, exact: true }).click();
-        await expect(preset).toContainText(label);
-      }
     });
   });
 }

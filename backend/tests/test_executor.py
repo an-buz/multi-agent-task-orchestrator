@@ -235,19 +235,39 @@ async def test_cancellation_does_not_leave_detached_calls(monkeypatch: pytest.Mo
     repository, run = await make_run([[], []])
     waiting = asyncio.Event()
     provider = MockLLMProvider()
+    started = set()
+    closed = set()
 
     async def blocked(*args: object, **kwargs: object) -> LLMResponse:
-        waiting.set()
-        await asyncio.Event().wait()
-        raise AssertionError("unreachable")
+        current = asyncio.current_task()
+        assert current is not None
+        started.add(current)
+        if len(started) == 2:
+            waiting.set()
+        try:
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+        finally:
+            # Cleanup must be awaited, not merely scheduled by task.cancel().
+            await asyncio.sleep(0)
+            closed.add(current)
 
     monkeypatch.setattr(provider, "complete", blocked)
     task = asyncio.create_task(DAGExecutor(repository, lambda _: provider).execute(run))
-    await waiting.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert all(step.status == "IN_PROGRESS" for step in repository.saved_steps)
+    try:
+        await asyncio.wait_for(waiting.wait(), 3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 3)
+        assert len(started) == 2
+        assert closed == started
+        assert all(child.done() for child in started)
+        assert all(step.status == "IN_PROGRESS" for step in repository.saved_steps)
+    finally:
+        task.cancel()
+        for child in started:
+            child.cancel()
+        await asyncio.gather(task, *started, return_exceptions=True)
 
 
 async def test_retry_preserves_completed_steps_and_resumes_dependents() -> None:

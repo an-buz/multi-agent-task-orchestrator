@@ -234,16 +234,40 @@ test("agent form schema trims text and rejects invalid values", () => {
   }
 });
 
-for (const status of [
-  "PENDING",
-  "IN_PROGRESS",
-  "COMPLETED",
-  "FAILED",
-  "CANCELLED",
-  "PLANNING",
-  "AWAITING_CONFIRMATION",
+for (const [status, token] of [
+  ["PENDING", "pending"],
+  ["IN_PROGRESS", "progress"],
+  ["COMPLETED", "completed"],
+  ["FAILED", "failed"],
+  ["CANCELLED", "pending"],
+  ["PLANNING", "progress"],
+  ["AWAITING_CONFIRMATION", "pending"],
+  ["PAUSED", "warning"],
+  ["UNAVAILABLE", "warning"],
 ]) {
-  test(`StatusBadge renders ${status}`, () => {
-    assert.ok(renderToStaticMarkup(createElement(StatusBadge, { status })).includes(status));
+  test(`StatusBadge renders ${status} with its semantic color and indicator`, () => {
+    const html = renderToStaticMarkup(createElement(StatusBadge, { status }));
+    assert.ok(html.endsWith(`>${status}</span>`));
+    assert.ok(html.includes(`style="color:var(--status-${token})"`));
+    assert.match(html, /<span class="[^"]*rounded-full[^\"]*bg-current[^\"]*"><\/span>/);
+  });
+}
+
+for (const [status, label, tone] of [
+  ["COMPLETED", "Completed", "text-status-completed"],
+  ["IN_PROGRESS", "In Progress", "text-status-warning"],
+  ["PLANNING", "Planning", "text-status-warning"],
+  ["FAILED", "Failed", "text-destructive"],
+  ["PENDING", "Pending", "text-muted-foreground"],
+  ["CANCELLED", "Cancelled", "text-muted-foreground"],
+  ["AWAITING_CONFIRMATION", "Awaiting Confirmation", "text-muted-foreground"],
+  ["PAUSED", "Paused", "text-muted-foreground"],
+  ["UNAVAILABLE", "Unavailable", "text-muted-foreground"],
+]) {
+  test(`pipeline StatusBadge renders ${status} with its readable label and tone`, () => {
+    const html = renderToStaticMarkup(createElement(StatusBadge, { status, variant: "pipeline" }));
+    assert.ok(html.endsWith(`>${label}</span>`));
+    assert.match(html, new RegExp(`class="[^"]*\\b${tone}\\b[^"]*"`));
+    assert.match(html, /<i class="[^"]*rounded-full[^\"]*bg-current[^\"]*"><\/i>/);
   });
 }

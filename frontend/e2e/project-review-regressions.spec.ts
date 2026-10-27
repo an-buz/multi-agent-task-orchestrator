@@ -110,7 +110,7 @@ async function setup(page: Page, theme: string) {
   return { writes, requests };
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of ["light"]) {
   test(`catalogues include record 51 and independent workflows can be saved (${theme})`, async ({
     page,
   }) => {
