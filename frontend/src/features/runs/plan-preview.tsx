@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
@@ -17,31 +18,55 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Textarea } from "@/components/ui/textarea";
 import { cancelRun, confirmRun, editRunPlan } from "./api";
 import { runSteps } from "./model";
-import { cacheRun, runsQueryKey } from "./cache";
-import { editedPlanSteps, planFormValues, planSchema, type PlanFormValues } from "./plan-schema";
+import { cacheRun, runQueryKey, runsQueryKey } from "./cache";
+import {
+  editedPlanSteps,
+  planFormValues,
+  planSchema,
+  samePlanTasks,
+  type PlanFormValues,
+} from "./plan-schema";
 import type { RunDetails } from "./types";
 
 export function PlanPreview({ run }: { run: RunDetails }) {
   const client = useQueryClient();
   const steps = runSteps(run);
+  const latestValues = useMemo(() => planFormValues(steps), [steps]);
   const form = useForm<PlanFormValues>({
     resolver: zodResolver(planSchema),
-    defaultValues: planFormValues(steps),
+    defaultValues: latestValues,
   });
   const tasks = useWatch({ control: form.control, name: "tasks" });
+  const reviewed = useWatch({ control: form.control, name: "expected_subtasks" });
+  const changed = !samePlanTasks(reviewed, latestValues.expected_subtasks);
+  const { isDirty } = form.formState;
+  const { reset } = form;
   const mutation = useMutation({
     mutationFn: async (action: "confirm" | "cancel") => {
       if (action === "cancel") return cancelRun(run.id);
       const values = planSchema.parse(form.getValues());
-      await editRunPlan(run.id, editedPlanSteps(steps, values));
-      return confirmRun(run.id);
+      if (!samePlanTasks(values.expected_subtasks, latestValues.expected_subtasks)) {
+        throw new Error("The plan changed. Reload the latest plan before starting.");
+      }
+      const saved = await editRunPlan(
+        run.id,
+        editedPlanSteps(steps, values),
+        values.expected_subtasks,
+      );
+      reset(planFormValues(runSteps(saved)));
+      await cacheRun(client, saved);
+      return confirmRun(run.id, planFormValues(runSteps(saved)).expected_subtasks);
     },
+    onError: () => client.invalidateQueries({ queryKey: runQueryKey(run.id), exact: true }),
     onSuccess: async (updated) => {
       await cacheRun(client, updated);
       await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
     },
   });
   const busy = mutation.isPending;
+  useEffect(() => {
+    if (changed && !isDirty && !busy) reset(latestValues);
+  }, [changed, isDirty, busy, reset, latestValues]);
   return (
     <Dialog
       defaultOpen
@@ -90,6 +115,22 @@ export function PlanPreview({ run }: { run: RunDetails }) {
             </FieldGroup>
           </div>
           <div className="flex shrink-0 flex-col gap-3">
+            {changed && (
+              <div role="alert" className="flex flex-col gap-2 text-sm">
+                <p>
+                  The plan changed in another session. Reload it before starting. Your unsaved edits
+                  will be replaced.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => reset(latestValues)}
+                >
+                  Reload latest plan
+                </Button>
+              </div>
+            )}
             {mutation.isError && (
               <p role="alert" className="text-destructive">
                 {mutation.error.message}
@@ -106,7 +147,9 @@ export function PlanPreview({ run }: { run: RunDetails }) {
               </Button>
               <Button
                 type="submit"
-                disabled={busy || !tasks.length || tasks.some(({ task }) => !task.trim())}
+                disabled={
+                  busy || changed || !tasks.length || tasks.some(({ task }) => !task.trim())
+                }
               >
                 {busy && mutation.variables === "confirm" ? "Starting…" : "Start run"}
               </Button>

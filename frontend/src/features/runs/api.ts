@@ -90,17 +90,24 @@ export function waitForRunPlan(id: string, signal?: AbortSignal): Promise<RunDet
   });
 }
 
-export function confirmRun(id: string): Promise<RunDetails> {
-  return apiRequest<RunDetails>(`/runs/${id}/confirm`, { method: "POST" });
+export function confirmRun(
+  id: string,
+  expectedSubtasks?: Record<string, string>,
+): Promise<RunDetails> {
+  return apiRequest<RunDetails>(`/runs/${id}/confirm`, {
+    method: "POST",
+    body: expectedSubtasks ? JSON.stringify({ expected_subtasks: expectedSubtasks }) : undefined,
+  });
 }
 
 export function editRunPlan(
   id: string,
   plan: NonNullable<RunDetails["plan"]>,
+  expectedSubtasks?: Record<string, string>,
 ): Promise<RunDetails> {
   return apiRequest<RunDetails>(`/runs/${id}/plan`, {
     method: "PATCH",
-    body: JSON.stringify({ steps: plan }),
+    body: JSON.stringify({ steps: plan, expected_subtasks: expectedSubtasks }),
   });
 }
 

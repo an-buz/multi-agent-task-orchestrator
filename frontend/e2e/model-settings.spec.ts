@@ -14,6 +14,7 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
           provider: "anthropic",
           tier: "balanced",
           context_window: 200000,
+          max_output_tokens: 128000,
           enabled: true,
         },
         {
@@ -22,6 +23,7 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
           provider: "anthropic",
           tier: "fast",
           context_window: 200000,
+          max_output_tokens: 64000,
           enabled: true,
         },
         {
@@ -30,6 +32,7 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
           provider: "openai",
           tier: "balanced",
           context_window: 128000,
+          max_output_tokens: 16384,
           enabled: true,
         },
       ];

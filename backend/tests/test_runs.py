@@ -216,6 +216,40 @@ def test_runs_list_returns_total_and_items(test_client: TestClient) -> None:
     )
 
 
+def test_stale_plan_edits_and_confirmation_preserve_the_latest_plan(
+    test_client: TestClient,
+) -> None:
+    created = test_client.post(
+        "/api/v1/runs", json={"workflow_id": str(WORKFLOW_ID), "task": "Review"}
+    ).json()
+    path = f"/api/v1/runs/{created['id']}"
+    run = test_client.get(path).json()
+    step = run["plan"]["steps"][0]
+    expected = {str(step["step_number"]): step["subtask"]}
+    updated_step = {**step, "subtask": "Updated in another session"}
+    assert (
+        test_client.patch(
+            f"{path}/plan", json={"steps": [updated_step], "expected_subtasks": expected}
+        ).status_code
+        == 200
+    )
+
+    stale = test_client.patch(f"{path}/plan", json={"steps": [step], "expected_subtasks": expected})
+    assert stale.status_code == 409
+    assert (
+        test_client.post(f"{path}/confirm", json={"expected_subtasks": expected}).status_code == 409
+    )
+    latest = test_client.get(path).json()
+    assert latest["status"] == "AWAITING_CONFIRMATION"
+    assert latest["plan"]["steps"][0]["subtask"] == updated_step["subtask"]
+    assert (
+        test_client.post(
+            f"{path}/confirm", json={"expected_subtasks": {"1": updated_step["subtask"]}}
+        ).status_code
+        == 200
+    )
+
+
 def test_run_creation_rejects_unknown_workflow(test_client: TestClient) -> None:
     """Unknown workflow IDs fail before a run is persisted."""
     response = test_client.post(

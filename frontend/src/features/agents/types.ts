@@ -20,6 +20,7 @@ export interface AgentModel {
   model_id: string;
   tier: "fast" | "balanced" | "powerful";
   context_window: number;
+  max_output_tokens: number;
 }
 
 export interface AgentTool {

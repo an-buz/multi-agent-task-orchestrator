@@ -62,6 +62,7 @@ export default function WorkflowsContent() {
   };
 
   function openEditor(workflow?: Workflow) {
+    if (saveMutation.isPending) return;
     setEditorOpen(true);
     setEditing(workflow ?? null);
     setTitle(workflow?.title ?? "");
@@ -127,7 +128,7 @@ export default function WorkflowsContent() {
   }
 
   async function save() {
-    if (!title.trim() || errors.length) return;
+    if (saveMutation.isPending || !title.trim() || errors.length) return;
     const payload: WorkflowInput & { id?: string } = {
       ...(editing ? { id: editing.id } : {}),
       title: title.trim(),
@@ -162,7 +163,7 @@ export default function WorkflowsContent() {
               graphs.
             </p>
           </div>
-          <Button onClick={() => openEditor()} disabled={!agents.length}>
+          <Button onClick={() => openEditor()} disabled={!agents.length || saveMutation.isPending}>
             <Plus size={16} /> New workflow
           </Button>
         </header>
@@ -217,6 +218,7 @@ export default function WorkflowsContent() {
                 <footer className="mt-4 flex justify-end gap-2 border-t border-border pt-3">
                   <Button
                     aria-label={`Edit ${workflow.title}`}
+                    disabled={saveMutation.isPending}
                     onClick={() => openEditor(workflow)}
                     size="icon"
                   >
@@ -254,6 +256,7 @@ export default function WorkflowsContent() {
       )}
       <Dialog
         open={editorOpen}
+        disablePointerDismissal={saveMutation.isPending}
         onOpenChange={(open) => {
           if (!saveMutation.isPending) setEditorOpen(open);
         }}
@@ -267,6 +270,7 @@ export default function WorkflowsContent() {
           <header className="flex flex-wrap items-center gap-3 border-b border-border p-4">
             <Input
               id="workflow-title"
+              disabled={saveMutation.isPending}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="Workflow title"
@@ -275,13 +279,28 @@ export default function WorkflowsContent() {
             <span className="rounded-md bg-status-completed/10 px-3 py-2 text-xs font-medium uppercase text-status-completed">
               {executionType}
             </span>
-            <Button size="sm" variant="secondary" disabled={!canUndo} onClick={undoGraph}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!canUndo || saveMutation.isPending}
+              onClick={undoGraph}
+            >
               Undo
             </Button>
-            <Button size="sm" variant="secondary" disabled={!canRedo} onClick={redoGraph}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!canRedo || saveMutation.isPending}
+              onClick={redoGraph}
+            >
               Redo
             </Button>
-            <Button size="sm" variant="secondary" onClick={autoLayout}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={saveMutation.isPending}
+              onClick={autoLayout}
+            >
               Auto layout
             </Button>
             <Button
@@ -303,7 +322,7 @@ export default function WorkflowsContent() {
                 <Button
                   key={agent.id}
                   variant="ghost"
-                  disabled={agent.available === false}
+                  disabled={saveMutation.isPending || agent.available === false}
                   title={
                     agent.available === false
                       ? "Reconfigure this agent with an enabled model first."
@@ -324,6 +343,7 @@ export default function WorkflowsContent() {
                 </label>
                 <Select
                   value={preset}
+                  disabled={saveMutation.isPending}
                   onValueChange={(value) => {
                     if (!value) return;
                     const kind = value as WorkflowType;
@@ -382,6 +402,10 @@ export default function WorkflowsContent() {
             </aside>
             <div className="workflow-canvas min-w-0 flex-1 bg-background">
               <ReactFlow
+                nodesDraggable={!saveMutation.isPending}
+                nodesConnectable={!saveMutation.isPending}
+                elementsSelectable={!saveMutation.isPending}
+                deleteKeyCode={saveMutation.isPending ? null : "Backspace"}
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={(changes) => {
@@ -420,6 +444,7 @@ export default function WorkflowsContent() {
                   </label>
                   <Textarea
                     id="input-transform"
+                    disabled={saveMutation.isPending}
                     key={`${editing?.id ?? "new"}-${selected.id}`}
                     value={selected.data.inputTransform}
                     onChange={(event) =>
@@ -444,6 +469,7 @@ export default function WorkflowsContent() {
                   </p>
                   <Button
                     variant="ghost"
+                    disabled={saveMutation.isPending}
                     onClick={() => {
                       rememberGraph();
                       setNodes((current) => current.filter((node) => node.id !== selected.id));
@@ -489,6 +515,7 @@ export default function WorkflowsContent() {
           <footer className="flex justify-end gap-2 border-t border-border p-3">
             <Button
               variant="secondary"
+              disabled={saveMutation.isPending}
               onClick={() => setEditorOpen(false)}
               className="rounded-md border border-border px-4 py-2 text-sm text-foreground"
             >

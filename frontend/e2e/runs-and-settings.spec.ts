@@ -135,6 +135,7 @@ test("saves default settings through the settings API", async ({ page }) => {
               model_id: "mock-sonnet",
               tier: "balanced",
               context_window: 128000,
+              max_output_tokens: 128000,
             },
           ],
         },

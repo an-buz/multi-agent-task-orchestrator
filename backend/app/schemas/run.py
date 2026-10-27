@@ -61,7 +61,13 @@ class RunPlan(BaseModel):
     steps: list[RunPlanStep]
 
 
-class RunPlanUpdate(BaseModel):
+class RunPlanConfirmation(BaseModel):
+    """Optional optimistic guard for the tasks reviewed by the caller."""
+
+    expected_subtasks: dict[StepNumber, str] | None = None
+
+
+class RunPlanUpdate(RunPlanConfirmation):
     """Edited subtasks submitted from Plan Preview."""
 
     steps: list[RunPlanStep] = Field(min_length=1, max_length=100)

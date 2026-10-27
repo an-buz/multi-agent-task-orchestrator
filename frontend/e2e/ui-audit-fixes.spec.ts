@@ -82,8 +82,15 @@ async function mockApplication(page: Page) {
               provider: "anthropic",
               tier: "balanced",
               context_window: 200000,
+              max_output_tokens: 128000,
             },
-            { key: "claude-haiku", provider: "anthropic", tier: "fast", context_window: 200000 },
+            {
+              key: "claude-haiku",
+              provider: "anthropic",
+              tier: "fast",
+              context_window: 200000,
+              max_output_tokens: 64000,
+            },
           ],
         },
       });

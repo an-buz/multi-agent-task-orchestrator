@@ -18,7 +18,7 @@ import {
 import { useEffect, useId, useState } from "react";
 import remarkGfm from "remark-gfm";
 import { useForm, useWatch } from "react-hook-form";
-import { agentSchema, type AgentFormValues } from "./form-schema";
+import { agentSchemaForModels, modelTokenLimits, type AgentFormValues } from "./form-schema";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,7 +78,11 @@ export function CreateAgentDialog({
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
   const mutation = useSaveAgent(agent?.id);
   const errorId = useId();
-  const form = useForm<AgentFormValues>({ resolver: zodResolver(agentSchema), defaultValues });
+  const models = catalog.data?.models ?? [];
+  const form = useForm<AgentFormValues>({
+    resolver: zodResolver(agentSchemaForModels(models)),
+    defaultValues,
+  });
   useEffect(() => {
     if (agent) {
       form.reset({
@@ -107,7 +111,6 @@ export function CreateAgentDialog({
   const temperature = useWatch({ control: form.control, name: "temperature" });
   const selectedTools = useWatch({ control: form.control, name: "tools" });
   const selectedModel = useWatch({ control: form.control, name: "model" });
-  const models = catalog.data?.models ?? [];
   const tools = catalog.data?.tools ?? [];
   const selectedModelInfo = models.find((model) => model.key === selectedModel);
 
@@ -281,14 +284,9 @@ export function CreateAgentDialog({
                 const modelInfo = models.find((item) => item.key === model);
                 form.setValue("model", model, { shouldDirty: true });
                 if (modelInfo) {
-                  form.setValue(
-                    "context_window",
-                    Math.min(form.getValues("context_window"), modelInfo.context_window),
-                  );
-                  form.setValue(
-                    "max_tokens",
-                    Math.min(form.getValues("max_tokens"), modelInfo.context_window),
-                  );
+                  const limits = modelTokenLimits(form.getValues(), modelInfo);
+                  form.setValue("context_window", limits.context_window, { shouldDirty: true });
+                  form.setValue("max_tokens", limits.max_tokens, { shouldDirty: true });
                 }
               }}
               disabled={catalog.isLoading || models.length === 0}
@@ -461,6 +459,7 @@ export function CreateAgentDialog({
                     {...form.register("max_tokens", { valueAsNumber: true })}
                     type="number"
                     min="1"
+                    max={selectedModelInfo?.max_output_tokens}
                     aria-label="Max tokens"
                     aria-invalid={Boolean(form.formState.errors.max_tokens)}
                     aria-describedby={

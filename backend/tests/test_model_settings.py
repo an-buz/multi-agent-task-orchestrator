@@ -55,6 +55,11 @@ async def test_only_connected_provider_models_are_exposed(provider: str) -> None
         else {provider}
     )
     assert {model.provider for model in catalogue.items} == expected
+    from app.llm.registry import get_model_registry
+
+    registry = get_model_registry(settings)
+    for model in catalogue.model_dump()["items"]:
+        assert model["max_output_tokens"] == registry[model["key"]].max_output_tokens
     assert "claude-opus" not in await service.available()
     assert "secret" not in catalogue.model_dump_json()
 

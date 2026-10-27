@@ -206,6 +206,7 @@ class RunService:
         if run.status != "AWAITING_CONFIRMATION":
             raise RunError("Run plan can no longer be edited")
         plan = RunPlan.model_validate(run.plan)
+        self.validate_reviewed_plan(plan, payload.expected_subtasks)
         current = {step.step_number: step for step in plan.steps}
         updates = {step.step_number: step for step in payload.steps}
         if len(updates) != len(payload.steps) or set(updates) != set(current):
@@ -221,12 +222,22 @@ class RunService:
         await self.repository.save()
         return await self.read(run)
 
-    async def confirm(self, run_id: UUID) -> RunRead:
+    @staticmethod
+    def validate_reviewed_plan(plan: RunPlan, expected_subtasks: dict[int, str] | None) -> None:
+        if expected_subtasks is not None and expected_subtasks != {
+            step.step_number: step.subtask for step in plan.steps
+        }:
+            raise RunError("The plan changed. Reload the latest plan before starting.")
+
+    async def confirm(
+        self, run_id: UUID, expected_subtasks: dict[int, str] | None = None
+    ) -> RunRead:
         run = await self.require(run_id, lock=True)
         if run.status != "AWAITING_CONFIRMATION":
             raise RunError("Run is not awaiting confirmation")
         if not await self.repository.steps(run.id):
             raise RunError("This legacy run has no execution snapshot; create a new run")
+        self.validate_reviewed_plan(RunPlan.model_validate(run.plan), expected_subtasks)
         run.status = "IN_PROGRESS"
         run.started_at = datetime.now(UTC)
         self.repository.emit(

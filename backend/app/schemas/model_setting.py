@@ -17,6 +17,7 @@ class ModelRead(BaseModel):
     model_id: str
     tier: Literal["fast", "balanced", "powerful"]
     context_window: int
+    max_output_tokens: int
     enabled: bool
 
 

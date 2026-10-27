@@ -100,6 +100,7 @@ async function setup(page: Page, status: string) {
               tier: "balanced",
               provider: "anthropic",
               context_window: 200000,
+              max_output_tokens: 128000,
             },
           ],
         },

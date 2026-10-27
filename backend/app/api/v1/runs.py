@@ -11,7 +11,7 @@ from app.db.run_repository import RunRepository
 from app.db.session import get_session
 from app.schemas.context_file import ContextFileRead
 from app.schemas.decision import DecisionResolution
-from app.schemas.run import RunCreate, RunList, RunPlanUpdate, RunRead
+from app.schemas.run import RunCreate, RunList, RunPlanConfirmation, RunPlanUpdate, RunRead
 from app.services.export import ExportFormat, export_result
 from app.services.runs import RunService
 from app.workers.queue import enqueue_plan, enqueue_run
@@ -76,8 +76,10 @@ async def update_run_plan(run_id: UUID, payload: RunPlanUpdate, service: Service
 
 
 @router.post("/{run_id}/confirm", response_model=RunRead)
-async def confirm_run(run_id: UUID, service: Service) -> RunRead:
-    run = await service.confirm(run_id)
+async def confirm_run(
+    run_id: UUID, service: Service, payload: RunPlanConfirmation | None = None
+) -> RunRead:
+    run = await service.confirm(run_id, payload.expected_subtasks if payload else None)
     await enqueue_run(run.id)
     return run
 
