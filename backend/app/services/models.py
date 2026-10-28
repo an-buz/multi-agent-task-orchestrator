@@ -8,9 +8,12 @@ from app.schemas.model_setting import ModelCatalogue, ModelRead
 
 
 def connected(model: ModelInfo, settings: Settings) -> bool:
-    return settings.llm_provider_mode == "mock" or bool(
-        settings.anthropic_api_key if model.provider == "anthropic" else settings.openai_api_key
-    )
+    keys = {
+        "anthropic": settings.anthropic_api_key,
+        "openai": settings.openai_api_key,
+        "gemini": settings.gemini_api_key,
+    }
+    return settings.llm_provider_mode == "mock" or bool(keys[model.provider])
 
 
 class ModelUnavailable(AppError):

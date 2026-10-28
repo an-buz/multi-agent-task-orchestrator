@@ -8,6 +8,7 @@ import { z } from "zod";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field, FieldLabel, FieldDescription, FieldError } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ import { ThemeSettings } from "./theme-settings";
 
 const settingsSchema = z.object({
   default_model: z.string().min(1, "Default model is required."),
+  planner_model: z.string().min(1, "Planner model is required."),
   temperature: z.number().min(0).max(1),
   max_tokens: z.number().int().min(1).max(8192),
 });
@@ -39,15 +41,18 @@ export default function SettingsContent() {
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
-    defaultValues: { default_model: "", temperature: 0.7, max_tokens: 4096 },
+    defaultValues: { default_model: "", planner_model: "", temperature: 0.7, max_tokens: 4096 },
   });
   const selectedDefaultModel = useWatch({ control: form.control, name: "default_model" });
   const selectedDefaultModelInfo = models.find((model) => model.key === selectedDefaultModel);
+  const selectedPlannerModel = useWatch({ control: form.control, name: "planner_model" });
+  const selectedPlannerModelInfo = models.find((model) => model.key === selectedPlannerModel);
 
   useEffect(() => {
     if (config)
       form.reset({
         default_model: config.default_model,
+        planner_model: config.planner_model,
         temperature: config.temperature,
         max_tokens: config.max_tokens,
       });
@@ -122,6 +127,7 @@ export default function SettingsContent() {
                 <dl className="mt-5 grid gap-x-6 gap-y-3 sm:grid-cols-2">
                   <ApiKeyStatus label="Anthropic" configured={config.anthropic_key_configured} />
                   <ApiKeyStatus label="OpenAI" configured={config.openai_key_configured} />
+                  <ApiKeyStatus label="Gemini" configured={config.gemini_key_configured} />
                   <ApiKeyStatus label="Tavily" configured={config.tavily_key_configured} />
                 </dl>
               </article>
@@ -172,13 +178,55 @@ export default function SettingsContent() {
 
               {/* Default Agent Parameters */}
               <article className="rounded-xl border border-border bg-card p-5">
-                <h2 className="text-sm font-semibold">Default agent parameters</h2>
+                <h2 className="text-sm font-semibold">Models and agent defaults</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Values applied when creating a new agent. Adjusted values can be overridden in the
-                  agent creation form. Values are saved through the settings API.
+                  Choose the workflow planner and defaults for new agents. Agent defaults can be
+                  overridden in the agent creation form. Changes are saved through the settings API.
                 </p>
 
                 <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-5">
+                  <Field data-invalid={Boolean(form.formState.errors.planner_model)}>
+                    <FieldLabel htmlFor="planner-model">Planner model</FieldLabel>
+                    <FieldDescription id="planner-model-description">
+                      Breaks the task into subtasks for workflow agents. Changes apply to new runs;
+                      existing runs keep their saved planner model.
+                    </FieldDescription>
+                    <Select
+                      value={selectedPlannerModel}
+                      onValueChange={(value) =>
+                        value && form.setValue("planner_model", value, { shouldValidate: true })
+                      }
+                      disabled={saveDisabled || models.length === 0}
+                    >
+                      <SelectTrigger
+                        id="planner-model"
+                        aria-label="Planner model"
+                        aria-describedby="planner-model-description"
+                        aria-invalid={Boolean(form.formState.errors.planner_model)}
+                      >
+                        {selectedPlannerModelInfo
+                          ? formatModelLabel(selectedPlannerModelInfo)
+                          : selectedPlannerModel
+                            ? `${selectedPlannerModel} (unavailable)`
+                            : "Choose a planner model"}
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {models.map((model) => (
+                            <SelectItem key={model.key} value={model.key}>
+                              {formatModelLabel(model)} · {formatTierLabel(model.tier)}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {models.length === 0 && (
+                      <FieldDescription>
+                        Connect a provider and enable a model to select a planner.
+                      </FieldDescription>
+                    )}
+                    <FieldError>{form.formState.errors.planner_model?.message}</FieldError>
+                  </Field>
                   <fieldset>
                     <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Default model
@@ -315,6 +363,8 @@ function formatModelLabel(model: AgentModel): string {
     "claude-sonnet": "Claude Sonnet",
     "claude-opus": "Claude Opus",
     "gpt-4o": "GPT-4o",
+    "gemini-flash": "Gemini Flash",
+    "gemini-flash-lite": "Gemini Flash-Lite",
   };
   if (modelLabels[model.key]) return modelLabels[model.key];
   const parts = model.key.split("-");

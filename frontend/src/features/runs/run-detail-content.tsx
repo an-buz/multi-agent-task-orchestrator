@@ -153,7 +153,9 @@ export default function RunDetailContent({ id }: { id: string }) {
                       )}
                       {step.status === "IN_PROGRESS" && (
                         <p role="status" className="mt-2 text-xs text-muted-foreground">
-                          Generating response…
+                          {step.output
+                            ? "Receiving model response…"
+                            : "Waiting for model response…"}
                         </p>
                       )}
                       {step.error && (

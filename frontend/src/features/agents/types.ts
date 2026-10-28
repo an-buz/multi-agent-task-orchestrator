@@ -16,7 +16,7 @@ export interface Agent {
 
 export interface AgentModel {
   key: string;
-  provider: "anthropic" | "openai";
+  provider: "anthropic" | "openai" | "gemini";
   model_id: string;
   tier: "fast" | "balanced" | "powerful";
   context_window: number;

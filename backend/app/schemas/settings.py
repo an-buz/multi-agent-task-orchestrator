@@ -13,9 +13,15 @@ class AgentDefaults(StorageModel):
     max_tokens: int = Field(ge=1, le=8192)
 
 
+class AppConfigUpdate(AgentDefaults):
+    planner_model: str | None = Field(default=None, min_length=1)
+
+
 class AppConfigRead(AgentDefaults):
+    planner_model: str
     llm_provider_mode: str
     code_executor_backend: str
     anthropic_key_configured: bool
     openai_key_configured: bool
+    gemini_key_configured: bool
     tavily_key_configured: bool

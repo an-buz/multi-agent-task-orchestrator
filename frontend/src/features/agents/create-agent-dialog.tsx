@@ -53,6 +53,8 @@ const modelLabels: Record<string, string> = {
   "claude-sonnet": "Claude Sonnet",
   "claude-opus": "Claude Opus",
   "gpt-4o": "GPT-4o",
+  "gemini-flash": "Gemini Flash",
+  "gemini-flash-lite": "Gemini Flash-Lite",
 };
 
 const toolIcons = {

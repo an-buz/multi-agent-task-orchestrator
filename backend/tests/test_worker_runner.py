@@ -2,8 +2,19 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from app.core.config import Settings
 from app.workers import runner
+from arq.connections import RedisSettings
 from structlog.testing import capture_logs
+
+
+def test_default_redis_matches_ipv4_compose_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    configured = RedisSettings.from_dsn(str(Settings(_env_file=None).redis_url))
+    assert (configured.host, configured.port, configured.database) == ("127.0.0.1", 16379, 0)
+    monkeypatch.setenv("REDIS_URL", "redis://redis.internal:6379/2")
+    configured = RedisSettings.from_dsn(str(Settings(_env_file=None).redis_url))
+    assert (configured.host, configured.port, configured.database) == ("redis.internal", 6379, 2)
 
 
 def test_keyboard_interrupt_exits_without_traceback(

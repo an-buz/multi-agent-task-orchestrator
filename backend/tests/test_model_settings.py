@@ -35,7 +35,7 @@ from test_run_integration import infrastructure as _infrastructure
 infrastructure = _infrastructure
 
 
-@pytest.mark.parametrize("provider", ["anthropic", "openai", "none", "mock"])
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "gemini", "none", "mock"])
 async def test_only_connected_provider_models_are_exposed(provider: str) -> None:
     repository = AsyncMock(spec=ModelRepository)
     repository.disabled.return_value = {"claude-opus"}
@@ -44,11 +44,12 @@ async def test_only_connected_provider_models_are_exposed(provider: str) -> None
         llm_provider_mode="mock" if provider == "mock" else "real",
         anthropic_api_key="secret" if provider == "anthropic" else "",
         openai_api_key="secret" if provider == "openai" else "",
+        gemini_api_key="secret" if provider == "gemini" else "",
     )
     service = ModelService(repository, settings)
     catalogue = await service.catalogue()
     expected = (
-        {"anthropic", "openai"}
+        {"anthropic", "openai", "gemini"}
         if provider == "mock"
         else set()
         if provider == "none"
@@ -366,6 +367,11 @@ async def test_disable_pause_reconfigure_resume_and_preserve_completed(
             assert repaired and repaired.requires_reconfiguration is False
             events = await RunRepository(session).events(run_id, 0)
             assert {"task:paused", "task:resumed"} <= {event.event for event in events}
+            paused = next(event for event in events if event.event == "task:paused")
+            assert paused.data["pauseReasons"] == ["MODEL_UNAVAILABLE"]
+            from app.schemas.event import EventEnvelope
+
+            EventEnvelope(event=paused.event, runId=run_id, ts=paused.created_at, data=paused.data)
     finally:
         release.set()
         await asyncio.gather(pending, return_exceptions=True)

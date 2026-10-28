@@ -5,7 +5,9 @@ import json
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from app.core.config import get_settings
@@ -76,6 +78,24 @@ async def test_mock_stream_preserves_text_usage_and_tools() -> None:
     assert terminal.content == "Mock response: Привет 🌍"
     assert terminal.usage.output_tokens == 5
     assert sum(chunk.response is not None for chunk in chunks) == 1
+
+
+async def test_complete_only_provider_emits_waiting_reset_without_pausing() -> None:
+    repository, run = await make_run([[]])
+    provider = SimpleNamespace(
+        complete_tools=AsyncMock(return_value=fixture_response()),
+        aclose=AsyncMock(),
+    )
+    await DAGExecutor(repository, lambda _: provider).execute(run)
+    assert run.status == "COMPLETED"
+    names = [name for name, _ in repository.saved_events]
+    assert "task:paused" not in names
+    assert names.index("agent:stream_chunk") < names.index("agent:completed")
+    chunks = [data for name, data in repository.saved_events if name == "agent:stream_chunk"]
+    assert len(chunks) == 1 and chunks[0]["reset"] is True
+    assert chunks[0]["textDelta"] == chunks[0]["output"] == ""
+    EventEnvelope(event="agent:stream_chunk", runId=run.id, ts=datetime.now(UTC), data=chunks[0])
+    provider.aclose.assert_awaited_once()
 
 
 async def test_stream_persists_partial_output_before_completion() -> None:

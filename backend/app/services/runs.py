@@ -12,6 +12,7 @@ from app.core.errors import AppError
 from app.db.file_repository import FileRepository
 from app.db.model_repository import ModelRepository
 from app.db.run_repository import RunRepository
+from app.db.settings_repository import SettingsRepository
 from app.llm.registry import get_model_registry
 from app.models.run import Run
 from app.models.run_decision import RunDecision
@@ -33,6 +34,7 @@ from app.schemas.run import (
 from app.schemas.workflow import WorkflowStepInput
 from app.services.files import FileError, FileService
 from app.services.models import ModelService
+from app.services.settings import SettingsService
 
 
 class RunError(AppError):
@@ -133,8 +135,18 @@ class RunService:
         ):
             raise RunError("Reconfigure unavailable workflow agents before creating a run", 422)
         settings = get_settings()
-        if settings.planner_model not in get_model_registry(settings):
-            raise RunError("Configured planner model is not registered", 422)
+        planner_model = await SettingsService(
+            SettingsRepository(self.repository.session), settings
+        ).resolve_planner_model()
+        if planner_model not in available:
+            raise RunError(
+                "Choose an enabled planner model from a connected provider in Settings.", 422
+            )
+        if (
+            settings.planner_max_tokens
+            > get_model_registry(settings)[planner_model].max_output_tokens
+        ):
+            raise RunError("The planner token limit exceeds this model's output limit.", 422)
         if len(set(payload.file_ids)) != len(payload.file_ids):
             raise FileError("Every context file must be included only once.")
         context = await FileService(FileRepository(self.repository.session)).context(
@@ -147,7 +159,7 @@ class RunService:
             context_text=context,
             status="PLANNING",
             planner_config={
-                "model": settings.planner_model,
+                "model": planner_model,
                 "temperature": settings.planner_temperature,
                 "max_tokens": settings.planner_max_tokens,
                 "max_repairs": settings.planner_max_repairs,

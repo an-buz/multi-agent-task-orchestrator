@@ -38,7 +38,9 @@ export function appendRunEvent(log: RunEventLog, event: RunEvent): RunEventLog {
   return {
     events: append(log.events),
     activityEvents:
-      event.event === "agent:stream_chunk" ? log.activityEvents : append(log.activityEvents),
+      event.event === "agent:stream_chunk" && data?.reset !== true
+        ? log.activityEvents
+        : append(log.activityEvents),
     after: Math.max(log.after, cursor),
     activationOrder: activated
       ? [

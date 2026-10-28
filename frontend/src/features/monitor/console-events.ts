@@ -1,7 +1,10 @@
 import type { RunEvent, RunStep } from "@/features/runs/types";
 
 export function consoleEvents(events: RunEvent[]): RunEvent[] {
-  return events.filter((event) => event.event !== "agent:stream_chunk");
+  return events.filter(
+    (event) =>
+      event.event !== "agent:stream_chunk" || (event.data ?? event.payload)?.reset === true,
+  );
 }
 
 export function eventPresentation(event: RunEvent, steps: RunStep[]) {
@@ -25,9 +28,20 @@ export function eventPresentation(event: RunEvent, steps: RunStep[]) {
   else if (event.event === "plan:ready")
     message = "Execution plan prepared and awaiting confirmation.";
   else if (event.event === "task:started") message = "Workflow execution started.";
-  else if (event.event === "task:paused")
-    message = "Workflow paused. Review the pending decisions or agent availability.";
-  else if (event.event === "decision:required")
+  else if (event.event === "task:paused") {
+    const reasons = Array.isArray(data.pauseReasons) ? data.pauseReasons : [];
+    const explanations = [
+      ...(reasons.includes("MODEL_UNAVAILABLE")
+        ? [
+            "An agent model is unavailable. Check Models and agent configuration; restart the worker if provider credentials changed.",
+          ]
+        : []),
+      ...(reasons.includes("USER_DECISION_REQUIRED")
+        ? ["Your decision is required. Review the agent findings."]
+        : []),
+    ];
+    message = `Workflow paused. ${explanations.join(" ") || "Check run details for the required action."}`;
+  } else if (event.event === "decision:required")
     message = "Agent findings require your decision. New steps are blocked.";
   else if (event.event === "decision:resolved") message = "User decision saved.";
   else if (event.event === "task:resumed") message = "Workflow execution resumed.";
@@ -36,8 +50,13 @@ export function eventPresentation(event: RunEvent, steps: RunStep[]) {
     message = "Workflow execution failed. Review failed steps.";
   else if (event.event === "task:finished")
     message = `Workflow completed${typeof data.totalTokens === "number" ? ` · ${data.totalTokens.toLocaleString()} tokens` : ""}.`;
+  else if (event.event === "agent:stream_chunk" && data.reset === true)
+    message = `${agent ?? "Agent"}: waiting for the model response.`;
   else if (event.event === "agent:status_change" && typeof data.status === "string")
-    message = `${agent ?? "Agent"}: ${data.status.toLowerCase().replaceAll("_", " ")}.`;
+    message =
+      data.status === "IN_PROGRESS"
+        ? `${agent ?? "Agent"}: preparing the model request.`
+        : `${agent ?? "Agent"}: ${data.status.toLowerCase().replaceAll("_", " ")}.`;
   else if (event.event === "agent:completed") message = `${agent ?? "Agent"} completed the step.`;
   else if (event.event === "agent:failed") {
     const error = data.error;

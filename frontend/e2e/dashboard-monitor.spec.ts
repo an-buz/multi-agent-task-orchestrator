@@ -253,16 +253,31 @@ for (const theme of ["dark", "light"]) {
     };
     active.plan.steps[0].output = "Partial result";
     await emit(page, "agent:status_change", { stepNumber: 1, status: "IN_PROGRESS" }, "9");
-    await emit(page, "agent:stream_chunk", chunk, "10");
-    await expect(inspector.getByLabel("Output for step 1")).toHaveText("Partial result");
-    await emit(page, "agent:stream_chunk", chunk, "10");
-    await expect(
-      page.getByLabel("Run orchestration events").getByLabel("agent:stream_chunk", { exact: true }),
-    ).toHaveCount(0);
+    active.plan.steps[0].output = "";
+    await emit(
+      page,
+      "agent:stream_chunk",
+      { ...chunk, reset: true, textDelta: "", output: "" },
+      "10",
+    );
+    await expect(inspector.getByText("Waiting for model response…", { exact: true })).toBeVisible();
     await expect(
       page
         .getByLabel("Run orchestration events")
-        .getByText("Actual reviewer: in progress.", { exact: true }),
+        .getByText("Actual reviewer: waiting for the model response.", { exact: true }),
+    ).toBeVisible();
+    active.plan.steps[0].output = "Partial result";
+    await emit(page, "agent:stream_chunk", chunk, "11");
+    await expect(inspector.getByLabel("Output for step 1")).toHaveText("Partial result");
+    await expect(inspector.getByText("Receiving model response…", { exact: true })).toBeVisible();
+    await emit(page, "agent:stream_chunk", chunk, "11");
+    await expect(
+      page.getByLabel("Run orchestration events").getByLabel("agent:stream_chunk", { exact: true }),
+    ).toHaveCount(1);
+    await expect(
+      page
+        .getByLabel("Run orchestration events")
+        .getByText("Actual reviewer: preparing the model request.", { exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Clear", exact: true }).click();
     await expect(page.getByText("Console cleared. Waiting for new events.")).toBeVisible();
@@ -270,7 +285,7 @@ for (const theme of ["dark", "light"]) {
       page,
       "agent:tool_result",
       { stepNumber: 1, toolName: "calculator", ok: true, summary: "Tool\ncompleted." },
-      "11",
+      "12",
     );
     await expect(
       page.getByLabel("Run orchestration events").getByLabel("agent:tool_result", { exact: true }),
@@ -280,6 +295,10 @@ for (const theme of ["dark", "light"]) {
     ).toBeVisible();
     await expect(
       page.getByLabel("Run orchestration events").getByText("Tool completed.", { exact: true }),
+    ).toBeVisible();
+    await emit(page, "task:paused", { taskId: firstId, pauseReasons: ["MODEL_UNAVAILABLE"] }, "13");
+    await expect(
+      page.getByLabel("Run orchestration events").getByText(/An agent model is unavailable/),
     ).toBeVisible();
     await page.getByRole("button", { name: "Inspect step 2: Actual writer" }).click();
     await expect(inspector.getByText("Actual persisted input", { exact: true })).toBeVisible();
@@ -299,7 +318,7 @@ for (const theme of ["dark", "light"]) {
       () => (window as unknown as { closedDashboardStreams: string[] }).closedDashboardStreams,
     );
     expect(closed.some((url) => url.includes(firstId) && url.endsWith("?after=0"))).toBe(true);
-    await emit(page, "agent:stream_chunk", { ...chunk, output: "Stale first run" }, "12");
+    await emit(page, "agent:stream_chunk", { ...chunk, output: "Stale first run" }, "14");
     await expect(inspector.getByLabel("Output for step 1")).toHaveText("Previous output");
     await page.reload();
     await page.getByRole("button", { name: "More pipeline options" }).click();
@@ -307,7 +326,7 @@ for (const theme of ["dark", "light"]) {
       "Previous workflow",
     );
     await expect(inspector.getByText("Persisted previous report")).toBeVisible();
-    await emit(page, "agent:stream_chunk", { ...chunk, output: "Old replay" }, "14", secondId);
+    await emit(page, "agent:stream_chunk", { ...chunk, output: "Old replay" }, "15", secondId);
     await expect(inspector.getByLabel("Output for step 1")).toHaveText("Previous output");
   });
 

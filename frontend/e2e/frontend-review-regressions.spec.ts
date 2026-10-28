@@ -108,7 +108,12 @@ async function setup(page: Page, status: string) {
     if (path.endsWith("/settings/config"))
       return route.fulfill({
         headers,
-        json: { default_model: "claude-sonnet", temperature: 0.7, max_tokens: 4096 },
+        json: {
+          default_model: "claude-sonnet",
+          planner_model: "claude-sonnet",
+          temperature: 0.7,
+          max_tokens: 4096,
+        },
       });
     if (path === "/api/v1/runs")
       return route.fulfill({ headers, json: { items: [run], total: 1 } });

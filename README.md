@@ -25,7 +25,7 @@ The project includes a FastAPI backend, an ARQ worker, and a Next.js dashboard. 
 | Data and forms   | TanStack Query, React Hook Form, Zod                                              |
 | Backend          | Python 3.14, FastAPI, Pydantic v2, async SQLAlchemy, Alembic                      |
 | Storage and jobs | PostgreSQL 16, Redis 7, ARQ                                                       |
-| LLM integration  | Anthropic, OpenAI, and mock providers behind a shared interface                   |
+| LLM integration  | Anthropic, OpenAI, Gemini, and mock providers behind a shared interface           |
 | Quality checks   | Ruff, mypy strict, ESLint, TypeScript, pytest, Node.js test runner, Playwright    |
 
 ## Prerequisites
@@ -122,15 +122,20 @@ make frontend-dev
 
 Create agents, add them to a workflow, and submit a task from the dashboard. A fresh regular database has no prepared demo catalog. Keep the worker running for planning and execution.
 
+If the worker reports a Redis connection timeout on Windows while the container is
+healthy, set `REDIS_URL=redis://127.0.0.1:16379/0` in `backend/.env` and restart the
+API and worker. Docker publishes Redis on IPv4; `localhost` may resolve to the
+unserved IPv6 address `::1`. The environment template uses IPv4 to avoid this.
+
 ### Configuration
 
 | Variable                              | Purpose / default                                                                |
 | ------------------------------------- | -------------------------------------------------------------------------------- |
 | `DATABASE_URL`                        | Async PostgreSQL DSN; `postgresql+asyncpg://app:app@localhost:5432/orchestrator` |
-| `REDIS_URL`                           | Worker queue connection; `redis://localhost:16379/0`                             |
+| `REDIS_URL`                           | Worker queue connection; `redis://127.0.0.1:16379/0`                             |
 | `LLM_PROVIDER_MODE`                   | `mock` by default; set to `real` for provider calls                              |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Server-side credentials for the providers used by your agents and planner        |
-| `PLANNER_MODEL`                       | Planner model registry key; defaults to `claude-sonnet`                          |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` | Server-side credentials for the providers used by your agents and planner |
+| `PLANNER_MODEL`                       | Initial planner model before a selection is saved in Settings; defaults to `claude-sonnet` |
 | `TAVILY_API_KEY`                      | Credentials for the web search tool                                              |
 | `CODE_EXECUTOR_BACKEND`               | `disabled` by default; `docker` enables isolated execution                       |
 | `MAX_PARALLEL_STEPS`                  | Maximum concurrent workflow steps; defaults to `4`                               |
@@ -138,7 +143,31 @@ Create agents, add them to a workflow, and submit a task from the dashboard. A f
 | `NEXT_PUBLIC_API_URL`                 | Frontend setting; defaults to `http://localhost:8000/api/v1`                     |
 | `EXPORT_PDF_FONT_PATH`                | Optional override for the TrueType font used in PDF reports                      |
 
-For real provider calls, set `LLM_PROVIDER_MODE=real` and `DEMO_MODE=false`, supply the relevant credentials, and check both agent and planner model settings. For an OpenAI-only deployment, set `PLANNER_MODEL=gpt-4o` and choose OpenAI agents. Restart the API and worker after changing their configuration.
+For real provider calls, set `LLM_PROVIDER_MODE=real` and `DEMO_MODE=false`, supply the relevant credentials, and restart the API and worker. In Settings, choose the **Planner model** used to break tasks into subtasks, then save changes. Choose each workflow agent's model separately. The planner selection is saved in PostgreSQL and applies to new runs immediately, without a restart; existing runs keep their snapshotted model. Only connected, enabled models can be selected. `PLANNER_MODEL` supplies the initial value when no planner choice has been saved.
+
+For Gemini, create an API key in [Google AI Studio](https://aistudio.google.com/apikey)
+and set these values in `backend/.env` (keep the actual key private):
+
+```dotenv
+GEMINI_API_KEY=your-key
+LLM_PROVIDER_MODE=real
+DEMO_MODE=false
+DEFAULT_AGENT_MODEL=gemini-flash-lite
+```
+
+Restart the API and worker, select Gemini Flash-Lite as the Planner model in Settings,
+save changes, then choose Gemini for each workflow agent in the UI.
+Saved defaults and existing agents are preserved; if defaults were previously saved,
+select Gemini in Settings as well. `make demo` always forces mock mode.
+`gemini-flash-lite` maps to `gemini-3.5-flash-lite` and `gemini-flash` maps to
+`gemini-3.8-flash`. Model IDs can be configured through `GEMINI_MODEL_FLASH_LITE`
+and `GEMINI_MODEL_FLASH`, restricted to reviewed registry profiles.
+The native REST adapter uses `GEMINI_API_URL` (default:
+`https://generativelanguage.googleapis.com/v1beta`) and supports streamed text,
+local function calls, native input token counting, and structured JSON planning.
+Model availability and free-tier quotas depend on the Google project; configuring
+a key does not verify quota or model access. See [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing)
+and [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).
 
 Provider keys stay on the backend. Never put secrets in `NEXT_PUBLIC_*` variables. Code execution requires Docker and runs with network access disabled and resource limits. File Reader also supports PDF attachments. See [backend settings](backend/app/core/config.py) and [the environment template](backend/.env.example) for additional limits and options.
 

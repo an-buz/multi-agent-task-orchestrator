@@ -23,6 +23,7 @@ async function mockApplication(page: Page, existingRun = true) {
     listedRun: existingRun,
     config: {
       default_model: "claude-sonnet",
+      planner_model: "claude-sonnet",
       temperature: 0.7,
       max_tokens: 4096,
       llm_provider_mode: "mock",
@@ -209,12 +210,15 @@ for (const theme of ["dark", "light"] as const) {
       );
       await page.getByRole("combobox", { name: "Default model" }).click();
       await page.getByRole("option", { name: /Claude Haiku/ }).click();
+      await page.getByRole("combobox", { name: "Planner model", exact: true }).click();
+      await page.getByRole("option", { name: "Claude Haiku · Fast", exact: true }).click();
       await page.getByLabel("Default temperature (0.0–1.0)").fill("0.3");
       await page.getByLabel("Default max tokens (1–8192)").fill("2048");
       await page.getByRole("button", { name: "Save changes" }).click();
       await expect(page.getByText("Settings saved successfully.")).toBeVisible();
       expect(state.savedConfig).toEqual({
         default_model: "claude-haiku",
+        planner_model: "claude-haiku",
         temperature: 0.3,
         max_tokens: 2048,
       });
@@ -223,6 +227,9 @@ for (const theme of ["dark", "light"] as const) {
         "Claude Haiku",
       );
       await expect(page.getByLabel("Default temperature (0.0–1.0)")).toHaveValue("0.3");
+      await expect(
+        page.getByRole("combobox", { name: "Planner model", exact: true }),
+      ).toContainText("Claude Haiku");
       await page.getByRole("button", { name: "Create Agent", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "AI model", exact: true })).toContainText(
         "Claude Haiku",

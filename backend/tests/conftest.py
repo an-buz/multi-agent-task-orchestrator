@@ -15,3 +15,4 @@ def mock_llm_only(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("app.llm.providers.AsyncAnthropic", reject_real_client)
     monkeypatch.setattr("app.llm.providers.AsyncOpenAI", reject_real_client)
+    monkeypatch.setattr("app.llm.gemini.GeminiClient", reject_real_client)

@@ -35,6 +35,15 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
           max_output_tokens: 16384,
           enabled: true,
         },
+        {
+          key: "gemini-flash-lite",
+          model_id: "gemini-3.5-flash-lite",
+          provider: "gemini",
+          tier: "fast",
+          context_window: 1048576,
+          max_output_tokens: 65536,
+          enabled: true,
+        },
       ];
   let agent = {
     id: agentId,
@@ -87,7 +96,23 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
       ],
     },
   };
-  const requests: { switches: unknown[]; agents: unknown[] } = { switches: [], agents: [] };
+  const requests: { switches: unknown[]; agents: unknown[]; settings: unknown[] } = {
+    switches: [],
+    agents: [],
+    settings: [],
+  };
+  let config = {
+    default_model: "claude-sonnet",
+    planner_model: "claude-haiku",
+    temperature: 0.7,
+    max_tokens: 4096,
+    llm_provider_mode: "real",
+    code_executor_backend: "disabled",
+    anthropic_key_configured: true,
+    openai_key_configured: true,
+    gemini_key_configured: true,
+    tavily_key_configured: false,
+  };
   await page.addInitScript((theme) => {
     localStorage.setItem("theme", theme);
     class Source extends EventTarget {
@@ -134,11 +159,13 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
       };
       return route.fulfill({ headers, json: agent });
     }
-    if (path === "/settings/config")
-      return route.fulfill({
-        headers,
-        json: { default_model: "claude-sonnet", temperature: 0.7, max_tokens: 4096 },
-      });
+    if (path === "/settings/config") {
+      if (request.method() === "PATCH") {
+        requests.settings.push(request.postDataJSON());
+        config = { ...config, ...request.postDataJSON() };
+      }
+      return route.fulfill({ headers, json: config });
+    }
     if (path === `/runs/${runId}/cancel`) {
       run.status = "CANCELLED";
       return route.fulfill({ headers, json: run });
@@ -158,6 +185,8 @@ for (const theme of ["light", "dark"]) {
     await page.goto("/models");
     await expect(page.getByRole("heading", { name: "Anthropic provider" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "OpenAI provider" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Gemini provider" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "gemini-3.5-flash-lite" })).toBeChecked();
     const toggle = page.getByRole("switch", { name: "claude-sonnet-test" });
     await expect(toggle).toBeChecked();
     await toggle.focus();
@@ -170,12 +199,33 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Edit Model reviewer", exact: true }).click();
     await page.getByRole("combobox", { name: "AI model" }).click();
     await expect(page.getByRole("option", { name: /Claude Sonnet/ })).toHaveCount(0);
-    await page.getByRole("option", { name: /Claude Haiku/ }).click();
+    await page.getByRole("option", { name: /Gemini Flash-Lite/ }).click();
     await page.getByRole("button", { name: /Save changes/i }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByText("UNAVAILABLE", { exact: true })).toHaveCount(0);
     expect(requests.switches).toEqual([{ enabled: false }]);
-    expect(requests.agents).toMatchObject([{ model: "claude-haiku" }]);
+    expect(requests.agents).toMatchObject([{ model: "gemini-flash-lite" }]);
+    await page.goto("/settings");
+    await expect(page.getByText("Gemini", { exact: true }).locator("../..")).toContainText(
+      "Configured",
+    );
+    await page.getByRole("combobox", { name: "Default model" }).click();
+    await page.getByRole("option", { name: /Gemini Flash-Lite/ }).click();
+    await page.getByRole("combobox", { name: "Planner model", exact: true }).click();
+    await expect(page.getByRole("option", { name: /Claude Sonnet/ })).toHaveCount(0);
+    await page.getByRole("option", { name: "Gemini Flash-Lite · Fast", exact: true }).click();
+    await page.getByRole("button", { name: /Save changes/ }).click();
+    await expect(page.getByText("Settings saved successfully.")).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("combobox", { name: "Default model" })).toContainText(
+      "Gemini Flash-Lite",
+    );
+    await expect(page.getByRole("combobox", { name: "Planner model", exact: true })).toContainText(
+      "Gemini Flash-Lite",
+    );
+    expect(requests.settings).toMatchObject([
+      { default_model: "gemini-flash-lite", planner_model: "gemini-flash-lite" },
+    ]);
   });
 
   test(`paused run explains reconfiguration and supports cancellation (${theme})`, async ({
@@ -196,6 +246,11 @@ test("no connected providers shows setup instructions", async ({ page }) => {
   await page.goto("/models");
   await expect(page.getByText("No connected providers", { exact: true })).toBeVisible();
   await expect(page.getByRole("switch")).toHaveCount(0);
+  await page.goto("/settings");
+  await expect(page.getByRole("combobox", { name: "Planner model", exact: true })).toBeDisabled();
+  await expect(
+    page.getByText("Connect a provider and enable a model to select a planner."),
+  ).toBeVisible();
 });
 
 test("failed model update preserves the saved switch state", async ({ page }) => {

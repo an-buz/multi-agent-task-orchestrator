@@ -1,5 +1,6 @@
 """Atomic persistence of the shared agent defaults."""
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,14 +12,14 @@ class SettingsRepository:
         self.session = session
 
     async def read(self) -> dict[str, object] | None:
-        config = await self.session.get(AppConfig, 1)
-        return config.defaults if config else None
+        return await self.session.scalar(select(AppConfig.defaults).where(AppConfig.id == 1))
 
     async def save(self, defaults: dict[str, object]) -> None:
         statement = insert(AppConfig).values(id=1, defaults=defaults)
         await self.session.execute(
             statement.on_conflict_do_update(
-                index_elements=[AppConfig.id], set_={"defaults": defaults}
+                index_elements=[AppConfig.id],
+                set_={"defaults": AppConfig.defaults.op("||")(statement.excluded.defaults)},
             )
         )
         await self.session.commit()

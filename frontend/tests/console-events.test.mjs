@@ -5,7 +5,7 @@ import { appendRunEvent } from "../src/features/runs/model.ts";
 
 const steps = [{ step_number: 1, agent_name: "Demo Analyst" }];
 
-test("console excludes response fragments and resets while preserving activity through long streams", () => {
+test("console retains model waiting markers and excludes response fragments through long streams", () => {
   const status = {
     id: "1",
     event: "agent:status_change",
@@ -20,8 +20,41 @@ test("console excludes response fragments and resets while preserving activity t
     });
   }
   assert.deepEqual(consoleEvents([status, ...log.events]), [status]);
-  assert.deepEqual(consoleEvents(log.activityEvents), [status]);
-  assert.equal(eventPresentation(status, steps).message, "Demo Analyst: in progress.");
+  assert.equal(consoleEvents(log.activityEvents).length, 2);
+  assert.equal(log.activityEvents[1].data.reset, true);
+  assert.equal(
+    eventPresentation(log.activityEvents[1], steps).message,
+    "Agent: waiting for the model response.",
+  );
+  assert.equal(
+    eventPresentation(status, steps).message,
+    "Demo Analyst: preparing the model request.",
+  );
+});
+
+test("real pauses explain model availability and human decisions instead of model latency", () => {
+  for (const [pauseReasons, expected] of [
+    [["MODEL_UNAVAILABLE"], "An agent model is unavailable."],
+    [["USER_DECISION_REQUIRED"], "Your decision is required."],
+    [[], "Check run details for the required action."],
+  ]) {
+    const result = eventPresentation({ event: "task:paused", data: { pauseReasons } }, steps);
+    assert.ok(result.message.includes(expected));
+    assert.ok(!result.message.includes("waiting for the model response"));
+  }
+  const result = eventPresentation(
+    {
+      event: "task:paused",
+      data: { pauseReasons: ["MODEL_UNAVAILABLE", "USER_DECISION_REQUIRED"] },
+    },
+    steps,
+  );
+  assert.ok(result.message.includes("An agent model is unavailable."));
+  assert.ok(result.message.includes("Your decision is required."));
+  assert.match(
+    eventPresentation({ event: "task:paused", data: {} }, steps).message,
+    /Check run details/,
+  );
 });
 
 test("console normalizes multiline summaries and agent names into one readable line", () => {

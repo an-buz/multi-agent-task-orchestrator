@@ -1,0 +1,10 @@
+{
+  "text": {
+    "candidates": [{"index": 0, "content": {"role": "model", "parts": [{"text": "The result is 5."}]}, "finishReason": "STOP"}],
+    "usageMetadata": {"promptTokenCount": 17, "candidatesTokenCount": 6, "thoughtsTokenCount": 4, "totalTokenCount": 27}
+  },
+  "tool": {
+    "candidates": [{"index": 0, "content": {"role": "model", "parts": [{"functionCall": {"name": "calculator", "args": {"expression": "2+3"}}, "thoughtSignature": "Zml4dHVyZS1zaWduYXR1cmU="}]}, "finishReason": "STOP"}],
+    "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 3, "thoughtsTokenCount": 2, "totalTokenCount": 16}
+  }
+}

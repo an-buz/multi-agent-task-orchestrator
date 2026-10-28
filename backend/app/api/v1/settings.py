@@ -10,7 +10,7 @@ from app.db.model_repository import ModelRepository
 from app.db.session import get_session
 from app.db.settings_repository import SettingsRepository
 from app.schemas.model_setting import ModelCatalogue, ModelSwitch
-from app.schemas.settings import AgentDefaults, AppConfigRead
+from app.schemas.settings import AppConfigRead, AppConfigUpdate
 from app.services.models import ModelService
 from app.services.settings import SettingsService
 
@@ -33,7 +33,7 @@ async def get_config(service: Service) -> AppConfigRead:
 
 
 @router.patch("/config", response_model=AppConfigRead)
-async def update_config(payload: AgentDefaults, service: Service) -> AppConfigRead:
+async def update_config(payload: AppConfigUpdate, service: Service) -> AppConfigRead:
     return await service.update(payload)
 
 

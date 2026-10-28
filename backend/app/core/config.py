@@ -19,9 +19,13 @@ class Settings(BaseSettings):
     database_url: PostgresDsn = PostgresDsn(
         "postgresql+asyncpg://app:app@localhost:5432/orchestrator"
     )
-    redis_url: RedisDsn = RedisDsn("redis://localhost:16379/0")
+    redis_url: RedisDsn = RedisDsn("redis://127.0.0.1:16379/0")
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    gemini_api_key: str | None = None
+    gemini_api_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_model_flash: str = "gemini-3.8-flash"
+    gemini_model_flash_lite: str = "gemini-3.5-flash-lite"
     # Provider model identifiers stay configurable as providers retire model versions.
     anthropic_model_haiku: str = Field(
         default="claude-haiku-4-5-20251001", validation_alias="ANTHROPIC_MODEL_HAIKU"

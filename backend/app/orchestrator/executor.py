@@ -158,17 +158,17 @@ class DAGExecutor:
                             )
                             provider_pending = True
                             await persist()
+                            identity = {
+                                "agentId": str(step.agent_id),
+                                "stepNumber": step.step_number,
+                                "attempt": step.attempt,
+                            }
+                            if on_tool is not None:
+                                on_tool(
+                                    "agent:stream_chunk",
+                                    {**identity, "textDelta": "", "reset": True},
+                                )
                             if isinstance(provider, StreamingLLMProvider):
-                                identity = {
-                                    "agentId": str(step.agent_id),
-                                    "stepNumber": step.step_number,
-                                    "attempt": step.attempt,
-                                }
-                                if on_tool is not None:
-                                    on_tool(
-                                        "agent:stream_chunk",
-                                        {**identity, "textDelta": "", "reset": True},
-                                    )
                                 terminal: LLMResponse | None = None
                                 async with asyncio.timeout(get_settings().llm_request_timeout):
                                     stream = provider.stream(
@@ -496,7 +496,11 @@ class DAGExecutor:
                         run.pause_reasons = (["USER_DECISION_REQUIRED"] if user_blocked else []) + (
                             ["MODEL_UNAVAILABLE"] if not models_ready else []
                         )
-                        self.repository.emit(run.id, "task:paused", {"taskId": str(run.id)})
+                        self.repository.emit(
+                            run.id,
+                            "task:paused",
+                            {"taskId": str(run.id), "pauseReasons": run.pause_reasons},
+                        )
                         await self.repository.save()
                         return
                     break

@@ -9,7 +9,7 @@ from app.core.config import Settings, get_settings
 @dataclass(frozen=True)
 class ModelInfo:
     key: str
-    provider: Literal["anthropic", "openai"]
+    provider: Literal["anthropic", "openai", "gemini"]
     model_id: str
     tier: Literal["fast", "balanced", "powerful"]
     context_window: int
@@ -33,11 +33,13 @@ def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]
         "claude-sonnet-4-6": ("anthropic", 1_000_000, 128_000),
         "claude-opus-4-6": ("anthropic", 1_000_000, 128_000),
         "gpt-4o": ("openai", 128_000, 16_384),
+        "gemini-3.8-flash": ("gemini", 1_048_576, 65_536),
+        "gemini-3.5-flash-lite": ("gemini", 1_048_576, 65_536),
     }
 
     def reviewed(
         key: str,
-        provider: Literal["anthropic", "openai"],
+        provider: Literal["anthropic", "openai", "gemini"],
         model_id: str,
         tier: Literal["fast", "balanced", "powerful"],
     ) -> ModelInfo:
@@ -55,6 +57,10 @@ def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]
             "claude-opus", "anthropic", active.anthropic_model_opus, "powerful"
         ),
         "gpt-4o": reviewed("gpt-4o", "openai", active.openai_model_default, "balanced"),
+        "gemini-flash": reviewed("gemini-flash", "gemini", active.gemini_model_flash, "balanced"),
+        "gemini-flash-lite": reviewed(
+            "gemini-flash-lite", "gemini", active.gemini_model_flash_lite, "fast"
+        ),
     }
 
 

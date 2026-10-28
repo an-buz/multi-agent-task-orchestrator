@@ -319,6 +319,11 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
         <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
           Current step
         </h3>
+        {step?.status === "IN_PROGRESS" && (
+          <p role="status" className="mb-2 text-xs text-muted-foreground">
+            {step.output ? "Receiving model response…" : "Waiting for model response…"}
+          </p>
+        )}
         <p
           aria-label={step ? `Output for step ${step.step_number}` : undefined}
           className="dashboard-inspector-scroll h-[50.4px] overflow-auto whitespace-pre-wrap warp-break-words font-mono text-xs leading-[1.4] text-foreground"

@@ -13,7 +13,7 @@ class ModelSwitch(BaseModel):
 
 class ModelRead(BaseModel):
     key: str
-    provider: Literal["anthropic", "openai"]
+    provider: Literal["anthropic", "openai", "gemini"]
     model_id: str
     tier: Literal["fast", "balanced", "powerful"]
     context_window: int

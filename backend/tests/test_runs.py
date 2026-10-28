@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.api.v1.runs import get_run_service
+from app.core.config import get_settings
 from app.db.run_repository import RunRepository
 from app.main import app
 from app.models.agent import Agent
@@ -55,6 +56,7 @@ class MemoryRunRepository(RunRepository):
         self.saved_decisions: list[RunDecision] = []
         self.saved_events: list[tuple[str, dict[str, Any]]] = []
         self.session = cast(AsyncSession, AsyncMock())
+        self.session.scalar.return_value = None
 
     def add(self, value: Run | RunStep | RunDecision) -> None:
         if isinstance(value, Run):
@@ -116,6 +118,36 @@ class MemoryRunRepository(RunRepository):
 
     def emit(self, run_id: UUID, event: str, data: dict[str, Any]) -> None:
         self.saved_events.append((event, data))
+
+
+async def test_new_runs_snapshot_saved_planner_without_changing_existing_runs(monkeypatch):
+    repository = MemoryRunRepository()
+    selected = {"planner_model": "gpt-4o"}
+    repository.session.scalar.return_value = selected
+    monkeypatch.setattr(get_settings(), "planner_model", "unknown-environment-fallback")
+    service = RunService(repository)
+    first = await service.create(RunCreate(workflow_id=repository.saved_workflow.id, task="First"))
+    selected["planner_model"] = "gemini-flash-lite"
+    second = await service.create(
+        RunCreate(workflow_id=repository.saved_workflow.id, task="Second")
+    )
+    assert repository.runs[first.id].planner_config["model"] == "gpt-4o"
+    assert repository.runs[second.id].planner_config["model"] == "gemini-flash-lite"
+    assert repository.runs[first.id].status == repository.runs[second.id].status == "PLANNING"
+
+
+async def test_new_runs_reject_an_unavailable_saved_planner(monkeypatch):
+    repository = MemoryRunRepository()
+    repository.session.scalar.return_value = {"planner_model": "gemini-flash-lite"}
+    monkeypatch.setattr(
+        "app.services.models.ModelService.available", AsyncMock(return_value={"claude-sonnet"})
+    )
+    with pytest.raises(RunError, match="planner model") as error:
+        await RunService(repository).create(
+            RunCreate(workflow_id=repository.saved_workflow.id, task="Task")
+        )
+    assert error.value.status_code == 422
+    assert not repository.runs
 
 
 @pytest.mark.parametrize(

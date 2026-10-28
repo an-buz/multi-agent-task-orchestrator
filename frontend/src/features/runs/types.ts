@@ -124,6 +124,11 @@ export interface StreamChunkData {
   attempt: number;
 }
 
+export interface TaskPausedData {
+  taskId: string;
+  pauseReasons?: ("MODEL_UNAVAILABLE" | "USER_DECISION_REQUIRED")[];
+}
+
 export interface ToolResultData {
   agentId: string;
   stepNumber: number;

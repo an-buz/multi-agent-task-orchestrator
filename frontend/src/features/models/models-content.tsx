@@ -36,6 +36,7 @@ import { useModelSettings, useModelSwitch } from "./queries";
 const providers = [
   { key: "anthropic", name: "Anthropic" },
   { key: "openai", name: "OpenAI" },
+  { key: "gemini", name: "Gemini" },
 ] as const;
 
 export default function ModelsContent() {
@@ -92,7 +93,8 @@ export default function ModelsContent() {
                 </EmptyMedia>
                 <EmptyTitle>No connected providers</EmptyTitle>
                 <EmptyDescription>
-                  Configure an Anthropic or OpenAI API key on the server to manage its models.
+                  Configure an Anthropic, OpenAI, or Gemini API key on the server to manage its
+                  models.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

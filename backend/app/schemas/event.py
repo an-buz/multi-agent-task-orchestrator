@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.schemas.decision import DecisionRead
-from app.schemas.run import RunPlan, RunRead, StepStatus
+from app.schemas.run import PauseReason, RunPlan, RunRead, StepStatus
 
 EventName = Literal[
     "plan:ready",
@@ -43,6 +43,10 @@ class TaskIdentity(EventData):
 
 class TaskStarted(TaskIdentity):
     workflowId: UUID
+
+
+class TaskPaused(TaskIdentity):
+    pauseReasons: list[PauseReason] = Field(default_factory=list)
 
 
 class DecisionChanged(TaskIdentity):
@@ -119,7 +123,7 @@ class Snapshot(EventData):
 PAYLOAD_MODELS: dict[str, type[EventData]] = {
     "plan:ready": PlanReady,
     "task:started": TaskStarted,
-    "task:paused": TaskIdentity,
+    "task:paused": TaskPaused,
     "task:resumed": TaskIdentity,
     "decision:required": DecisionChanged,
     "decision:resolved": DecisionChanged,

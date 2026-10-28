@@ -1,4 +1,4 @@
-"""Anthropic, OpenAI, and deterministic mock provider implementations."""
+"""Anthropic, OpenAI, Gemini, and deterministic mock provider implementations."""
 
 import asyncio
 import json
@@ -13,6 +13,7 @@ from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolPara
 
 from app.core.config import Settings, get_settings
 from app.demo.responses import demo_plan, demo_response
+from app.llm.gemini import GeminiProvider
 from app.llm.planning import PLANNER_SYSTEM_PROMPT
 from app.llm.provider import LLMChunk, LLMResponse, LLMUsage, ToolCall
 from app.llm.registry import get_model_registry
@@ -415,16 +416,28 @@ class MockOpenAIProvider(MockLLMProvider):
     """OpenAI model alias using the shared deterministic mock implementation."""
 
 
+class MockGeminiProvider(MockLLMProvider):
+    """Gemini model alias using the shared deterministic mock implementation."""
+
+
 def create_provider(
     model: str, settings: Settings | None = None
-) -> AnthropicProvider | OpenAIProvider | MockAnthropicProvider | MockOpenAIProvider:
+) -> AnthropicProvider | OpenAIProvider | GeminiProvider | MockLLMProvider:
     """Create configured mock or real provider, failing clearly when a key is missing."""
     active = settings or get_settings()
     info = get_model_registry(active).get(model)
     if info is None:
         raise ValueError(f"Unknown model key: {model}")
     if active.llm_provider_mode == "mock":
-        return MockAnthropicProvider() if info.provider == "anthropic" else MockOpenAIProvider()
+        return {
+            "anthropic": MockAnthropicProvider,
+            "openai": MockOpenAIProvider,
+            "gemini": MockGeminiProvider,
+        }[info.provider]()
+    if info.provider == "gemini":
+        if not active.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER_MODE=real")
+        return GeminiProvider(active.gemini_api_key, active)
     if info.provider == "anthropic":
         if not active.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER_MODE=real")

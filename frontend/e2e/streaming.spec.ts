@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const runId = "00000000-0000-4000-8000-000000000020";
 const agentId = "00000000-0000-4000-8000-000000000001";
 
-for (const theme of ["light"]) {
+for (const theme of ["light", "dark"]) {
   test(`mock streaming, retry reset and snapshot recovery in ${theme}`, async ({ page }) => {
     await page.addInitScript((value) => {
       localStorage.setItem("theme", value);
@@ -91,15 +91,17 @@ for (const theme of ["light"]) {
 
     await page.goto(`/runs/${runId}`);
     await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
-    await expect(page.getByText("Generating response…")).toBeVisible();
+    await expect(page.getByText("Waiting for model response…")).toBeVisible();
     const initialGets = gets;
     await emit("Привет 🌍");
     await expect(page.getByLabel("Output for step 1")).toHaveText("Привет 🌍");
+    await expect(page.getByText("Receiving model response…")).toBeVisible();
     await emit("Привет 🌍");
     await expect(page.getByLabel("Output for step 1")).toHaveText("Привет 🌍");
     expect(gets).toBe(initialGets);
     await emit("", true);
     await expect(page.getByLabel("Output for step 1")).toHaveCount(0);
+    await expect(page.getByText("Waiting for model response…")).toBeVisible();
     await emit("Fixture ");
     await page.reload();
     await expect(page.getByLabel("Output for step 1")).toHaveText("Fixture ");
@@ -114,7 +116,8 @@ for (const theme of ["light"]) {
       ),
     );
     await expect(page.getByRole("heading", { name: "Final report" })).toBeVisible();
-    await expect(page.getByText("Generating response…")).toHaveCount(0);
+    await expect(page.getByText("Waiting for model response…")).toHaveCount(0);
+    await expect(page.getByText("Receiving model response…")).toHaveCount(0);
     await emit("Old replay");
     await expect(page.getByLabel("Output for step 1")).toHaveText("Fixture result");
   });

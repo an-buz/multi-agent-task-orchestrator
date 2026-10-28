@@ -37,6 +37,7 @@ def live_environment(
         "LLM_PROVIDER_MODE": "mock",
         "ANTHROPIC_API_KEY": "",
         "OPENAI_API_KEY": "",
+        "GEMINI_API_KEY": "",
         "TAVILY_API_KEY": "",
         "CODE_EXECUTOR_BACKEND": "disabled",
         "CODE_EXECUTOR_SCOPE": "e2e-live",
@@ -59,12 +60,14 @@ def free_port() -> int:
 def guard_providers() -> None:
     """Reject paid SDK clients before any provider request can leave a service."""
     import app.llm.providers as providers
+    from app.llm import gemini
 
     def forbidden(*args: object, **kwargs: object) -> None:
         raise AssertionError("Real LLM clients are forbidden in live E2E")
 
     providers.AsyncAnthropic = forbidden
     providers.AsyncOpenAI = forbidden
+    gemini.GeminiClient = forbidden
 
 
 async def run() -> int:
