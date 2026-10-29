@@ -16,6 +16,8 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
+    worker_log_format: Literal["auto", "console", "json"] = "auto"
+    worker_log_colors: Literal["auto", "always", "never"] = "auto"
     database_url: PostgresDsn = PostgresDsn(
         "postgresql+asyncpg://app:app@localhost:5432/orchestrator"
     )

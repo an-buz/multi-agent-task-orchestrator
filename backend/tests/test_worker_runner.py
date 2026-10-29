@@ -50,8 +50,14 @@ async def test_cancelled_worker_still_closes_resources(monkeypatch: pytest.Monke
     worker.async_run = AsyncMock(side_effect=asyncio.CancelledError)
     worker.close = AsyncMock()
     monkeypatch.setattr(runner, "OrchestratorWorker", Mock(return_value=worker))
+    configure = Mock()
+    monkeypatch.setattr(runner, "configure_logging", configure)
 
     with pytest.raises(asyncio.CancelledError):
         await runner.main()
 
     worker.close.assert_awaited_once()
+    configure.assert_called_once()
+    options = runner.OrchestratorWorker.call_args.kwargs
+    assert options["on_startup"] is runner.WorkerSettings.on_startup
+    assert options["on_shutdown"] is runner.WorkerSettings.on_shutdown

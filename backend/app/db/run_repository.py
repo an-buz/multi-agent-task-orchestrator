@@ -21,10 +21,15 @@ from app.schemas.run import RunSummary
 
 class RunRepository:
     def __init__(
-        self, session: AsyncSession, ownership_check: Callable[[], None] | None = None
+        self,
+        session: AsyncSession,
+        ownership_check: Callable[[], None] | None = None,
+        event_observer: Callable[[UUID, EventName, dict[str, Any]], None] | None = None,
     ) -> None:
         self.session = session
         self.ownership_check = ownership_check
+        self.event_observer = event_observer
+        self._pending_logs: list[tuple[UUID, EventName, dict[str, Any]]] = []
 
     async def get(self, run_id: UUID, *, lock: bool = False) -> Run | None:
         if lock:
@@ -115,7 +120,15 @@ class RunRepository:
     async def save(self) -> None:
         if self.ownership_check is not None:
             self.ownership_check()
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except BaseException:
+            self._pending_logs.clear()
+            raise
+        pending, self._pending_logs = self._pending_logs, []
+        if self.event_observer is not None:
+            for run_id, event, data in pending:
+                self.event_observer(run_id, event, data)
 
     async def delete(self, run: Run) -> None:
         await self.session.delete(run)
@@ -127,6 +140,8 @@ class RunRepository:
     def emit(self, run_id: UUID, event: EventName, data: dict[str, Any]) -> None:
         payload = EventEnvelope(event=event, runId=run_id, ts=datetime.now(UTC), data=data)
         self.session.add(RunEvent(run_id=run_id, event=event, data=payload.data))
+        if self.event_observer is not None:
+            self._pending_logs.append((run_id, event, payload.data))
 
     async def events(self, run_id: UUID, after: int) -> builtins.list[RunEvent]:
         return list(
@@ -147,4 +162,5 @@ class RunRepository:
         )
 
     async def release(self) -> None:
+        self._pending_logs.clear()
         await self.session.rollback()

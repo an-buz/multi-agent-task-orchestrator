@@ -7,6 +7,8 @@ import sys
 import structlog
 from arq.worker import Worker
 
+from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.workers.settings import WorkerSettings
 
 
@@ -20,12 +22,21 @@ class OrchestratorWorker(Worker):
 
 
 async def main() -> None:
+    settings = get_settings()
+    configure_logging(
+        settings.log_level,
+        log_format=settings.worker_log_format,
+        log_colors=settings.worker_log_colors,
+    )
+    structlog.get_logger(__name__).info("worker_starting")
     worker = OrchestratorWorker(
         functions=WorkerSettings.functions,
         redis_settings=WorkerSettings.redis_settings,
         cron_jobs=WorkerSettings.cron_jobs,
         job_timeout=WorkerSettings.job_timeout,
         keep_result=WorkerSettings.keep_result,
+        on_startup=WorkerSettings.on_startup,
+        on_shutdown=WorkerSettings.on_shutdown,
         handle_signals=sys.platform != "win32",
     )
     try:

@@ -122,6 +122,20 @@ make frontend-dev
 
 Create agents, add them to a workflow, and submit a task from the dashboard. A fresh regular database has no prepared demo catalog. Keep the worker running for planning and execution.
 
+Worker logs go to stderr with UTC timestamps, severity, logger name, and structured
+fields such as `job_id`, `run_id`, `agent_id`, and `step_number`. They cover startup,
+readiness, planning/execution jobs, committed step and tool events, recovery, and
+cleanup. Stream deltas, prompts, model outputs, tool results, and credentials are
+excluded from application event summaries. `run_job_finished` means the queue job
+returned; `run_job_result.status` reports the resulting run state, including failure
+or waiting for confirmation.
+
+`WORKER_LOG_FORMAT=auto` selects a colored console on a terminal and JSON when
+redirected. Set it to `console` or `json` to choose explicitly. Use
+`WORKER_LOG_COLORS=auto|always|never` to control console colors; auto respects
+`NO_COLOR`. `LOG_LEVEL=INFO` controls verbosity. Restart the worker after changing
+these settings. The API continues to use JSON logs.
+
 If the worker reports a Redis connection timeout on Windows while the container is
 healthy, set `REDIS_URL=redis://127.0.0.1:16379/0` in `backend/.env` and restart the
 API and worker. Docker publishes Redis on IPv4; `localhost` may resolve to the

@@ -56,6 +56,7 @@ class MemoryRunRepository(RunRepository):
         self.saved_decisions: list[RunDecision] = []
         self.saved_events: list[tuple[str, dict[str, Any]]] = []
         self.session = cast(AsyncSession, AsyncMock())
+        super().__init__(self.session)
         self.session.scalar.return_value = None
 
     def add(self, value: Run | RunStep | RunDecision) -> None:
