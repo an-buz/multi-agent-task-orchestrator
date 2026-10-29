@@ -4,6 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.E2E_LIVE_BASE_URL;
 const apiURL = process.env.E2E_LIVE_API_URL;
+
 if (process.env.E2E_LIVE !== "true" || !baseURL || !apiURL) {
   throw new Error("Use make test-e2e-live to start the isolated mock-only stack.");
 }

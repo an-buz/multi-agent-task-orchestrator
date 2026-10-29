@@ -4,6 +4,7 @@ const agentId = "00000000-0000-4000-8000-000000000001";
 const workflowId = "00000000-0000-4000-8000-000000000010";
 const runId = "00000000-0000-4000-8000-000000000020";
 const timestamp = "2026-10-07T12:00:00.000Z";
+
 const run = {
   id: runId,
   workflow_id: workflowId,
@@ -28,9 +29,11 @@ test("creates a run, previews the plan, confirms it, and monitors it on Dashboar
   page,
 }) => {
   let confirmed = false;
+
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const cors = { "access-control-allow-origin": "http://localhost:3000" };
+
     if (route.request().method() === "OPTIONS") {
       await route.fulfill({
         status: 204,
@@ -40,10 +43,13 @@ test("creates a run, previews the plan, confirms it, and monitors it on Dashboar
           "access-control-allow-headers": "content-type",
         },
       });
+
       return;
     }
+
     if (url.pathname === "/api/v1/agents")
       return route.fulfill({ json: { items: [], total: 0 }, headers: cors });
+
     if (url.pathname === "/api/v1/workflows")
       return route.fulfill({
         json: {
@@ -62,20 +68,25 @@ test("creates a run, previews the plan, confirms it, and monitors it on Dashboar
         },
         headers: cors,
       });
+
     if (url.pathname === "/api/v1/runs" && route.request().method() === "POST")
       return route.fulfill({
         status: 201,
         json: { id: runId, status: "PLANNING", plan: null },
         headers: cors,
       });
+
     if (url.pathname === `/api/v1/runs/${runId}/plan`)
       return route.fulfill({ json: run, headers: cors });
+
     if (url.pathname === "/api/v1/runs" && route.request().method() === "GET")
       return route.fulfill({ json: { items: [], total: 0 }, headers: cors });
+
     if (url.pathname === `/api/v1/runs/${runId}/confirm`) {
       confirmed = true;
       return route.fulfill({ json: { ...run, status: "IN_PROGRESS" }, headers: cors });
     }
+
     if (url.pathname === `/api/v1/runs/${runId}/events`)
       return route.fulfill({
         status: 200,
@@ -88,11 +99,13 @@ test("creates a run, previews the plan, confirms it, and monitors it on Dashboar
           '","data":{}}\n\n',
         headers: cors,
       });
+
     if (url.pathname === `/api/v1/runs/${runId}`)
       return route.fulfill({
         json: { ...run, status: confirmed ? "IN_PROGRESS" : "AWAITING_CONFIRMATION" },
         headers: cors,
       });
+
     return route.fulfill({ status: 404, json: { detail: "Not mocked" }, headers: cors });
   });
 

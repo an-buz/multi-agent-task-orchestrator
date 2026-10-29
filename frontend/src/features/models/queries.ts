@@ -1,15 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { apiRequest } from "@/lib/api";
 import { agentModelsQueryKey, agentsQueryKey } from "@/features/agents/queries";
+
 import type { AgentModel } from "@/features/agents/types";
+
 import { runsQueryKey } from "@/features/runs/queries";
 
 export interface ManagedModel extends AgentModel {
   enabled: boolean;
 }
+
 export interface ModelCatalogue {
   items: ManagedModel[];
 }
+
 const modelsQueryKey = ["model-settings"] as const;
 
 export function useModelSettings() {
@@ -22,6 +27,7 @@ export function useModelSettings() {
 
 export function useModelSwitch() {
   const client = useQueryClient();
+
   return useMutation({
     mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) =>
       apiRequest<ModelCatalogue>(`/settings/models/${encodeURIComponent(key)}`, {
@@ -30,7 +36,9 @@ export function useModelSwitch() {
       }),
     onSuccess: async (catalogue) => {
       await client.cancelQueries({ queryKey: modelsQueryKey });
+
       client.setQueryData(modelsQueryKey, catalogue);
+
       await Promise.all([
         client.invalidateQueries({ queryKey: agentModelsQueryKey }),
         client.invalidateQueries({ queryKey: agentsQueryKey }),

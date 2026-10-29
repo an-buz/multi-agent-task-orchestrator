@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -17,6 +18,7 @@ const themes = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
 ];
+
 const subscribe = () => () => {};
 
 export function ThemeSettings() {

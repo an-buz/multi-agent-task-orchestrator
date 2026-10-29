@@ -5,6 +5,7 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import { useAgents } from "@/features/agents/queries";
 import { resolveRunDecision } from "./api";
 import { cacheRun, runsQueryKey } from "./cache";
 import { runSteps } from "./model";
+
 import type { DecisionResolution, RunDecision, RunDetails } from "./types";
 
 const assignmentSchema = z.object({
@@ -41,6 +43,7 @@ const assignmentSchema = z.object({
 function PendingDecision({ run, decision }: { run: RunDetails; decision: RunDecision }) {
   const agents = useAgents();
   const client = useQueryClient();
+
   const form = useForm<z.infer<typeof assignmentSchema>>({
     resolver: zodResolver(assignmentSchema),
     defaultValues: {
@@ -49,6 +52,7 @@ function PendingDecision({ run, decision }: { run: RunDetails; decision: RunDeci
       comment: "",
     },
   });
+
   const mutation = useMutation({
     mutationFn: (resolution: DecisionResolution) =>
       resolveRunDecision(run.id, decision.id, resolution),
@@ -57,13 +61,18 @@ function PendingDecision({ run, decision }: { run: RunDetails; decision: RunDeci
       await client.invalidateQueries({ queryKey: runsQueryKey });
     },
   });
+
   const available = (agents.data?.items ?? []).filter(
     (agent) => agent.available !== false && !agent.requires_reconfiguration,
   );
+
   const selected = useWatch({ control: form.control, name: "agent_id" });
+
   const paused = run.status === "PAUSED";
   const busy = mutation.isPending;
+
   const source = runSteps(run).find((step) => step.step_number === decision.source_step_number);
+
   return (
     <section
       aria-label={`Decision for step ${decision.source_step_number}`}
@@ -213,9 +222,11 @@ function PendingDecision({ run, decision }: { run: RunDetails; decision: RunDeci
 export function RunDecisions({ run }: { run: RunDetails }) {
   const pending = (run.decisions ?? []).filter((decision) => decision.status === "PENDING");
   const resolved = (run.decisions ?? []).filter((decision) => decision.status === "RESOLVED");
+
   const modelBlocked =
     run.pause_reasons?.includes("MODEL_UNAVAILABLE") ||
     (run.status === "PAUSED" && !pending.length && !run.pause_reasons?.length);
+
   return (
     <div className="flex flex-col gap-4">
       {modelBlocked && (

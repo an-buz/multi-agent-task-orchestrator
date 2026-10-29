@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const workflowId = "00000000-0000-4000-8000-000000000010";
 const runId = "00000000-0000-4000-8000-000000000020";
+
 const readyRun = {
   id: runId,
   workflow_id: workflowId,
@@ -29,23 +30,30 @@ for (const theme of ["dark", "light"]) {
   for (const outcome of ["ready", "failed", "cancelled"] as const) {
     test(`planner ${outcome} in ${theme} theme`, async ({ page }) => {
       await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+
       let confirmed = false;
       let edited: Record<string, unknown> | undefined;
+
       await page.route("**/api/v1/**", async (route) => {
         const request = route.request();
         const pathname = new URL(request.url()).pathname;
+
         const headers = {
           "access-control-allow-origin": request.headers().origin ?? "http://localhost:3000",
           "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
           "access-control-allow-headers": "content-type",
         };
+
         if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+
         if (pathname === "/api/v1/runs" && request.method() === "GET") {
           return route.fulfill({ json: { items: [], total: 0 }, headers });
         }
+
         if (pathname === "/api/v1/agents") {
           return route.fulfill({ json: { items: [], total: 0 }, headers });
         }
+
         if (pathname === "/api/v1/workflows") {
           return route.fulfill({
             json: {
@@ -65,6 +73,7 @@ for (const theme of ["dark", "light"]) {
             headers,
           });
         }
+
         if (pathname === "/api/v1/runs" && request.method() === "POST") {
           return route.fulfill({
             status: 201,
@@ -72,6 +81,7 @@ for (const theme of ["dark", "light"]) {
             headers,
           });
         }
+
         const state =
           outcome === "failed"
             ? {
@@ -86,6 +96,7 @@ for (const theme of ["dark", "light"]) {
             : outcome === "cancelled"
               ? { ...readyRun, status: "CANCELLED", plan: null }
               : { ...readyRun, status: confirmed ? "IN_PROGRESS" : "AWAITING_CONFIRMATION" };
+
         if (pathname === `/api/v1/runs/${runId}/events`) {
           // No plan:ready event: the completed plan must be recovered from GET/snapshot.
           return route.fulfill({
@@ -94,17 +105,22 @@ for (const theme of ["dark", "light"]) {
             body: `event: run:snapshot\ndata: ${JSON.stringify({ event: "run:snapshot", runId, data: { run: state } })}\n\n`,
           });
         }
+
         if (pathname === `/api/v1/runs/${runId}/plan`) {
           edited = request.postDataJSON() as Record<string, unknown>;
           return route.fulfill({ json: readyRun, headers });
         }
+
         if (pathname === `/api/v1/runs/${runId}/confirm`) {
           confirmed = true;
           return route.fulfill({ json: { ...readyRun, status: "IN_PROGRESS" }, headers });
         }
+
         if (pathname === `/api/v1/runs/${runId}`) return route.fulfill({ json: state, headers });
+
         return route.fulfill({ status: 404, json: { detail: "Not mocked" }, headers });
       });
+
       await Promise.all([
         page.waitForResponse(
           (response) =>
@@ -112,22 +128,32 @@ for (const theme of ["dark", "light"]) {
         ),
         page.goto("/"),
       ]);
+
       await page.getByRole("combobox", { name: "Workflow" }).click();
       await page.getByRole("option", { name: "Planner workflow" }).click();
       await page.getByRole("button", { name: "Decompose and Run" }).click();
+
       if (outcome === "ready") {
         await expect(page.getByRole("heading", { name: "Plan preview" })).toBeVisible();
+
         expect(confirmed).toBe(false);
+
         await page.getByLabel("Task for Reviewer").fill("Human-approved review task");
+
         const dialog = page.getByRole("dialog", { name: "Plan preview" });
+
         await page.keyboard.press("Escape");
         await expect(dialog).toBeHidden();
+
         expect(confirmed).toBe(false);
         expect(edited).toBeUndefined();
+
         await page.getByRole("button", { name: "Review plan", exact: true }).click();
+
         await expect(page.getByLabel("Task for Reviewer")).toHaveValue(
           "Human-approved review task",
         );
+
         await page.reload();
         await expect(dialog).toBeVisible();
         await expect(page.getByLabel("Task for Reviewer")).toHaveValue("Review the API contracts");
@@ -137,6 +163,7 @@ for (const theme of ["dark", "light"]) {
         await page.getByRole("button", { name: "Start run" }).click();
         await expect(dialog).toHaveCount(0);
         await expect(page).toHaveURL(new RegExp(`\\?run=${runId}`));
+
         expect(edited?.steps).toEqual([
           expect.objectContaining({ subtask: "Human-approved review task" }),
         ]);
@@ -146,7 +173,9 @@ for (const theme of ["dark", "light"]) {
             ? "The planner returned an invalid plan."
             : "Planning was cancelled.",
         );
+
         await expect(page.getByRole("heading", { name: "Plan preview" })).toHaveCount(0);
+
         expect(confirmed).toBe(false);
       }
     });

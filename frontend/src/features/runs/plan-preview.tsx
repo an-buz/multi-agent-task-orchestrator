@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,35 +27,49 @@ import {
   samePlanTasks,
   type PlanFormValues,
 } from "./plan-schema";
+
 import type { RunDetails } from "./types";
 
 export function PlanPreview({ run }: { run: RunDetails }) {
   const client = useQueryClient();
+
   const steps = runSteps(run);
+
   const latestValues = useMemo(() => planFormValues(steps), [steps]);
+
   const form = useForm<PlanFormValues>({
     resolver: zodResolver(planSchema),
     defaultValues: latestValues,
   });
+
   const tasks = useWatch({ control: form.control, name: "tasks" });
   const reviewed = useWatch({ control: form.control, name: "expected_subtasks" });
+
   const changed = !samePlanTasks(reviewed, latestValues.expected_subtasks);
+
   const { isDirty } = form.formState;
   const { reset } = form;
+
   const mutation = useMutation({
     mutationFn: async (action: "confirm" | "cancel") => {
       if (action === "cancel") return cancelRun(run.id);
+
       const values = planSchema.parse(form.getValues());
+
       if (!samePlanTasks(values.expected_subtasks, latestValues.expected_subtasks)) {
         throw new Error("The plan changed. Reload the latest plan before starting.");
       }
+
       const saved = await editRunPlan(
         run.id,
         editedPlanSteps(steps, values),
         values.expected_subtasks,
       );
+
       reset(planFormValues(runSteps(saved)));
+
       await cacheRun(client, saved);
+
       return confirmRun(run.id, planFormValues(runSteps(saved)).expected_subtasks);
     },
     onError: () => client.invalidateQueries({ queryKey: runQueryKey(run.id), exact: true }),
@@ -63,10 +78,13 @@ export function PlanPreview({ run }: { run: RunDetails }) {
       await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
     },
   });
+
   const busy = mutation.isPending;
+
   useEffect(() => {
     if (changed && !isDirty && !busy) reset(latestValues);
   }, [changed, isDirty, busy, reset, latestValues]);
+
   return (
     <Dialog
       defaultOpen

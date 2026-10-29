@@ -3,18 +3,23 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { AppShell } from "@/components/app-shell";
 import { useRuns, useDeleteRun } from "./queries";
+
 import type { RunSummary } from "@/features/runs/types";
 
 export default function RunsContent() {
   const [deleting, setDeleting] = useState<RunSummary | null>(null);
   const [offset, setOffset] = useState(0);
+
   const query = useRuns(offset);
+
   const deletion = useDeleteRun();
+
   return (
     <AppShell>
       <section className="min-w-0">
@@ -106,6 +111,7 @@ export default function RunsContent() {
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
             await deletion.mutateAsync(deleting.id);
+
             if (query.data?.items.length === 1 && offset > 0) setOffset(offset - 50);
           }}
         />

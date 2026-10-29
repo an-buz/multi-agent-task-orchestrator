@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,15 +31,19 @@ export function DeleteConfirmationDialog({
   onConfirm: () => Promise<void>;
 }) {
   const [error, setError] = useState("");
+
   async function confirm() {
     setError("");
+
     try {
       await onConfirm();
+
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : `Could not delete the ${entity}.`);
     }
   }
+
   return (
     <AlertDialog
       open

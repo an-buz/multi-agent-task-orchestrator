@@ -7,33 +7,41 @@ for (const theme of ["light", "dark"]) {
   test(`mock streaming, retry reset and snapshot recovery in ${theme}`, async ({ page }) => {
     await page.addInitScript((value) => {
       localStorage.setItem("theme", value);
+
       class MockEventSource extends EventTarget {
         onerror = null;
+
         forward = (event: Event) => {
           const envelope = (event as CustomEvent).detail;
+
           this.dispatchEvent(
             new MessageEvent(envelope.event, {
               data: JSON.stringify(envelope),
             }),
           );
         };
+
         constructor() {
           super();
           window.addEventListener("mock-sse", this.forward);
         }
+
         close() {
           window.removeEventListener("mock-sse", this.forward);
         }
       }
+
       Object.defineProperty(window, "EventSource", { value: MockEventSource });
     }, theme);
 
     let output = "";
     let completed = false;
     let gets = 0;
+
     await page.route("**/api/v1/**", async (route) => {
       const headers = { "access-control-allow-origin": "http://localhost:3000" };
       const pathname = new URL(route.request().url()).pathname;
+
       if (pathname === `/api/v1/runs/${runId}`) {
         gets += 1;
         return route.fulfill({
@@ -63,10 +71,13 @@ for (const theme of ["light", "dark"]) {
           },
         });
       }
+
       return route.fulfill({ headers, json: { items: [], total: 0 } });
     });
+
     const emit = async (text: string, reset = false) => {
       output = text;
+
       await page.evaluate(
         ({ text, reset, agentId }) => {
           window.dispatchEvent(
@@ -92,13 +103,17 @@ for (const theme of ["light", "dark"]) {
     await page.goto(`/runs/${runId}`);
     await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
     await expect(page.getByText("Waiting for model response…")).toBeVisible();
+
     const initialGets = gets;
+
     await emit("Привет 🌍");
     await expect(page.getByLabel("Output for step 1")).toHaveText("Привет 🌍");
     await expect(page.getByText("Receiving model response…")).toBeVisible();
     await emit("Привет 🌍");
     await expect(page.getByLabel("Output for step 1")).toHaveText("Привет 🌍");
+
     expect(gets).toBe(initialGets);
+
     await emit("", true);
     await expect(page.getByLabel("Output for step 1")).toHaveCount(0);
     await expect(page.getByText("Waiting for model response…")).toBeVisible();
@@ -107,7 +122,9 @@ for (const theme of ["light", "dark"]) {
     await expect(page.getByLabel("Output for step 1")).toHaveText("Fixture ");
     await emit("Fixture result");
     await expect(page.getByLabel("Output for step 1")).toHaveText("Fixture result");
+
     completed = true;
+
     await page.evaluate(() =>
       window.dispatchEvent(
         new CustomEvent("mock-sse", {
@@ -115,6 +132,7 @@ for (const theme of ["light", "dark"]) {
         }),
       ),
     );
+
     await expect(page.getByRole("heading", { name: "Final report" })).toBeVisible();
     await expect(page.getByText("Waiting for model response…")).toHaveCount(0);
     await expect(page.getByText("Receiving model response…")).toHaveCount(0);

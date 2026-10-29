@@ -1,4 +1,5 @@
 import { apiRequest, apiResponse, apiUrl } from "@/lib/api";
+
 import type {
   CreateRunInput,
   CreatedRun,
@@ -33,15 +34,20 @@ export function waitForRunPlan(id: string, signal?: AbortSignal): Promise<RunDet
       reject(signal.reason);
       return;
     }
+
     let settled = false;
     let checking = false;
+
     const controller = new AbortController();
+
     const onAbort = () =>
       finish(signal?.reason ?? new DOMException("Planning wait cancelled.", "AbortError"));
+
     const timer = window.setTimeout(
       () => finish(new Error("Timed out waiting for the execution plan.")),
       60_000,
     );
+
     const close = subscribeToRun(
       id,
       (event) => {
@@ -51,12 +57,17 @@ export function waitForRunPlan(id: string, signal?: AbortSignal): Promise<RunDet
       },
       () => undefined,
     );
+
     // Polling is a fallback when SSE cannot connect or an event is lost.
     const poll = window.setInterval(checkPlan, 2000);
+
     signal?.addEventListener("abort", onAbort, { once: true });
+
     function checkPlan() {
       if (settled || checking) return;
+
       checking = true;
+
       void getRun(id, controller.signal)
         .then(
           (run) => {
@@ -73,16 +84,20 @@ export function waitForRunPlan(id: string, signal?: AbortSignal): Promise<RunDet
           checking = false;
         });
     }
+
     // A fast worker may finish before EventSource connects; snapshot/GET closes that race.
     checkPlan();
+
     function finish(error?: unknown, run?: RunDetails) {
       if (settled) return;
+
       settled = true;
       window.clearTimeout(timer);
       window.clearInterval(poll);
       signal?.removeEventListener("abort", onAbort);
       controller.abort();
       close();
+
       if (error) reject(error);
       else if (run) resolve(run);
       else reject(new Error("The server did not return the execution plan."));
@@ -142,6 +157,7 @@ export function subscribeToRun(
 ) {
   const replay = options?.after !== undefined ? `?after=${options.after}` : "";
   const source = new EventSource(apiUrl(`/runs/${id}/events${replay}`));
+
   const eventNames = [
     "run:snapshot",
     "plan:ready",
@@ -161,24 +177,34 @@ export function subscribeToRun(
     "task:failed",
     "task:cancelled",
   ];
+
   const listeners = eventNames.map((name) => {
     const listener: EventListener = (message) => {
       const incoming = message as MessageEvent<string>;
+
       let parsed: unknown;
+
       try {
         parsed = JSON.parse(incoming.data);
       } catch {
         return;
       }
+
       if (!parsed || typeof parsed !== "object" || !("event" in parsed) || parsed.event !== name)
         return;
+
       const event = parsed as RunEvent;
+
       onEvent({ ...event, id: incoming.lastEventId || undefined });
     };
+
     source.addEventListener(name, listener);
+
     return [name, listener] as const;
   });
+
   source.onerror = onError;
+
   return () => {
     listeners.forEach(([name, listener]) => source.removeEventListener(name, listener));
     source.close();

@@ -4,9 +4,12 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useQueryClient } from "@tanstack/react-query";
+
 import { AppShell } from "@/components/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
+
 import Link from "next/link";
+
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { contextFileDownloadUrl } from "@/features/files/queries";
 import { cancelRun, exportRun, retryRunStep } from "@/features/runs/api";
@@ -22,13 +25,17 @@ export default function RunDetailContent({ id }: { id: string }) {
   const client = useQueryClient();
   const query = useRun(id);
   const { activityEvents: events, connectionError: streamError } = useRunEvents(id);
+
   const [actionError, setActionError] = useState("");
   const [pending, setPending] = useState(false);
+
   async function perform(action: () => Promise<unknown>, refresh = true) {
     setPending(true);
     setActionError("");
+
     try {
       await action();
+
       if (refresh) {
         await client.invalidateQueries({ queryKey: runsQueryKey });
       }
@@ -38,19 +45,26 @@ export default function RunDetailContent({ id }: { id: string }) {
       setPending(false);
     }
   }
+
   async function download(format: "json" | "md" | "pdf") {
     const response = await exportRun(id, format);
+
     if (!response.ok) throw new Error(`Export failed (${response.status})`);
+
     const blob = await response.blob();
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
     link.download = `run-${id}.${format}`;
     link.click();
     URL.revokeObjectURL(url);
   }
+
   const run = query.data;
   const runSteps = getRunSteps(run);
+
   return (
     <AppShell>
       <section className="min-w-0">

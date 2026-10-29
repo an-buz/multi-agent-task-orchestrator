@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Cpu, Info } from "lucide-react";
+
 import { AppShell } from "@/components/app-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -41,8 +42,11 @@ const providers = [
 
 export default function ModelsContent() {
   const query = useModelSettings();
+
   const mutation = useModelSwitch();
+
   const models = query.data?.items ?? [];
+
   return (
     <AppShell>
       <section className="min-w-0">
@@ -101,7 +105,9 @@ export default function ModelsContent() {
           )}
           {providers.map((provider) => {
             const items = models.filter((model) => model.provider === provider.key);
+
             if (!items.length) return null;
+
             return (
               <Card key={provider.key}>
                 <CardHeader>

@@ -9,6 +9,7 @@ registerHooks({
     if (specifier.startsWith("@/")) {
       specifier = new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href;
     }
+
     return nextResolve(specifier, context);
   },
   load(url, context, nextLoad) {
@@ -21,8 +22,10 @@ registerHooks({
           jsx: ts.JsxEmit.ReactJSX,
         },
       }).outputText;
+
       return { format: "module", source, shortCircuit: true };
     }
+
     return nextLoad(url, context);
   },
 });

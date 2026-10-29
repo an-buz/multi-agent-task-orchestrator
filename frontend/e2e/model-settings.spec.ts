@@ -45,6 +45,7 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
           enabled: true,
         },
       ];
+
   let agent = {
     id: agentId,
     name: "Model reviewer",
@@ -60,6 +61,7 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
     available: true,
     requires_reconfiguration: false,
   };
+
   const run = {
     id: runId,
     workflow_id: agentId,
@@ -96,11 +98,13 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
       ],
     },
   };
+
   const requests: { switches: unknown[]; agents: unknown[]; settings: unknown[] } = {
     switches: [],
     agents: [],
     settings: [],
   };
+
   let config = {
     default_model: "claude-sonnet",
     planner_model: "claude-haiku",
@@ -113,67 +117,93 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
     gemini_key_configured: true,
     tavily_key_configured: false,
   };
+
   await page.addInitScript((theme) => {
     localStorage.setItem("theme", theme);
+
     class Source extends EventTarget {
       close() {}
     }
+
     Object.defineProperty(window, "EventSource", { value: Source });
   }, theme);
+
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/api/v1", "");
+
     const headers = {
       "access-control-allow-origin": "http://localhost:3000",
       "access-control-allow-methods": "GET,POST,PUT,PATCH,OPTIONS",
       "access-control-allow-headers": "content-type",
     };
+
     if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+
     if (path.startsWith("/settings/models/") && request.method() === "PATCH") {
       requests.switches.push(request.postDataJSON());
+
       if (options.fail)
         return route.fulfill({
           status: 500,
           headers,
           json: { error: { code: "test_failure", message: "Could not save model switch." } },
         });
+
       const model = models.find((item) => item.key === path.split("/").at(-1))!;
+
       model.enabled = request.postDataJSON().enabled;
+
       if (!model.enabled && agent.model === model.key)
         agent = { ...agent, available: false, requires_reconfiguration: true };
+
       return route.fulfill({ headers, json: { items: models } });
     }
+
     if (path === "/settings/models") return route.fulfill({ headers, json: { items: models } });
+
     if (path === "/agents/models")
       return route.fulfill({ headers, json: { items: models.filter((model) => model.enabled) } });
+
     if (path === "/agents/tools") return route.fulfill({ headers, json: { items: [] } });
+
     if (path === "/agents" && request.method() === "GET")
       return route.fulfill({ headers, json: { items: [agent], total: 1 } });
+
     if (path === `/agents/${agentId}` && request.method() === "PUT") {
       requests.agents.push(request.postDataJSON());
+
       agent = {
         ...agent,
         ...request.postDataJSON(),
         available: true,
         requires_reconfiguration: false,
       };
+
       return route.fulfill({ headers, json: agent });
     }
+
     if (path === "/settings/config") {
       if (request.method() === "PATCH") {
         requests.settings.push(request.postDataJSON());
         config = { ...config, ...request.postDataJSON() };
       }
+
       return route.fulfill({ headers, json: config });
     }
+
     if (path === `/runs/${runId}/cancel`) {
       run.status = "CANCELLED";
       return route.fulfill({ headers, json: run });
     }
+
     if (path === `/runs/${runId}`) return route.fulfill({ headers, json: run });
+
     if (path === "/runs") return route.fulfill({ headers, json: { items: [run], total: 1 } });
+
     return route.fulfill({ headers, json: { items: [], total: 0 } });
   });
+
   return requests;
 }
 
@@ -182,12 +212,15 @@ for (const theme of ["light", "dark"]) {
     page,
   }) => {
     const requests = await setup(page, theme);
+
     await page.goto("/models");
     await expect(page.getByRole("heading", { name: "Anthropic provider" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "OpenAI provider" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Gemini provider" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "gemini-3.5-flash-lite" })).toBeChecked();
+
     const toggle = page.getByRole("switch", { name: "claude-sonnet-test" });
+
     await expect(toggle).toBeChecked();
     await toggle.focus();
     await page.keyboard.press("Space");
@@ -203,12 +236,16 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: /Save changes/i }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByText("UNAVAILABLE", { exact: true })).toHaveCount(0);
+
     expect(requests.switches).toEqual([{ enabled: false }]);
     expect(requests.agents).toMatchObject([{ model: "gemini-flash-lite" }]);
+
     await page.goto("/settings");
+
     await expect(page.getByText("Gemini", { exact: true }).locator("../..")).toContainText(
       "Configured",
     );
+
     await page.getByRole("combobox", { name: "Default model" }).click();
     await page.getByRole("option", { name: /Gemini Flash-Lite/ }).click();
     await page.getByRole("combobox", { name: "Planner model", exact: true }).click();
@@ -217,12 +254,15 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: /Save changes/ }).click();
     await expect(page.getByText("Settings saved successfully.")).toBeVisible();
     await page.reload();
+
     await expect(page.getByRole("combobox", { name: "Default model" })).toContainText(
       "Gemini Flash-Lite",
     );
+
     await expect(page.getByRole("combobox", { name: "Planner model", exact: true })).toContainText(
       "Gemini Flash-Lite",
     );
+
     expect(requests.settings).toMatchObject([
       { default_model: "gemini-flash-lite", planner_model: "gemini-flash-lite" },
     ]);
@@ -248,6 +288,7 @@ test("no connected providers shows setup instructions", async ({ page }) => {
   await expect(page.getByRole("switch")).toHaveCount(0);
   await page.goto("/settings");
   await expect(page.getByRole("combobox", { name: "Planner model", exact: true })).toBeDisabled();
+
   await expect(
     page.getByText("Connect a provider and enable a model to select a planner."),
   ).toBeVisible();
@@ -256,7 +297,9 @@ test("no connected providers shows setup instructions", async ({ page }) => {
 test("failed model update preserves the saved switch state", async ({ page }) => {
   await setup(page, "dark", { fail: true });
   await page.goto("/models");
+
   const toggle = page.getByRole("switch", { name: "claude-sonnet-test" });
+
   await toggle.click();
   await expect(page.getByText("Could not save model switch.", { exact: true })).toBeVisible();
   await expect(toggle).toBeChecked();

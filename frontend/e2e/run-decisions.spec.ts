@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+
 import type { DecisionResolution, RunDetails } from "../src/features/runs/types";
 
 const runId = "00000000-0000-4000-8000-000000000031";
@@ -56,15 +57,20 @@ async function setup(page: Page, theme: string, status: "PAUSED" | "IN_PROGRESS"
       },
     ],
   };
+
   const requests: DecisionResolution[] = [];
   const state = { fail: false };
+
   await page.addInitScript((theme) => {
     localStorage.setItem("theme", theme);
+
     class Source extends EventTarget {
       constructor() {
         super();
+
         window.addEventListener("decision-test-event", (event) => {
           const detail = (event as CustomEvent).detail;
+
           this.dispatchEvent(
             new MessageEvent(detail.event, {
               data: JSON.stringify(detail),
@@ -73,36 +79,49 @@ async function setup(page: Page, theme: string, status: "PAUSED" | "IN_PROGRESS"
           );
         });
       }
+
       close() {}
     }
+
     Object.defineProperty(window, "EventSource", { value: Source });
   }, theme);
+
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/api/v1", "");
+
     const headers = {
       "access-control-allow-origin": "http://localhost:3000",
       "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers": "content-type",
     };
+
     if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+
     if (path === `/runs/${runId}/decisions/${decisionId}/resolve`) {
       const payload = request.postDataJSON() as DecisionResolution;
+
       requests.push(payload);
+
       if (state.fail)
         return route.fulfill({
           status: 409,
           headers,
           json: { error: { code: "invalid_run_state", message: "Selected agent is unavailable." } },
         });
+
       run.status = payload.action === "cancel" ? "CANCELLED" : "IN_PROGRESS";
       run.pause_reasons = [];
+
       const decision = run.decisions![0];
+
       decision.status = "RESOLVED";
       decision.resolution = payload;
       decision.resolved_at = timestamp;
+
       if (payload.action === "assign_fixes" && run.plan && !Array.isArray(run.plan)) {
         decision.followup_step_numbers = [3, 4];
+
         run.plan.steps.push(
           {
             step_number: 3,
@@ -121,10 +140,14 @@ async function setup(page: Page, theme: string, status: "PAUSED" | "IN_PROGRESS"
           },
         );
       }
+
       return route.fulfill({ headers, json: run });
     }
+
     if (path === `/runs/${runId}`) return route.fulfill({ headers, json: run });
+
     if (path === "/runs") return route.fulfill({ headers, json: { items: [run], total: 1 } });
+
     if (path === "/agents")
       return route.fulfill({
         headers,
@@ -133,8 +156,10 @@ async function setup(page: Page, theme: string, status: "PAUSED" | "IN_PROGRESS"
           total: 1,
         },
       });
+
     return route.fulfill({ headers, json: { items: [], total: 0 } });
   });
+
   return { run, requests, state };
 }
 
@@ -142,25 +167,33 @@ for (const theme of ["light", "dark"]) {
   for (const surface of ["dashboard", "details"]) {
     test(`Assign fixes persists and updates ${surface} in ${theme}`, async ({ page }) => {
       const { requests } = await setup(page, theme);
+
       await page.goto(surface === "dashboard" ? `/?run=${runId}` : `/runs/${runId}`);
+
       const dialog = page.getByRole("dialog", { name: "Your decision is required" });
       const card = dialog.getByRole("region", { name: "Decision for step 1" });
+
       await expect(dialog).toBeVisible();
       await expect(card.getByText("Empty email accepted", { exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(dialog).toBeHidden();
+
       expect(requests).toEqual([]);
+
       await page.getByRole("button", { name: "Review decisions (1)", exact: true }).click();
       await expect(dialog).toBeVisible();
       await page.reload();
       await expect(card.getByRole("button", { name: "Assign fixes", exact: true })).toBeEnabled();
+
       await card
         .getByLabel("Fix task", { exact: true })
         .fill("Fix email and whitespace validation");
+
       await card.getByLabel("Comment (optional)").fill("Keep previous QA evidence");
       await card.getByRole("button", { name: "Assign fixes", exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await expect(card).toHaveCount(0);
+
       expect(requests).toEqual([
         {
           action: "assign_fixes",
@@ -169,6 +202,7 @@ for (const theme of ["light", "dark"]) {
           comment: "Keep previous QA evidence",
         },
       ]);
+
       await page.getByText("Decision history (1)", { exact: true }).click();
       await expect(page.getByText("Fixes assigned; new steps 3, 4", { exact: true })).toBeVisible();
       await page.reload();
@@ -176,29 +210,47 @@ for (const theme of ["light", "dark"]) {
       await expect(card).toHaveCount(0);
     });
   }
+
   test(`Continue, error recovery and cancellation in ${theme}`, async ({ page }) => {
     const { requests, state } = await setup(page, theme);
+
     await page.goto(`/runs/${runId}`);
+
     const card = page.getByRole("region", { name: "Decision for step 1" });
+
     state.fail = true;
+
     await card.getByRole("button", { name: "Continue without fixes" }).click();
+
     await expect(
       card.getByRole("alert").filter({ hasText: "Selected agent is unavailable." }),
     ).toBeVisible();
+
     await expect(card.getByRole("button", { name: "Continue without fixes" })).toBeEnabled();
+
     state.fail = false;
+
     await card.getByRole("button", { name: "Continue without fixes" }).click();
     await expect(card).toHaveCount(0);
+
     expect(requests.at(-1)?.action).toBe("continue");
   });
+
   test(`Active branches drain and decisions arrive through SSE in ${theme}`, async ({ page }) => {
     const { run, requests } = await setup(page, theme, "IN_PROGRESS");
+
     const decision = run.decisions![0];
+
     run.decisions = [];
+
     await page.goto(`/?run=${runId}`);
+
     const card = page.getByRole("region", { name: "Decision for step 1" });
+
     await expect(card).toHaveCount(0);
+
     run.decisions = [decision];
+
     await page.evaluate(
       (detail) => window.dispatchEvent(new CustomEvent("decision-test-event", { detail })),
       {
@@ -209,12 +261,14 @@ for (const theme of ["light", "dark"]) {
         id: "1",
       },
     );
+
     await expect(page.getByRole("dialog", { name: "Your decision is required" })).toBeVisible();
     await expect(card.getByText(/Active steps are finishing/)).toBeVisible();
     await expect(card.getByRole("button", { name: "Assign fixes", exact: true })).toBeDisabled();
     await expect(card.getByRole("button", { name: "Continue without fixes" })).toBeDisabled();
     await card.getByRole("button", { name: "Cancel run", exact: true }).click();
     await expect(card).toHaveCount(0);
+
     expect(requests.at(-1)?.action).toBe("cancel");
   });
 }

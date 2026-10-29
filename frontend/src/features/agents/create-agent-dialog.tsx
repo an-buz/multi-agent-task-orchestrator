@@ -18,6 +18,7 @@ import {
 import { useEffect, useId, useState } from "react";
 import remarkGfm from "remark-gfm";
 import { useForm, useWatch } from "react-hook-form";
+
 import { agentSchemaForModels, modelTokenLimits, type AgentFormValues } from "./form-schema";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,9 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+
 import type { Agent } from "./types";
+
 import { useSaveAgent, useAgentCatalog } from "./queries";
 import { useAppConfig } from "@/features/settings/queries";
 
@@ -48,6 +51,7 @@ const defaultValues: AgentFormValues = {
 };
 
 const tierLabels = { fast: "Fast", balanced: "Balanced", powerful: "Powerful" } as const;
+
 const modelLabels: Record<string, string> = {
   "claude-haiku": "Claude Haiku",
   "claude-sonnet": "Claude Sonnet",
@@ -74,17 +78,25 @@ export function CreateAgentDialog({
   trigger?: boolean;
 }) {
   const catalog = useAgentCatalog();
+
   const [open, setOpen] = useState(Boolean(agent));
+
   const config = useAppConfig(open && !agent);
+
   const [advanced, setAdvanced] = useState(false);
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
+
   const mutation = useSaveAgent(agent?.id);
+
   const errorId = useId();
+
   const models = catalog.data?.models ?? [];
+
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentSchemaForModels(models)),
     defaultValues,
   });
+
   useEffect(() => {
     if (agent) {
       form.reset({
@@ -99,25 +111,31 @@ export function CreateAgentDialog({
       });
     }
   }, [agent, form]);
+
   useEffect(() => {
     if (open && !agent && config.data) {
       if (!form.getFieldState("model").isDirty) form.setValue("model", config.data.default_model);
+
       if (!form.getFieldState("temperature").isDirty)
         form.setValue("temperature", config.data.temperature);
+
       if (!form.getFieldState("max_tokens").isDirty)
         form.setValue("max_tokens", config.data.max_tokens);
     }
   }, [open, agent, config.data, form]);
+
   const systemPrompt = useWatch({ control: form.control, name: "system_prompt" });
   const contextWindow = useWatch({ control: form.control, name: "context_window" });
   const temperature = useWatch({ control: form.control, name: "temperature" });
   const selectedTools = useWatch({ control: form.control, name: "tools" });
   const selectedModel = useWatch({ control: form.control, name: "model" });
+
   const tools = catalog.data?.tools ?? [];
   const selectedModelInfo = models.find((model) => model.key === selectedModel);
 
   function close() {
     if (mutation.isPending) return;
+
     setOpen(false);
     form.reset(defaultValues);
     setPromptView("write");
@@ -169,8 +187,10 @@ export function CreateAgentDialog({
                 form.setError("model", {
                   message: "Choose an enabled model from a connected provider.",
                 });
+
                 return;
               }
+
               mutation.mutate(values, {
                 onSuccess: () => {
                   setOpen(false);
@@ -283,10 +303,14 @@ export function CreateAgentDialog({
               value={selectedModel}
               onValueChange={(model) => {
                 if (!model) return;
+
                 const modelInfo = models.find((item) => item.key === model);
+
                 form.setValue("model", model, { shouldDirty: true });
+
                 if (modelInfo) {
                   const limits = modelTokenLimits(form.getValues(), modelInfo);
+
                   form.setValue("context_window", limits.context_window, { shouldDirty: true });
                   form.setValue("max_tokens", limits.max_tokens, { shouldDirty: true });
                 }
@@ -371,6 +395,7 @@ export function CreateAgentDialog({
               {tools.map((tool) => {
                 const selected = selectedTools.includes(tool.key);
                 const Icon = toolIcons[tool.key as keyof typeof toolIcons] ?? Terminal;
+
                 return (
                   <button
                     key={tool.key}
@@ -438,6 +463,7 @@ export function CreateAgentDialog({
                       value={temperature}
                       onValueChange={(value) => {
                         const v = Array.isArray(value) ? value[0] : value;
+
                         form.setValue("temperature", v, {
                           shouldDirty: true,
                           shouldValidate: form.formState.isSubmitted,

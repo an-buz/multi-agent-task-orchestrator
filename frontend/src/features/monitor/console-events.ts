@@ -10,19 +10,24 @@ export function consoleEvents(events: RunEvent[]): RunEvent[] {
 export function eventPresentation(event: RunEvent, steps: RunStep[]) {
   const data = event.data ?? event.payload ?? {};
   const agent = steps.find((step) => step.step_number === data.stepNumber)?.agent_name;
+
   const tool = event.event.includes("tool");
   const toolName = typeof data.toolName === "string" ? data.toolName : "Tool";
+
   const tone = tool
     ? "cyan"
     : event.event.startsWith("agent:") && !event.event.endsWith("completed")
       ? "violet"
       : "emerald";
+
   const tag = tool
     ? `Tool: ${toolName}`
     : tone === "violet"
       ? `Agent: ${agent ?? "Update"}`
       : `Status: ${event.event.split(":").at(-1)?.replaceAll("_", " ")}`;
+
   let message: string;
+
   if (typeof data.summary === "string") message = data.summary;
   else if (event.event === "run:snapshot") message = "Persisted run state restored.";
   else if (event.event === "plan:ready")
@@ -30,6 +35,7 @@ export function eventPresentation(event: RunEvent, steps: RunStep[]) {
   else if (event.event === "task:started") message = "Workflow execution started.";
   else if (event.event === "task:paused") {
     const reasons = Array.isArray(data.pauseReasons) ? data.pauseReasons : [];
+
     const explanations = [
       ...(reasons.includes("MODEL_UNAVAILABLE")
         ? [
@@ -40,6 +46,7 @@ export function eventPresentation(event: RunEvent, steps: RunStep[]) {
         ? ["Your decision is required. Review the agent findings."]
         : []),
     ];
+
     message = `Workflow paused. ${explanations.join(" ") || "Check run details for the required action."}`;
   } else if (event.event === "decision:required")
     message = "Agent findings require your decision. New steps are blocked.";
@@ -64,12 +71,14 @@ export function eventPresentation(event: RunEvent, steps: RunStep[]) {
       error && typeof error === "object" && "message" in error && typeof error.message === "string"
         ? error.message
         : "Review the step details.";
+
     message = `${agent ?? "Agent"} failed. ${reason}`;
   } else if (event.event === "agent:tool_call")
     message = `${agent ?? "Agent"} is calling ${toolName}.`;
   else if (event.event === "agent:tool_result")
     message = `${toolName} ${data.ok === false ? "failed" : "completed"}.`;
   else message = "Run activity updated.";
+
   return {
     tag: tag.replace(/\s+/gu, " ").trim(),
     tone,

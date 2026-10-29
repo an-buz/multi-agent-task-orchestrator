@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const timestamp = "2026-10-05T00:00:00.000Z";
+
 const agents = [
   {
     id: "00000000-0000-4000-8000-000000000001",
@@ -53,9 +54,11 @@ for (const preset of [
 ]) {
   test(`creates and saves the graph selected by ${preset.label}`, async ({ page }) => {
     let savedWorkflow: WorkflowResponse | undefined;
+
     await page.route("**/*", async (route) => {
       const requestUrl = new URL(route.request().url());
       const cors = { "access-control-allow-origin": "http://localhost:3000" };
+
       if (requestUrl.pathname.startsWith("/api/v1/") && route.request().method() === "OPTIONS") {
         await route.fulfill({
           status: 204,
@@ -65,10 +68,13 @@ for (const preset of [
             "access-control-allow-headers": "content-type",
           },
         });
+
         return;
       }
+
       if (requestUrl.pathname === "/api/v1/agents") {
         await route.fulfill({ json: { items: agents, total: agents.length }, headers: cors });
+
         return;
       }
 
@@ -78,13 +84,16 @@ for (const preset of [
             WorkflowResponse,
             "id" | "created_at" | "updated_at"
           >;
+
           savedWorkflow = {
             ...input,
             id: "00000000-0000-4000-8000-000000000010",
             created_at: timestamp,
             updated_at: timestamp,
           };
+
           await route.fulfill({ status: 201, json: savedWorkflow, headers: cors });
+
           return;
         }
 
@@ -95,6 +104,7 @@ for (const preset of [
           },
           headers: cors,
         });
+
         return;
       }
 
@@ -109,20 +119,26 @@ for (const preset of [
     await page.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
     await page.getByRole("combobox", { name: "Arrange preset" }).click();
     await page.getByRole("option", { name: preset.label, exact: true }).click();
+
     await expect(page.getByRole("combobox", { name: "Arrange preset" })).toContainText(
       preset.label,
     );
 
     await expect(page.locator(".react-flow__node")).toHaveCount(3);
+
     await expect(page.locator(".react-flow__edge-path")).toHaveCount(
       preset.dependencies.flat().length,
     );
+
     await expect(page.getByText("Graph is valid.")).toBeVisible();
 
     await page.getByRole("button", { name: "Save workflow" }).click();
+
     const workflowCard = page.locator("article").filter({ hasText: "Local E2E workflow" });
+
     await expect(workflowCard).toContainText(preset.executionType);
     await expect(workflowCard).toContainText("3 steps");
+
     expect(savedWorkflow?.execution_type).toBe(preset.executionType);
     expect(savedWorkflow?.steps.map((step) => step.depends_on)).toEqual(preset.dependencies);
   });

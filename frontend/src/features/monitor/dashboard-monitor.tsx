@@ -13,6 +13,7 @@ import {
   LockKeyhole,
   MoreHorizontal,
 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -22,7 +23,9 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
+
 import type { RunDetails, RunSummary, RunEvent, RunStep } from "@/features/runs/types";
+
 import { eventKey, runSteps } from "@/features/runs/model";
 import { consoleEvents, eventPresentation } from "./console-events";
 import { cn } from "@/lib/utils";
@@ -56,9 +59,12 @@ export function RunPipeline({
   failed?: boolean;
 }) {
   const [options, setOptions] = useState(false);
+
   const router = useRouter();
+
   const steps = runSteps(run);
   const choices = run && !runs.some((item) => item.id === run.id) ? [run, ...runs] : runs;
+
   return (
     <section
       aria-label="Execution pipeline"
@@ -188,7 +194,9 @@ export function RunConsole({
   steps: RunStep[];
 }) {
   const [hidden, setHidden] = useState<{ runId?: string; keys: Set<string> }>({ keys: new Set() });
+
   const scrollRef = useRef<HTMLDivElement>(null);
+
   const visible = consoleEvents(events).filter(
     (event) => hidden.runId !== runId || !hidden.keys.has(eventKey(event)),
   );
@@ -196,6 +204,7 @@ export function RunConsole({
 
   useEffect(() => {
     const viewport = scrollRef.current;
+
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
   }, [latestEvent, runId]);
 
@@ -228,6 +237,7 @@ export function RunConsole({
         )}
         {visible.map((event) => {
           const { tag, tone, message } = eventPresentation(event, steps);
+
           return (
             <div
               key={eventKey(event)}
@@ -264,6 +274,7 @@ export function RunConsole({
 
 export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }) {
   const [help, setHelp] = useState(false);
+
   const tone =
     step?.status === "COMPLETED"
       ? "text-status-completed"
@@ -272,12 +283,15 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
         : step?.status === "IN_PROGRESS" || step?.status === "PLANNING"
           ? "text-status-warning"
           : "text-muted-foreground";
+
   const prompt = step?.prompt_tokens ?? 0,
     completion = step?.completion_tokens ?? 0;
+
   const steps = runSteps(run),
     tokens = prompt + completion;
   const completed = steps.filter((item) => item.status === "COMPLETED").length;
   const progress = steps.length ? Math.round((completed / steps.length) * 100) : 0;
+
   return (
     <aside
       aria-label="Agent inspector"

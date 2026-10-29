@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { apiRequest } from "@/lib/api";
 
 import type { AppConfig, SettingsInput } from "./types";
@@ -15,6 +16,7 @@ export function useAppConfig(enabled = true) {
 
 export function useSaveAppConfig() {
   const client = useQueryClient();
+
   return useMutation({
     mutationFn: (values: SettingsInput) =>
       apiRequest<AppConfig>("/settings/config", {

@@ -5,6 +5,7 @@ import { LoaderCircle, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,9 @@ import {
 } from "@/components/ui/select";
 import { useAppConfig, useSaveAppConfig } from "./queries";
 import { useAgentModels } from "@/features/agents/queries";
+
 import type { AgentModel } from "@/features/agents/types";
+
 import { ThemeSettings } from "./theme-settings";
 
 const settingsSchema = z.object({
@@ -33,19 +36,26 @@ type SettingsFormValues = z.infer<typeof settingsSchema>;
 export default function SettingsContent() {
   const configQuery = useAppConfig();
   const modelQuery = useAgentModels();
+
   const config = configQuery.data;
   const models = modelQuery.data?.items ?? [];
+
   const loadError =
     configQuery.isError || modelQuery.isError ? "Could not load configuration." : null;
+
   const [saveNotice, setSaveNotice] = useState("");
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
     defaultValues: { default_model: "", planner_model: "", temperature: 0.7, max_tokens: 4096 },
   });
+
   const selectedDefaultModel = useWatch({ control: form.control, name: "default_model" });
+
   const selectedDefaultModelInfo = models.find((model) => model.key === selectedDefaultModel);
+
   const selectedPlannerModel = useWatch({ control: form.control, name: "planner_model" });
+
   const selectedPlannerModelInfo = models.find((model) => model.key === selectedPlannerModel);
 
   useEffect(() => {
@@ -59,9 +69,12 @@ export default function SettingsContent() {
   }, [config, form]);
 
   const save = useSaveAppConfig();
+
   const saving = save.isPending;
+
   function onSubmit(values: SettingsFormValues) {
     setSaveNotice("");
+
     save.mutate(values, {
       onSuccess: () => setSaveNotice("Settings saved successfully."),
       onError: (error) => setSaveNotice(error.message),
@@ -366,8 +379,11 @@ function formatModelLabel(model: AgentModel): string {
     "gemini-flash": "Gemini Flash",
     "gemini-flash-lite": "Gemini Flash-Lite",
   };
+
   if (modelLabels[model.key]) return modelLabels[model.key];
+
   const parts = model.key.split("-");
+
   return `${parts[0].charAt(0).toUpperCase() + parts[0].slice(1)} ${parts
     .slice(1)
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
@@ -380,6 +396,7 @@ function formatTierLabel(tier: string): string {
     balanced: "Balanced",
     powerful: "Powerful",
   };
+
   return labels[tier] ?? tier;
 }
 

@@ -15,6 +15,7 @@ import {
   X,
   Info,
 } from "lucide-react";
+
 import {
   Select,
   SelectTrigger,
@@ -29,7 +30,9 @@ import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialo
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
+
 import type { Agent } from "./types";
+
 import { useAgents, useDeleteAgent } from "@/features/agents/queries";
 
 const toolIcons: Record<string, typeof Globe> = {
@@ -41,24 +44,30 @@ const toolIcons: Record<string, typeof Globe> = {
 
 export default function AgentsContent() {
   const agentsQuery = useAgents();
+
   const deleteMutation = useDeleteAgent();
+
   const [search, setSearch] = useState("");
   const [modelFilter, setModelFilter] = useState("all");
   const [selected, setSelected] = useState<Agent | null>(null);
   const [editing, setEditing] = useState<Agent | null>(null);
   const [deleting, setDeleting] = useState<Agent | null>(null);
+
   const agents = useMemo(() => agentsQuery.data?.items ?? [], [agentsQuery.data?.items]);
   const models = useMemo(() => [...new Set(agents.map((agent) => agent.model))].sort(), [agents]);
+
   const filtered = agents.filter((agent) => {
     const term = search.trim().toLowerCase();
     const matchesSearch =
       !term ||
       [agent.name, agent.role, agent.model].some((value) => value.toLowerCase().includes(term));
+
     return matchesSearch && (modelFilter === "all" || agent.model === modelFilter);
   });
 
   async function removeAgent(agent: Agent) {
     await deleteMutation.mutateAsync(agent.id);
+
     if (selected?.id === agent.id) setSelected(null);
   }
 
@@ -185,6 +194,7 @@ export default function AgentsContent() {
                   >
                     {agent.tools.map((tool) => {
                       const Icon = toolIcons[tool] ?? Bot;
+
                       return (
                         <span key={tool} title={tool} className="rounded-md bg-foreground/5 p-1.5">
                           <Icon size={14} />

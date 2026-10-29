@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { deleteRun, getRun, listRuns } from "./api";
 import { runQueryKey, runsQueryKey } from "./cache";
 
@@ -25,11 +26,14 @@ export function useRun(id: string | undefined) {
 
 export function useDeleteRun() {
   const client = useQueryClient();
+
   return useMutation({
     mutationFn: deleteRun,
     onSuccess: async (_, id) => {
       await client.cancelQueries({ queryKey: runsQueryKey });
+
       client.removeQueries({ queryKey: runQueryKey(id) });
+
       await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
     },
   });

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { apiRequest } from "@/lib/api";
 import { loadCatalogue } from "@/lib/pagination";
 import { removeItem, upsertItem } from "@/lib/collection";
@@ -34,6 +35,7 @@ export function useAgentCatalog() {
     queryFn: ({ signal }) => apiRequest<{ items: AgentTool[] }>("/agents/tools", { signal }),
     staleTime: 5 * 60_000,
   });
+
   return {
     data:
       models.data && tools.data
@@ -49,6 +51,7 @@ export function useAgentCatalog() {
 
 export function useSaveAgent(id?: string) {
   const client = useQueryClient();
+
   return useMutation({
     mutationFn: (values: Omit<Agent, "id" | "created_at" | "updated_at">) =>
       apiRequest<Agent>(id ? `/agents/${id}` : "/agents", {
@@ -57,9 +60,11 @@ export function useSaveAgent(id?: string) {
       }),
     onSuccess: async (agent) => {
       await client.cancelQueries({ queryKey: agentsQueryKey });
+
       client.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) =>
         upsertItem(current, agent),
       );
+
       await client.invalidateQueries({ queryKey: agentsQueryKey });
       await client.invalidateQueries({ queryKey: ["runs"] });
     },
@@ -68,13 +73,16 @@ export function useSaveAgent(id?: string) {
 
 export function useDeleteAgent() {
   const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/agents/${id}`, { method: "DELETE" }),
     onSuccess: async (_result, id) => {
       await queryClient.cancelQueries({ queryKey: agentsQueryKey });
+
       queryClient.setQueryData<{ items: Agent[]; total: number }>(agentsQueryKey, (current) =>
         removeItem(current, id),
       );
+
       await queryClient.invalidateQueries({ queryKey: agentsQueryKey });
     },
   });

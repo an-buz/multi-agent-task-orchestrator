@@ -86,6 +86,7 @@ export interface RunListResponse {
   items: RunSummary[];
   total: number;
 }
+
 export interface CreateRunInput {
   token_budget?: number;
   file_ids?: string[];
@@ -93,10 +94,12 @@ export interface CreateRunInput {
   task: string;
   context_text?: string;
 }
+
 export interface CreatedRun {
   id: string;
   status: RunStatus;
 }
+
 export interface RunEvent {
   id?: string;
   event: string;

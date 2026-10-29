@@ -1,4 +1,5 @@
 import type { Node, Edge } from "@xyflow/react";
+
 import type { WorkflowType } from "./types";
 
 export type AgentNodeData = {
@@ -9,10 +10,12 @@ export type AgentNodeData = {
   step: number;
   inputTransform: string;
 };
+
 export type AgentNode = Node<AgentNodeData>;
 
 export function inferType(nodes: AgentNode[], edges: Edge[]): WorkflowType {
   const ordered = [...nodes].sort((left, right) => left.data.step - right.data.step);
+
   const incoming = new Map(
     ordered.map((node) => [
       node.data.step,
@@ -22,6 +25,7 @@ export function inferType(nodes: AgentNode[], edges: Edge[]): WorkflowType {
         .sort((left, right) => left - right),
     ]),
   );
+
   if (
     ordered.every(
       (node, index) =>
@@ -30,7 +34,9 @@ export function inferType(nodes: AgentNode[], edges: Edge[]): WorkflowType {
     )
   )
     return "sequential";
+
   const aggregators = [...incoming].filter(([, dependencies]) => dependencies.length > 0);
+
   if (
     aggregators.length <= 1 &&
     (aggregators.length === 0 ||
@@ -38,34 +44,48 @@ export function inferType(nodes: AgentNode[], edges: Edge[]): WorkflowType {
         aggregators[0][1].every((step) => step !== aggregators[0][0])))
   )
     return "parallel";
+
   return "hybrid";
 }
 
 export function graphErrors(nodes: AgentNode[], edges: Edge[]): string[] {
   const errors: string[] = [];
+
   if (!nodes.length) errors.push("Add at least one agent to the workflow.");
+
   const ids = new Set(nodes.map((node) => node.id));
+
   if (edges.some((edge) => !ids.has(edge.source) || !ids.has(edge.target))) {
     errors.push("Every edge must reference existing nodes.");
     return errors;
   }
+
   const remaining = new Map(
     nodes.map((node) => [node.id, edges.filter((edge) => edge.target === node.id).length]),
   );
   const ready = [...remaining].filter(([, count]) => count === 0).map(([id]) => id);
+
   let visited = 0;
+
   while (ready.length) {
     const id = ready.pop();
+
     if (!id) continue;
+
     visited += 1;
+
     edges
       .filter((edge) => edge.source === id)
       .forEach((edge) => {
         const count = (remaining.get(edge.target) ?? 0) - 1;
+
         remaining.set(edge.target, count);
+
         if (count === 0) ready.push(edge.target);
       });
   }
+
   if (visited !== nodes.length) errors.push("The graph contains a cycle.");
+
   return errors;
 }

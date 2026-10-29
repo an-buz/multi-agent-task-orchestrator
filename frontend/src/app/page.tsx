@@ -1,4 +1,5 @@
 import DashboardContent from "@/features/monitor/dashboard-content";
+
 import { Suspense } from "react";
 
 export default function DashboardPage() {

@@ -2,8 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { addEdge, Background, Controls, MiniMap, ReactFlow, type Connection } from "@xyflow/react";
+
 import "@xyflow/react/dist/style.css";
+
 import { GitBranch, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -28,15 +31,21 @@ import { inferType, graphErrors, type AgentNode } from "./graph";
 export default function WorkflowsContent() {
   const workflowsQuery = useWorkflows();
   const agentsQuery = useAgents();
+
   const saveMutation = useSaveWorkflow();
   const deleteMutation = useDeleteWorkflow();
+
   const [deleting, setDeleting] = useState<Workflow | null>(null);
   const [editing, setEditing] = useState<Workflow | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+
   const [title, setTitle] = useState("");
   const [preset, setPreset] = useState<WorkflowType>("hybrid");
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const [notice, setNotice] = useState("");
+
   const {
     nodes,
     setNodes,
@@ -52,10 +61,13 @@ export default function WorkflowsContent() {
     canUndo,
     canRedo,
   } = useGraphEditor();
+
   const agents = agentsQuery.data?.items ?? [];
   const selected = nodes.find((node) => node.id === selectedId);
+
   const errors = useMemo(() => graphErrors(nodes, edges), [nodes, edges]);
   const executionType = useMemo(() => inferType(nodes, edges), [nodes, edges]);
+
   const onConnect = (connection: Connection) => {
     rememberGraph();
     setEdges((current) => addEdge(connection, current));
@@ -63,13 +75,17 @@ export default function WorkflowsContent() {
 
   function openEditor(workflow?: Workflow) {
     if (saveMutation.isPending) return;
+
     setEditorOpen(true);
     setEditing(workflow ?? null);
     setTitle(workflow?.title ?? "");
     setPreset(workflow?.execution_type ?? "hybrid");
+
     const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
+
     const nextNodes: AgentNode[] = (workflow?.steps ?? []).map((step, index) => {
       const agent = agentMap.get(step.agent_id);
+
       return {
         id: String(step.step_number),
         type: "default",
@@ -87,7 +103,9 @@ export default function WorkflowsContent() {
         },
       };
     });
+
     setNodes(nextNodes);
+
     setEdges(
       (workflow?.steps ?? []).flatMap((step) =>
         step.depends_on.map((dep) => ({
@@ -99,6 +117,7 @@ export default function WorkflowsContent() {
         })),
       ),
     );
+
     setSelectedId(null);
     resetHistory();
     setNotice("");
@@ -106,9 +125,13 @@ export default function WorkflowsContent() {
 
   function addAgent(agentId: string) {
     const agent = agents.find((item) => item.id === agentId);
+
     if (!agent) return;
+
     const step = Math.max(0, ...nodes.map((node) => node.data.step)) + 1;
+
     rememberGraph();
+
     setNodes((current) => [
       ...current,
       {
@@ -129,6 +152,7 @@ export default function WorkflowsContent() {
 
   async function save() {
     if (saveMutation.isPending || !title.trim() || errors.length) return;
+
     const payload: WorkflowInput & { id?: string } = {
       ...(editing ? { id: editing.id } : {}),
       title: title.trim(),
@@ -144,8 +168,10 @@ export default function WorkflowsContent() {
       })),
       graph_layout: Object.fromEntries(nodes.map((node) => [node.id, node.position])),
     };
+
     try {
       await saveMutation.mutateAsync(payload);
+
       setEditorOpen(false);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not save workflow.");
@@ -346,10 +372,13 @@ export default function WorkflowsContent() {
                   disabled={saveMutation.isPending}
                   onValueChange={(value) => {
                     if (!value) return;
+
                     const kind = value as WorkflowType;
+
                     setPreset(kind);
                     rememberGraph();
                     setEdges([]);
+
                     setNodes((current) =>
                       current.map((node, index) => ({
                         ...node,
@@ -359,6 +388,7 @@ export default function WorkflowsContent() {
                         },
                       })),
                     );
+
                     if (kind === "sequential")
                       setEdges(
                         nodes.slice(1).map((node, index) => ({
@@ -369,6 +399,7 @@ export default function WorkflowsContent() {
                       );
                     else if (kind === "parallel" && nodes.length > 1) {
                       const final = nodes[nodes.length - 1];
+
                       setEdges(
                         nodes.slice(0, -1).map((node) => ({
                           id: `${node.id}-${final.id}`,
@@ -410,11 +441,13 @@ export default function WorkflowsContent() {
                 edges={edges}
                 onNodesChange={(changes) => {
                   if (changes.some((change) => change.type === "remove")) rememberGraph();
+
                   onNodesChange(changes);
                 }}
                 onNodeDragStart={rememberGraph}
                 onEdgesChange={(changes) => {
                   if (changes.some((change) => change.type === "remove")) rememberGraph();
+
                   onEdgesChange(changes);
                 }}
                 onConnect={onConnect}
@@ -473,11 +506,13 @@ export default function WorkflowsContent() {
                     onClick={() => {
                       rememberGraph();
                       setNodes((current) => current.filter((node) => node.id !== selected.id));
+
                       setEdges((current) =>
                         current.filter(
                           (edge) => edge.source !== selected.id && edge.target !== selected.id,
                         ),
                       );
+
                       setSelectedId(null);
                     }}
                     className="mt-5 flex items-center gap-2 text-xs text-destructive"

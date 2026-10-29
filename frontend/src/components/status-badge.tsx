@@ -28,11 +28,13 @@ export function StatusBadge({
           : status === "FAILED"
             ? "bg-destructive/15 text-destructive"
             : "bg-secondary/70 text-muted-foreground";
+
     const label = status
       .toLowerCase()
       .split("_")
       .map((word) => word[0].toUpperCase() + word.slice(1))
       .join(" ");
+
     return (
       <span
         className={`mt-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${tone}`}
@@ -42,6 +44,7 @@ export function StatusBadge({
       </span>
     );
   }
+
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-[10px] font-medium"

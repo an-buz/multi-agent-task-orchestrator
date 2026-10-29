@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+
 import { consoleEvents, eventPresentation } from "../src/features/monitor/console-events.ts";
 import { appendRunEvent } from "../src/features/runs/model.ts";
 
@@ -11,7 +12,9 @@ test("console retains model waiting markers and excludes response fragments thro
     event: "agent:status_change",
     data: { stepNumber: 1, status: "IN_PROGRESS" },
   };
+
   let log = appendRunEvent({ events: [], activityEvents: [], after: 0 }, status);
+
   for (let id = 2; id <= 502; id++) {
     log = appendRunEvent(log, {
       id: String(id),
@@ -19,13 +22,16 @@ test("console retains model waiting markers and excludes response fragments thro
       data: { reset: id === 2, textDelta: "broken frag", output: "Full output" },
     });
   }
+
   assert.deepEqual(consoleEvents([status, ...log.events]), [status]);
   assert.equal(consoleEvents(log.activityEvents).length, 2);
   assert.equal(log.activityEvents[1].data.reset, true);
+
   assert.equal(
     eventPresentation(log.activityEvents[1], steps).message,
     "Agent: waiting for the model response.",
   );
+
   assert.equal(
     eventPresentation(status, steps).message,
     "Demo Analyst: preparing the model request.",
@@ -39,9 +45,11 @@ test("real pauses explain model availability and human decisions instead of mode
     [[], "Check run details for the required action."],
   ]) {
     const result = eventPresentation({ event: "task:paused", data: { pauseReasons } }, steps);
+
     assert.ok(result.message.includes(expected));
     assert.ok(!result.message.includes("waiting for the model response"));
   }
+
   const result = eventPresentation(
     {
       event: "task:paused",
@@ -49,8 +57,10 @@ test("real pauses explain model availability and human decisions instead of mode
     },
     steps,
   );
+
   assert.ok(result.message.includes("An agent model is unavailable."));
   assert.ok(result.message.includes("Your decision is required."));
+
   assert.match(
     eventPresentation({ event: "task:paused", data: {} }, steps).message,
     /Check run details/,
@@ -65,8 +75,10 @@ test("console normalizes multiline summaries and agent names into one readable l
     },
     steps,
   );
+
   assert.equal(result.message, "Read 3 files. Done.");
   assert.equal(result.tag, "Tool: file_reader");
+
   assert.equal(
     eventPresentation(
       { event: "agent:status_change", data: { stepNumber: 1, status: "COMPLETED" } },
@@ -87,10 +99,12 @@ test("console presents lifecycle, tool calls and failures without raw JSON paylo
     "decision:resolved",
   ]) {
     const result = eventPresentation({ event, data: { taskId: "internal-id" } }, steps);
+
     assert.ok(result.message.length > 10);
     assert.ok(!result.message.includes("internal-id"));
     assert.ok(!result.message.includes("{"));
   }
+
   assert.equal(
     eventPresentation(
       { event: "agent:tool_call", data: { stepNumber: 1, toolName: "calculator" } },
@@ -98,6 +112,7 @@ test("console presents lifecycle, tool calls and failures without raw JSON paylo
     ).message,
     "Demo Analyst is calling calculator.",
   );
+
   assert.equal(
     eventPresentation(
       { event: "agent:failed", payload: { stepNumber: 1, error: { message: "Timed\nout." } } },

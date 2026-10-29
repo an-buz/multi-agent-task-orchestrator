@@ -1,10 +1,12 @@
 "use client";
+
 import { RunDecisions } from "@/features/runs/run-decisions";
 
 import { Check, CloudUpload, FileText, Paperclip, Play, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +24,9 @@ import { dashboardInspectorStep, runSteps } from "@/features/runs/model";
 import { useRunMonitor } from "@/features/monitor/use-run-monitor";
 import { RunPipeline, RunConsole, RunInspector } from "@/features/monitor/dashboard-monitor";
 import { PlanPreview } from "@/features/runs/plan-preview";
+
 import type { ContextFile } from "@/features/files/types";
+
 import { useUploadContextFile, useDeleteContextFile } from "@/features/files/queries";
 
 export default function DashboardPage() {
@@ -31,34 +35,50 @@ export default function DashboardPage() {
   );
   const [context, setContext] = useState("");
   const [attachments, setAttachments] = useState<ContextFile[]>([]);
+
   const uploadFile = useUploadContextFile();
   const deleteFile = useDeleteContextFile();
+
   const fileBusy = uploadFile.isPending || deleteFile.isPending;
+
   const [contextOpen, setContextOpen] = useState(false);
+
   const router = useRouter();
   const client = useQueryClient();
   const params = useSearchParams();
+
   const monitor = useRunMonitor(params.get("run"));
+
   const monitoredRun = monitor.run;
   const monitoredSteps = runSteps(monitoredRun);
+
   const [inspected, setInspected] = useState<{ runId: string; number: number } | null>(null);
+
   const inspectedStep = dashboardInspectorStep(
     monitoredRun,
     monitor.activationOrder,
     inspected?.runId === monitoredRun?.id ? inspected?.number : undefined,
   );
+
   const workflowsQuery = useWorkflows();
+
   const [workflowId, setWorkflowId] = useState("");
   const [runError, setRunError] = useState("");
   const [busy, setBusy] = useState(false);
+
   const fileInput = useRef<HTMLInputElement>(null);
   const planningWait = useRef<AbortController | null>(null);
+
   useEffect(() => () => planningWait.current?.abort(), []);
+
   async function handleFile(file: File | undefined) {
     if (!file) return;
+
     setRunError("");
+
     try {
       const uploaded = await uploadFile.mutateAsync(file);
+
       setAttachments((current) => [...current, uploaded]);
       setContextOpen(true);
     } catch (error) {
@@ -70,8 +90,10 @@ export default function DashboardPage() {
 
   async function removeFile(file: ContextFile) {
     setRunError("");
+
     try {
       await deleteFile.mutateAsync(file.id);
+
       setAttachments((current) => current.filter((item) => item.id !== file.id));
     } catch (error) {
       setRunError(error instanceof Error ? error.message : "Could not remove the context file.");
@@ -83,11 +105,15 @@ export default function DashboardPage() {
       setRunError("Choose a workflow and enter a task.");
       return;
     }
+
     setBusy(true);
     setRunError("");
+
     const controller = new AbortController();
+
     planningWait.current?.abort();
     planningWait.current = controller;
+
     try {
       const created = await createRun({
         workflow_id: workflowId,
@@ -95,15 +121,21 @@ export default function DashboardPage() {
         context_text: context || undefined,
         file_ids: attachments.map((file) => file.id),
       });
+
       // Detach local upload state as soon as the server owns the references.
       setAttachments([]);
+
       if (controller.signal.aborted) return;
+
       router.replace(`/?run=${encodeURIComponent(created.id)}`, { scroll: false });
+
       await client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
+
       const draft =
         "plan" in created && created.plan
           ? created
           : await waitForRunPlan(created.id, controller.signal);
+
       if (!controller.signal.aborted) {
         await cacheRun(client, draft);
       }

@@ -3,12 +3,14 @@
 import { Activity, Bot, Cpu, GitBranch, LayoutGrid, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 import { useAgents } from "@/features/agents/queries";
 
 export function Sidebar() {
   const pathname = usePathname();
   const agentsQuery = useAgents();
+
   const agents = (agentsQuery.data?.items ?? []).filter((agent) => agent.available !== false);
 
   return (

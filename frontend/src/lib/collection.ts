@@ -8,7 +8,9 @@ export function upsertItem<T extends { id: string }>(
   item: T,
 ): Collection<T> | undefined {
   if (!current) return current;
+
   const exists = current.items.some((entry) => entry.id === item.id);
+
   return {
     ...current,
     items: exists
@@ -23,6 +25,7 @@ export function removeItem<T extends { id: string }>(
   id: string,
 ): Collection<T> | undefined {
   if (!current) return current;
+
   return {
     ...current,
     items: current.items.filter((item) => item.id !== id),

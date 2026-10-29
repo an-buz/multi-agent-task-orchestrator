@@ -24,8 +24,10 @@ export function appendRunEvent(log: RunEventLog, event: RunEvent): RunEventLog {
     events.some((item) => eventKey(item) === eventKey(event))
       ? events
       : [...events, event].slice(-150);
+
   const cursor = event.id && /^\d+$/.test(event.id) ? Number(event.id) : 0;
   const data = event.data ?? event.payload;
+
   const activationOrder = log.activationOrder ?? [];
   const activated =
     event.event === "agent:status_change" &&
@@ -35,6 +37,7 @@ export function appendRunEvent(log: RunEventLog, event: RunEvent): RunEventLog {
     data.stepNumber > 0 &&
     (!cursor || cursor > log.after) &&
     !log.activityEvents.some((item) => eventKey(item) === eventKey(event));
+
   return {
     events: append(log.events),
     activityEvents:
@@ -61,6 +64,7 @@ export function dashboardInspectorStep(
     .map((number) => steps.find((step) => step.step_number === number))
     .filter((step): step is RunStep => Boolean(step))
     .reverse();
+
   return (
     activatedSteps.find((step) => step.status === "IN_PROGRESS") ??
     steps.find((step) => step.status === "IN_PROGRESS") ??
@@ -76,6 +80,7 @@ export function applyStreamChunk(
   event: RunEvent,
 ): RunDetails | undefined {
   const data = event.data ?? event.payload;
+
   if (
     !run?.plan ||
     event.event !== "agent:stream_chunk" ||
@@ -87,8 +92,10 @@ export function applyStreamChunk(
     data.attempt < 0
   )
     return run;
+
   const { stepNumber, output, attempt } = data;
   let changed = false;
+
   const steps = runSteps(run).map((step) => {
     if (
       step.step_number !== stepNumber ||
@@ -96,10 +103,14 @@ export function applyStreamChunk(
       (["COMPLETED", "FAILED", "CANCELLED"].includes(step.status) && (step.attempt ?? 0) >= attempt)
     )
       return step;
+
     if (step.status === "IN_PROGRESS" && step.attempt === attempt && step.output === output)
       return step;
+
     changed = true;
+
     return { ...step, status: "IN_PROGRESS" as const, attempt, output };
   });
+
   return changed ? { ...run, plan: Array.isArray(run.plan) ? steps : { ...run.plan, steps } } : run;
 }
