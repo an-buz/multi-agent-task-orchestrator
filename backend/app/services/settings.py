@@ -21,6 +21,7 @@ class SettingsService:
 
     def validate(self, defaults: AgentDefaults) -> None:
         model = get_model_registry(self.settings).get(defaults.default_model)
+
         if model is None or defaults.max_tokens > min(
             model.context_window, model.max_output_tokens
         ):
@@ -28,6 +29,7 @@ class SettingsService:
 
     def public(self, defaults: AgentDefaults, planner_model: str) -> AppConfigRead:
         settings = self.settings
+
         return AppConfigRead(
             **defaults.model_dump(exclude={"planner_model"}),
             planner_model=planner_model,
@@ -41,6 +43,7 @@ class SettingsService:
 
     async def read(self) -> AppConfigRead:
         stored = await self.repository.read()
+
         defaults = (
             AppConfigUpdate.model_validate(stored)
             if stored
@@ -50,28 +53,40 @@ class SettingsService:
                 max_tokens=self.settings.default_agent_max_tokens,
             )
         )
+
         self.validate(defaults)
+
         return self.public(defaults, defaults.planner_model or self.settings.planner_model)
 
     async def resolve_planner_model(self) -> str:
         """Read fresh persisted selection for a new Run, with environment fallback."""
+
         stored = await self.repository.read()
+
         model = stored.get("planner_model") if stored else None
+
         return model if isinstance(model, str) else self.settings.planner_model
 
     async def update(self, defaults: AppConfigUpdate) -> AppConfigRead:
         self.validate(defaults)
+
         available = await ModelService(
             ModelRepository(self.repository.session), self.settings
         ).available()
+
         if defaults.default_model not in available:
             raise ModelUnavailable("Choose an enabled default model from a connected provider.")
+
         if defaults.planner_model is not None:
             if defaults.planner_model not in available:
                 raise ModelUnavailable("Choose an enabled planner model from a connected provider.")
+
             info = get_model_registry(self.settings)[defaults.planner_model]
+
             if self.settings.planner_max_tokens > info.max_output_tokens:
                 raise SettingsError("The planner token limit exceeds this model's output limit.")
+
         # Legacy clients omit planner_model; the atomic JSON merge preserves its value.
         await self.repository.save(defaults.model_dump(exclude_none=True))
+
         return await self.read()

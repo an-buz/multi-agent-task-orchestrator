@@ -23,10 +23,12 @@ class AgentRepository:
             .limit(limit)
             .offset(offset)
         )
+
         return list(agents), total or 0
 
     async def save(self, agent: Agent) -> None:
         self.session.add(agent)
+
         await self.session.commit()
         await self.session.refresh(agent)
 

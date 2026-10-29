@@ -31,6 +31,7 @@ class DemoPorts(BaseSettings):
 
 def demo_environment(ports: DemoPorts) -> dict[str, str]:
     """Override local .env files for every demo process, including migrations."""
+
     return {
         **os.environ,
         "DEMO_MODE": "true",
@@ -54,12 +55,14 @@ def demo_environment(ports: DemoPorts) -> dict[str, str]:
 
 async def checked(command: list[str], env: dict[str, str], cwd: Path) -> None:
     process = await asyncio.create_subprocess_exec(*command, cwd=cwd, env=env)
+
     if await process.wait() != 0:
         raise RuntimeError(f"Demo setup failed: {command[0]}")
 
 
 async def seed(settings: Settings) -> None:
     engine = create_async_engine(str(settings.database_url))
+
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
             await seed_demo(session, settings)
@@ -70,6 +73,7 @@ async def seed(settings: Settings) -> None:
 async def stop_process(process: asyncio.subprocess.Process) -> None:
     if process.returncode is not None:
         return
+
     if sys.platform == "win32":
         # Next.js creates a child server; terminate only this launcher's process tree.
         cleanup = await asyncio.create_subprocess_exec(
@@ -81,13 +85,16 @@ async def stop_process(process: asyncio.subprocess.Process) -> None:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
+
         await cleanup.wait()
     else:
         process.terminate()
+
     try:
         await asyncio.wait_for(process.wait(), timeout=10)
     except TimeoutError:
         process.kill()
+
         await process.wait()
 
 
@@ -96,11 +103,15 @@ async def main(*, prepare_only: bool = False) -> None:
     env = demo_environment(ports)
     node = shutil.which("node")
     next_cli = ROOT / "frontend/node_modules/next/dist/bin/next"
+
     if not prepare_only and (node is None or not next_cli.exists()):
         raise RuntimeError("Install Node.js and run make frontend-install before make demo")
+
     os.environ.update(env)
     get_settings.cache_clear()
+
     settings = get_settings()
+
     await checked(
         [
             "docker",
@@ -118,11 +129,14 @@ async def main(*, prepare_only: bool = False) -> None:
     )
     await checked([sys.executable, "-m", "alembic", "upgrade", "head"], env, ROOT / "backend")
     await seed(settings)
+
     logger.info(
         "demo_prepared", agents=5, workflows=len(workflow_payloads()) * 2, suggested_task=DEMO_TASK
     )
+
     if prepare_only:
         return
+
     commands = [
         (
             [
@@ -151,27 +165,38 @@ async def main(*, prepare_only: bool = False) -> None:
             ROOT / "frontend",
         ),
     ]
+
     processes: list[asyncio.subprocess.Process] = []
     monitors: list[asyncio.Task[int]] = []
+
     try:
         for command, cwd in commands:
             processes.append(await asyncio.create_subprocess_exec(*command, cwd=cwd, env=env))
+
         logger.info("demo_starting", url=f"http://localhost:{ports.frontend_port}")
+
         monitors = [asyncio.create_task(process.wait()) for process in processes]
+
         await asyncio.wait(monitors, return_when=asyncio.FIRST_COMPLETED)
+
         raise RuntimeError("A demo process exited; stopping the remaining demo processes")
     finally:
         for process in reversed(processes):
             await stop_process(process)
+
         for monitor in monitors:
             monitor.cancel()
+
         await asyncio.gather(*monitors, return_exceptions=True)
 
 
 def run() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+
     parser.add_argument("--prepare-only", action="store_true")
+
     args = parser.parse_args()
+
     try:
         asyncio.run(main(prepare_only=args.prepare_only))
     except KeyboardInterrupt:

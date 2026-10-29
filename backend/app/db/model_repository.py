@@ -15,18 +15,22 @@ class ModelRepository:
 
     async def disabled(self) -> set[str]:
         await self.session.execute(text("SELECT pg_advisory_xact_lock_shared(744029831)"))
+
         return set(
             await self.session.scalars(select(ModelSetting.key).where(~ModelSetting.enabled))
         )
 
     async def set_enabled(self, key: str, enabled: bool) -> None:
         await self.session.execute(text("SELECT pg_advisory_xact_lock(744029831)"))
+
         statement = insert(ModelSetting).values(key=key, enabled=enabled)
+
         await self.session.execute(
             statement.on_conflict_do_update(
                 index_elements=[ModelSetting.key], set_={"enabled": enabled}
             )
         )
+
         if not enabled:
             await self.session.execute(
                 update(Agent).where(Agent.model == key).values(requires_reconfiguration=True)
@@ -39,4 +43,5 @@ class ModelRepository:
                 )
                 .values(requires_reconfiguration=True)
             )
+
         await self.session.commit()

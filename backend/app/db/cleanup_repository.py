@@ -27,6 +27,7 @@ class CleanupRepository:
                 .with_for_update(skip_locked=True)
             )
         )
+
         # Recheck references after acquiring locks, using a fresh statement snapshot.
         removed = list(
             await self.session.scalars(
@@ -38,7 +39,9 @@ class CleanupRepository:
                 .returning(ContextFile.id)
             )
         )
+
         await self.session.commit()
+
         return len(removed)
 
     async def events(self, cutoff: datetime, batch_size: int) -> int:
@@ -55,6 +58,7 @@ class CleanupRepository:
                 .with_for_update(skip_locked=True)
             )
         )
+
         # One bounded batch of events, not an unbounded DELETE of a large run history.
         ids = (
             select(RunEvent.id)
@@ -67,5 +71,7 @@ class CleanupRepository:
                 delete(RunEvent).where(RunEvent.id.in_(ids)).returning(RunEvent.id)
             )
         )
+
         await self.session.commit()
+
         return len(removed)

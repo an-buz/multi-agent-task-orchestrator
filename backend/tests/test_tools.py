@@ -53,9 +53,11 @@ def test_calculator_arithmetic() -> None:
 )
 async def test_calculator_preserves_integer_precision(expression: str, expected: int) -> None:
     assert calculate(expression) == expected
+
     result = json.loads(
         await ToolRuntime(["calculator"]).execute(call("calculator", expression=expression))
     )
+
     assert result == {"value": expected}
     assert type(result["value"]) is int
 
@@ -68,6 +70,7 @@ def test_calculator_rejects_large_intermediate_results(expression: str) -> None:
 
 async def test_tool_permissions_file_scope_and_strict_arguments() -> None:
     runtime = ToolRuntime(["calculator", "file_reader"], {"attached": "abcdef"})
+
     assert json.loads(await runtime.execute(call("calculator", expression="2+3"))) == {"value": 5}
     assert (
         json.loads(
@@ -75,6 +78,7 @@ async def test_tool_permissions_file_scope_and_strict_arguments() -> None:
         )["text"]
         == "cd"
     )
+
     for request in [
         call("file_reader", file_id="other"),
         call("file_reader", file_id="../../secret"),
@@ -88,31 +92,45 @@ async def test_tool_permissions_file_scope_and_strict_arguments() -> None:
 def pdf_bytes() -> bytes:
     output = BytesIO()
     document = canvas.Canvas(output)
+
     document.drawString(40, 700, "Attachment fixture text")
     document.showPage()
     document.save()
+
     return output.getvalue()
 
 
 def test_pdf_extraction_and_rejections(monkeypatch: pytest.MonkeyPatch) -> None:
     content = pdf_bytes()
+
     assert (
         "Attachment fixture text" in validate_text_file("brief.pdf", "application/pdf", content)[2]
     )
+
     writer = PdfWriter()
+
     writer.add_page(PdfReader(BytesIO(content)).pages[0])
     writer.encrypt("fixture-password")
+
     encrypted = BytesIO()
+
     writer.write(encrypted)
+
     blank_writer = PdfWriter()
+
     blank_writer.add_blank_page(width=300, height=300)
+
     blank = BytesIO()
+
     blank_writer.write(blank)
+
     for invalid in [b"fake", b"%PDF-1.7\nmalformed", encrypted.getvalue(), blank.getvalue()]:
         with pytest.raises(FileError):
             validate_text_file("brief.pdf", "application/pdf", invalid)
+
     monkeypatch.setenv("RUN_CONTEXT_MAX_CHARS", "4")
     get_settings.cache_clear()
+
     with pytest.raises(FileError):
         validate_text_file("brief.pdf", "application/pdf", content)
 
@@ -132,11 +150,15 @@ class FixtureTools(MockLLMProvider):
         self, system_prompt, messages, model, tools, *, temperature, max_tokens
     ):
         assert [tool["name"] for tool in tools] == ["calculator", "request_user_decision"]
+
         self.calls += 1
+
         if self.calls > 1:
             assert json.loads(messages[-1]["content"]) == {"value": 20.0}
+
             if self.fail:
                 raise ValueError("private key")
+
         return self.responses[0 if self.endless else min(self.calls - 1, 1)]
 
     async def aclose(self) -> None:
@@ -162,10 +184,13 @@ def tool_step() -> RunStep:
 async def test_tool_loop_preserves_all_usage_and_failure_usage() -> None:
     for fail in [False, True]:
         provider = FixtureTools(fail=fail)
+
         result = await DAGExecutor(None, lambda _, active=provider: active).complete(tool_step())
+
         assert provider.closed
         assert result.prompt_tokens == (10 if fail else 28)
         assert result.completion_tokens == (4 if fail else 10)
+
         if fail:
             assert result.response is None and result.error["code"] == "llm_error"
             assert "private" not in json.dumps(result.error)
@@ -176,27 +201,39 @@ async def test_tool_loop_preserves_all_usage_and_failure_usage() -> None:
 async def test_tool_loop_limit_and_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TOOL_MAX_ROUNDS", "1")
     get_settings.cache_clear()
+
     provider = FixtureTools(endless=True)
+
     result = await DAGExecutor(None, lambda _: provider).complete(tool_step())
+
     assert result.error["code"] == "tool_limit_exceeded"
     assert result.prompt_tokens == 20 and provider.calls == 2
+
     provider = FixtureTools()
     executor = DAGExecutor(None, lambda _: provider)
+
     result = await executor.complete(tool_step(), token_allowance=14)
+
     assert result.error["code"] == "token_budget_exceeded"
     assert result.prompt_tokens == 10 and provider.calls == 1
+
     result = await executor.complete(tool_step(), token_allowance=0)
+
     assert result.error["code"] == "token_budget_exceeded"
     assert provider.calls == 1
 
 
 async def test_run_budget_counts_planning_and_serializes_independent_steps() -> None:
     repository, run = await make_run([[], []])
+
     run.planner_config = {**run.planner_config, "token_budget": run.total_tokens + 38}
     provider = FixtureTools()
+
     for step in repository.saved_steps:
         step.agent_config = tool_step().agent_config
+
     await DAGExecutor(repository, lambda _: provider).execute(run)
+
     assert run.status == "FAILED"
     assert repository.saved_steps[0].status == "COMPLETED"
     assert repository.saved_steps[1].error["code"] == "token_budget_exceeded"
@@ -210,6 +247,7 @@ async def test_planner_budget_failure_preserves_reported_usage() -> None:
     from app.services.runs import RunService
 
     repository = MemoryRunRepository()
+
     created = await RunService(repository).create(
         RunCreate(
             workflow_id=repository.saved_workflow.id,
@@ -217,8 +255,11 @@ async def test_planner_budget_failure_preserves_reported_usage() -> None:
             token_budget=1,
         )
     )
+
     run = repository.runs[created.id]
+
     await PlannerExecutor(repository).execute(run)
+
     assert run.status == "FAILED"
     assert run.planning_error["code"] == "token_budget_exceeded"
     assert run.total_tokens > 1
@@ -238,9 +279,11 @@ async def test_web_search_mock_and_real_transport(monkeypatch: pytest.MonkeyPatc
     assert json.loads(
         await ToolRuntime(["web_search"]).execute(call("web_search", query="fixture"))
     )["mock"]
+
     monkeypatch.setenv("LLM_PROVIDER_MODE", "real")
     monkeypatch.setenv("TAVILY_API_KEY", "placeholder")
     get_settings.cache_clear()
+
     post = AsyncMock(
         return_value=SimpleNamespace(
             raise_for_status=Mock(),
@@ -258,10 +301,13 @@ async def test_web_search_mock_and_real_transport(monkeypatch: pytest.MonkeyPatc
     )
     client = AsyncMock()
     client.__aenter__.return_value.post = post
+
     monkeypatch.setattr("app.tools.runtime.httpx.AsyncClient", Mock(return_value=client))
+
     result = json.loads(
         await ToolRuntime(["web_search"]).execute(call("web_search", query="fixture"))
     )
+
     assert result["results"] == [
         {"title": "Source", "url": "https://example.org", "content": "Evidence"}
     ]
@@ -271,8 +317,10 @@ async def test_web_search_mock_and_real_transport(monkeypatch: pytest.MonkeyPatc
 async def test_docker_disabled_and_security_flags_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ToolError):
         await docker_code("print(1)")
+
     monkeypatch.setenv("CODE_EXECUTOR_BACKEND", "docker")
     get_settings.cache_clear()
+
     process = SimpleNamespace(
         stdout=SimpleNamespace(read=AsyncMock(side_effect=[b"42\n", b""])),
         wait=AsyncMock(return_value=0),
@@ -281,9 +329,13 @@ async def test_docker_disabled_and_security_flags_cleanup(monkeypatch: pytest.Mo
     removal = SimpleNamespace(wait=AsyncMock(return_value=0))
     creation = SimpleNamespace(communicate=AsyncMock(return_value=(b"id", b"")), returncode=0)
     launch = AsyncMock(side_effect=[creation, process, removal])
+
     monkeypatch.setattr("app.tools.runtime.asyncio.create_subprocess_exec", launch)
+
     assert await docker_code("print(42)") == "42\n"
+
     args = launch.call_args_list[0].args
+
     for flag in [
         "--network=none",
         "--read-only",
@@ -295,6 +347,7 @@ async def test_docker_disabled_and_security_flags_cleanup(monkeypatch: pytest.Mo
         "--pids-limit=64",
     ]:
         assert flag in args
+
     assert launch.call_args_list[1].args[:3] == ("docker", "start", "--attach")
     assert launch.call_args_list[2].args[:3] == ("docker", "rm", "--force")
 
@@ -302,11 +355,14 @@ async def test_docker_disabled_and_security_flags_cleanup(monkeypatch: pytest.Mo
 async def test_docker_cancellation_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CODE_EXECUTOR_BACKEND", "docker")
     get_settings.cache_clear()
+
     started = asyncio.Event()
 
     async def read(_: int) -> bytes:
         started.set()
+
         await asyncio.Event().wait()
+
         return b""
 
     process = SimpleNamespace(
@@ -318,13 +374,20 @@ async def test_docker_cancellation_cleanup(monkeypatch: pytest.MonkeyPatch) -> N
     removal = SimpleNamespace(wait=AsyncMock(return_value=0))
     creation = SimpleNamespace(communicate=AsyncMock(return_value=(b"id", b"")), returncode=0)
     launch = AsyncMock(side_effect=[creation, process, removal])
+
     monkeypatch.setattr("app.tools.runtime.asyncio.create_subprocess_exec", launch)
+
     pending = asyncio.create_task(docker_code("while True: pass"))
+
     await started.wait()
+
     pending.cancel()
+
     with pytest.raises(asyncio.CancelledError):
         await pending
+
     assert launch.call_args_list[2].args[:3] == ("docker", "rm", "--force")
+
     process.kill.assert_called_once()
 
 
@@ -350,6 +413,7 @@ async def test_native_openai_tool_wire_format(monkeypatch: pytest.MonkeyPatch) -
             usage=SimpleNamespace(prompt_tokens=4, completion_tokens=2),
         )
     )
+
     monkeypatch.setattr(
         "app.llm.providers.AsyncOpenAI",
         Mock(
@@ -358,6 +422,7 @@ async def test_native_openai_tool_wire_format(monkeypatch: pytest.MonkeyPatch) -
             )
         ),
     )
+
     response = await OpenAIProvider("placeholder").complete_tools(
         "system",
         [{"role": "user", "content": "query"}],
@@ -366,6 +431,7 @@ async def test_native_openai_tool_wire_format(monkeypatch: pytest.MonkeyPatch) -
         temperature=0.2,
         max_tokens=100,
     )
+
     assert response.tool_calls[0].arguments == {"expression": "2+3"}
     assert (
         create.call_args.kwargs["tools"][0]["function"]["parameters"]["additionalProperties"]
@@ -394,16 +460,19 @@ async def test_native_anthropic_groups_tool_results(monkeypatch: pytest.MonkeyPa
             stop_reason="tool_use",
         )
     )
+
     monkeypatch.setattr(
         "app.llm.providers.AsyncAnthropic",
         Mock(return_value=SimpleNamespace(messages=SimpleNamespace(create=create))),
     )
+
     messages = [
         {"role": "user", "content": "query"},
         {"role": "assistant", "blocks": [block.model_dump()]},
         {"role": "tool", "tool_call_id": "c1", "content": "5"},
         {"role": "tool", "tool_call_id": "c2", "content": "6"},
     ]
+
     response = await AnthropicProvider("placeholder").complete_tools(
         "system",
         messages,
@@ -412,6 +481,7 @@ async def test_native_anthropic_groups_tool_results(monkeypatch: pytest.MonkeyPa
         temperature=0.2,
         max_tokens=100,
     )
+
     assert response.tool_calls[0].id == "c1"
     assert [
         block["tool_use_id"] for block in create.call_args.kwargs["messages"][-1]["content"]

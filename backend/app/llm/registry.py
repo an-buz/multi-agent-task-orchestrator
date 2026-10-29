@@ -25,7 +25,9 @@ class ToolInfo:
 
 def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]:
     """Build public model keys mapped to current provider API model IDs."""
+
     active = settings or get_settings()
+
     # Only reviewed model IDs may reuse these limits and sampling parameters.
     profiles: dict[str, tuple[str, int, int]] = {
         "claude-haiku-4-5-20251001": ("anthropic", 200_000, 64_000),
@@ -44,8 +46,10 @@ def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]
         tier: Literal["fast", "balanced", "powerful"],
     ) -> ModelInfo:
         profile = profiles.get(model_id)
+
         if profile is None or profile[0] != provider:
             raise ValueError("Configured provider model has no reviewed compatibility profile")
+
         return ModelInfo(key, provider, model_id, tier, profile[1], profile[2])
 
     return {

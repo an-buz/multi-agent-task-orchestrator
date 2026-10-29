@@ -21,7 +21,9 @@ from app.llm.registry import get_model_registry
 
 def anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Use the same native representation for counting and generation."""
+
     native: list[dict[str, Any]] = []
+
     for message in messages:
         if message["role"] == "tool":
             block = {
@@ -29,12 +31,15 @@ def anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "tool_use_id": message["tool_call_id"],
                 "content": message["content"],
             }
+
             try:
                 result = json.loads(message["content"])
+
                 if isinstance(result, dict) and "error" in result:
                     block["is_error"] = True
             except ValueError, TypeError:
                 pass
+
             if native and native[-1]["role"] == "user" and isinstance(native[-1]["content"], list):
                 native[-1]["content"].append(block)
             else:
@@ -50,6 +55,7 @@ def anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     else message["content"],
                 }
             )
+
     return native
 
 
@@ -74,23 +80,29 @@ def openai_input_size(
     encoding_name: str,
 ) -> int:
     """Local Chat Completions admission estimate; never authoritative usage."""
+
     payload = {
         "messages": [{"role": "system", "content": system_prompt}, *messages],
         "tools": openai_tools(tools),
     }
+
     encoding = tiktoken.get_encoding(encoding_name)
+
     # Treat special-looking user text as ordinary content, not tokenizer instructions.
     return len(encoding.encode(json.dumps(payload, ensure_ascii=False), disallowed_special=()))
 
 
 def parse_tool_arguments(raw: str) -> dict[str, Any]:
     """Keep usage and call identity even when a model emits invalid arguments."""
+
     try:
         value = json.loads(raw)
+
         if isinstance(value, dict):
             return cast(dict[str, Any], value)
     except ValueError, RecursionError:
         pass
+
     return {"_invalid_arguments": True}
 
 
@@ -112,8 +124,10 @@ class AnthropicProvider:
         max_tokens: int = 4096,
     ) -> LLMResponse:
         info = get_model_registry()[model]
+
         if not 1 <= max_tokens <= info.max_output_tokens:
             raise ValueError("Requested response exceeds the model output limit")
+
         response = await self._client.messages.create(
             model=info.model_id,
             max_tokens=max_tokens,
@@ -121,7 +135,9 @@ class AnthropicProvider:
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
+
         content = "".join(block.text for block in response.content if block.type == "text")
+
         return LLMResponse(
             content=content,
             stop_reason=response.stop_reason or "unknown",
@@ -146,6 +162,7 @@ class AnthropicProvider:
             messages=cast(list[MessageParam], anthropic_messages(messages)),
             tools=cast(list[ToolParam], tools),
         )
+
         return response.input_tokens
 
     async def complete_tools(
@@ -160,8 +177,10 @@ class AnthropicProvider:
     ) -> LLMResponse:
         native = anthropic_messages(messages)
         info = get_model_registry()[model]
+
         if not 1 <= max_tokens <= info.max_output_tokens:
             raise ValueError("Requested response exceeds the model output limit")
+
         response = await self._client.messages.create(
             model=info.model_id,
             system=system_prompt,
@@ -170,6 +189,7 @@ class AnthropicProvider:
             temperature=temperature,
             max_tokens=max_tokens,
         )
+
         return LLMResponse(
             content="".join(block.text for block in response.content if block.type == "text"),
             stop_reason=response.stop_reason or "unknown",
@@ -206,8 +226,10 @@ class OpenAIProvider:
         max_tokens: int = 4096,
     ) -> LLMResponse:
         info = get_model_registry()[model]
+
         if not 1 <= max_tokens <= info.max_output_tokens:
             raise ValueError("Requested response exceeds the model output limit")
+
         response = await self._client.chat.completions.create(
             model=info.model_id,
             max_completion_tokens=max_tokens,
@@ -217,10 +239,13 @@ class OpenAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
         )
+
         content = response.choices[0].message.content or ""
         usage = response.usage
+
         if usage is None:
             raise ValueError("Provider response has no token usage")
+
         return LLMResponse(
             content=content,
             stop_reason=response.choices[0].finish_reason,
@@ -242,6 +267,7 @@ class OpenAIProvider:
         tools: list[dict[str, Any]],
     ) -> int:
         del model
+
         return await asyncio.to_thread(
             openai_input_size,
             system_prompt,
@@ -261,8 +287,10 @@ class OpenAIProvider:
         max_tokens: int,
     ) -> LLMResponse:
         info = get_model_registry()[model]
+
         if not 1 <= max_tokens <= info.max_output_tokens:
             raise ValueError("Requested response exceeds the model output limit")
+
         response = await self._client.chat.completions.create(
             model=info.model_id,
             messages=cast(
@@ -276,11 +304,14 @@ class OpenAIProvider:
             temperature=temperature,
             max_completion_tokens=max_tokens,
         )
+
         message = response.choices[0].message
         calls = [call for call in message.tool_calls or [] if call.type == "function"]
         usage = response.usage
+
         if usage is None:
             raise ValueError("Provider response has no token usage")
+
         return LLMResponse(
             content=message.content or "",
             stop_reason=response.choices[0].finish_reason,
@@ -335,12 +366,16 @@ class MockLLMProvider:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+
         settings = get_settings()
+
         for offset in range(0, len(response.content), settings.mock_stream_chunk_chars):
             await asyncio.sleep(settings.mock_stream_delay)
+
             yield LLMChunk(
                 text_delta=response.content[offset : offset + settings.mock_stream_chunk_chars]
             )
+
         yield LLMChunk(response=response)
 
     async def complete(
@@ -353,12 +388,16 @@ class MockLLMProvider:
         max_tokens: int = 4096,
     ) -> LLMResponse:
         del model, temperature, max_tokens
+
         if system_prompt == PLANNER_SYSTEM_PROMPT:
             request = json.loads(user_prompt)
+
             if get_settings().demo_mode:
                 response = await asyncio.to_thread(demo_plan, request)
+
                 if response is not None:
                     return response
+
             return LLMResponse(
                 content=json.dumps(
                     {
@@ -376,10 +415,13 @@ class MockLLMProvider:
                 ),
                 usage=LLMUsage(input_tokens=max(1, len(user_prompt.split())), output_tokens=5),
             )
+
         if get_settings().demo_mode:
             response = await asyncio.to_thread(demo_response, system_prompt, user_prompt)
+
             if response is not None:
                 return response
+
         return LLMResponse(
             content=f"Mock response: {user_prompt[:500]}",
             usage=LLMUsage(input_tokens=max(1, len(user_prompt.split())), output_tokens=5),
@@ -399,6 +441,7 @@ class MockLLMProvider:
         max_tokens: int,
     ) -> LLMResponse:
         del tools
+
         return await self.complete(
             system_prompt,
             str(messages[-1]["content"]),
@@ -424,24 +467,33 @@ def create_provider(
     model: str, settings: Settings | None = None
 ) -> AnthropicProvider | OpenAIProvider | GeminiProvider | MockLLMProvider:
     """Create configured mock or real provider, failing clearly when a key is missing."""
+
     active = settings or get_settings()
     info = get_model_registry(active).get(model)
+
     if info is None:
         raise ValueError(f"Unknown model key: {model}")
+
     if active.llm_provider_mode == "mock":
         return {
             "anthropic": MockAnthropicProvider,
             "openai": MockOpenAIProvider,
             "gemini": MockGeminiProvider,
         }[info.provider]()
+
     if info.provider == "gemini":
         if not active.gemini_api_key:
             raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER_MODE=real")
+
         return GeminiProvider(active.gemini_api_key, active)
+
     if info.provider == "anthropic":
         if not active.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER_MODE=real")
+
         return AnthropicProvider(active.anthropic_api_key)
+
     if not active.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER_MODE=real")
+
     return OpenAIProvider(active.openai_api_key)

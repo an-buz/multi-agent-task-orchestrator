@@ -46,8 +46,10 @@ async def test_decision_survives_sessions_and_concurrent_http_resolution(
     from app.services.runs import RunService
 
     database_url, _ = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -57,10 +59,14 @@ async def test_decision_survives_sessions_and_concurrent_http_resolution(
 
     app.dependency_overrides[get_session] = override_session
     enqueue = AsyncMock()
+
     monkeypatch.setattr("app.api.v1.runs.enqueue_run", enqueue)
+
     run_id = workflow_id = agent_id = None
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             agent = Agent(
                 id=uuid4(),
@@ -84,87 +90,135 @@ async def test_decision_survives_sessions_and_concurrent_http_resolution(
                 graph_layout={},
             )
             workflow_id, agent_id = workflow.id, agent.id
+
             session.add_all([agent, workflow])
+
             await session.commit()
+
             repository = RunRepository(session)
             service = RunService(repository)
+
             created = await service.create(RunCreate(workflow_id=workflow.id, task="Review email"))
+
             run_id, agent_id = created.id, agent.id
+
             run = await service.require(run_id)
+
             await PlannerExecutor(repository).execute(run)
+
             for step in await repository.steps(run_id):
                 step.subtask = f"Task {step.step_number}"
+
             await repository.save()
+
             await service.confirm(run_id)
+
             await DAGExecutor(repository, lambda _: FindingMock()).execute(run)
+
         # Simulate recovery in a fresh session: user waiting cannot dispatch provider calls.
         async with sessions() as session:
             repository = RunRepository(session)
+
             run = await repository.get(run_id)
+
             factory = AsyncMock(side_effect=AssertionError("User decision must block recovery"))
+
             await DAGExecutor(repository, factory).execute(run)
+
             factory.assert_not_called()
+
             decision = (await repository.decisions(run_id))[0]
             decision_id = decision.id
+
             assert run.status == "PAUSED"
             assert (await repository.steps(run_id))[
                 0
             ].output == "QA found an email validation defect."
+
         stream = stream_run(sessions, run_id, None)
+
         try:
             snapshot = json.loads((await anext(stream))["data"])["data"]["run"]
+
             assert snapshot["pause_reasons"] == ["USER_DECISION_REQUIRED"]
             assert snapshot["decisions"][0]["id"] == str(decision_id)
         finally:
             await stream.aclose()
+
         url = f"/api/v1/runs/{run_id}/decisions/{decision_id}/resolve"
+
         payload = {
             "action": "assign_fixes",
             "agent_id": str(agent_id),
             "task": "Fix validation",
             "comment": "Confirmed",
         }
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             invalid = await client.post(url, json={"action": "assign_fixes"})
+
             assert invalid.status_code == 422
+
             wrong_run = await client.post(url.replace(str(run_id), str(uuid4())), json=payload)
+
             assert wrong_run.status_code == 404
+
             first, duplicate = await asyncio.gather(
                 client.post(url, json=payload),
                 client.post(url, json=payload),
             )
+
             assert first.status_code == duplicate.status_code == 200
             assert len(first.json()["plan"]["steps"]) == len(duplicate.json()["plan"]["steps"]) == 4
+
             conflict = await client.post(url, json={"action": "continue"})
+
             assert conflict.status_code == 409
+
         async with sessions() as session:
             repository = RunRepository(session)
+
             decisions = await repository.decisions(run_id)
+
             assert len(decisions) == 1 and decisions[0].status == "RESOLVED"
+
             events = await repository.events(run_id, 0)
+
             assert sum(event.event == "decision:required" for event in events) == 1
             assert sum(event.event == "decision:resolved" for event in events) == 1
+
             run = await repository.get(run_id)
+
             await DAGExecutor(repository, lambda _: FindingMock(set())).execute(run)
+
             assert run.status == "COMPLETED"
+
             steps = await repository.steps(run_id)
+
             assert steps[0].attempt == 1
             assert steps[1].depends_on == [1, 3, 4]
             assert all(step.status == "COMPLETED" for step in steps)
     finally:
         app.dependency_overrides.clear()
+
         async with sessions() as session:
             if run_id is not None:
                 saved_run = await session.get(Run, run_id)
+
                 if saved_run is not None:
                     await RunRepository(session).delete(saved_run)
+
             for model, record_id in ((Workflow, workflow_id), (Agent, agent_id)):
                 if record_id is not None:
                     record = await session.get(model, record_id)
+
                     if record is not None:
                         await session.delete(record)
+
             await session.commit()
+
         get_settings.cache_clear()
+
         await engine.dispose()
 
 
@@ -172,8 +226,10 @@ async def test_run_history_uses_two_queries_and_compact_pages(
     infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database_url, _ = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -189,6 +245,7 @@ async def test_run_history_uses_two_queries_and_compact_pages(
 
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             workflow = Workflow(
                 id=uuid4(),
@@ -197,9 +254,13 @@ async def test_run_history_uses_two_queries_and_compact_pages(
                 steps=[],
                 graph_layout={},
             )
+
             session.add(workflow)
+
             await session.flush()
+
             ids = sorted(uuid4() for _ in range(51))
+
             session.add_all(
                 Run(
                     id=run_id,
@@ -213,33 +274,44 @@ async def test_run_history_uses_two_queries_and_compact_pages(
                 )
                 for run_id in ids
             )
+
             await session.commit()
+
         event.listen(engine.sync_engine, "before_cursor_execute", record_query)
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for offset, expected in [(0, ids[:50]), (50, ids[50:])]:
                 statements.clear()
+
                 response = await client.get(f"/api/v1/runs?limit=50&offset={offset}")
+
                 assert response.status_code == 200
                 assert len(statements) == 2
                 assert response.json()["total"] == 51
                 assert [row["id"] for row in response.json()["items"]] == list(map(str, expected))
                 assert "Private" not in response.text
+
                 for row in response.json()["items"]:
                     assert row["workflow_title"] == "History probe"
                     assert not {"plan", "context_text", "files", "final_report"}.intersection(row)
+
             detail = await client.get(f"/api/v1/runs/{ids[0]}")
+
             assert detail.status_code == 200
             assert detail.json()["context_text"] == "Private context"
             assert detail.json()["final_report"] == "Private report"
             assert detail.json()["plan"]["summary"] == "Private plan"
+
         async with sessions() as session:
             for run_id in ids:
                 await RunRepository(session).delete(await session.get(Run, run_id))
+
             await session.delete(await session.get(Workflow, workflow.id))
             await session.commit()
     finally:
         app.dependency_overrides.clear()
         get_settings.cache_clear()
+
         await engine.dispose()
 
 
@@ -253,6 +325,7 @@ def infrastructure() -> Generator[tuple[str, str]]:
             "postgresql+psycopg2", "postgresql+asyncpg"
         )
         redis_url = f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0"
+
         yield database_url, redis_url
 
 
@@ -260,8 +333,10 @@ async def test_workflow_deletion_after_agent_deletion(
     infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database_url, _ = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -270,8 +345,10 @@ async def test_workflow_deletion_after_agent_deletion(
             yield session
 
     app.dependency_overrides[get_session] = override_session
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             agent = Agent(
                 id=uuid4(),
@@ -294,8 +371,11 @@ async def test_workflow_deletion_after_agent_deletion(
                 )
                 for _ in range(2)
             ]
+
             session.add_all([agent, *workflows])
+
             await session.flush()
+
             run = Run(
                 id=uuid4(),
                 workflow_id=workflows[1].id,
@@ -303,8 +383,11 @@ async def test_workflow_deletion_after_agent_deletion(
                 plan={"steps": []},
                 status="COMPLETED",
             )
+
             session.add(run)
+
             await session.flush()
+
             context_file = ContextFile(
                 id=uuid4(),
                 filename="deletion.md",
@@ -313,8 +396,11 @@ async def test_workflow_deletion_after_agent_deletion(
                 content=b"test",
                 text_content="test",
             )
+
             session.add(context_file)
+
             await session.flush()
+
             session.add_all(
                 [
                     RunFile(run_id=run.id, file_id=context_file.id),
@@ -331,44 +417,68 @@ async def test_workflow_deletion_after_agent_deletion(
                     ),
                 ]
             )
+
             await session.commit()
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             assert (await client.delete(f"/api/v1/agents/{agent.id}")).status_code == 204
+
             path = f"/api/v1/workflows/{workflows[0].id}"
+
             assert (await client.delete(path)).status_code == 204
             assert (await client.get(path)).status_code == 404
             assert (await client.delete(path)).status_code == 404
+
             retained_path = f"/api/v1/workflows/{workflows[1].id}"
+
             response = await client.delete(retained_path)
+
             assert response.status_code == 409
             assert response.json()["error"]["code"] == "workflow_has_runs"
             assert "Runs page" in response.json()["error"]["message"]
             assert (await client.get(retained_path)).status_code == 200
+
             async with sessions() as session:
                 assert await session.get(Run, run.id) is not None
+
                 persisted = await session.get(Run, run.id)
+
                 assert persisted is not None
+
                 persisted.status = "IN_PROGRESS"
+
                 await session.commit()
+
             run_path = f"/api/v1/runs/{run.id}"
+
             assert (await client.delete(run_path)).status_code == 409
+
             async with sessions() as session:
                 persisted = await session.get(Run, run.id)
+
                 assert persisted is not None
+
                 persisted.status = "COMPLETED"
+
                 await session.commit()
+
             assert (await client.delete(run_path)).status_code == 204
             assert (await client.delete(run_path)).status_code == 404
             assert (await client.get(run_path)).status_code == 404
+
             async with sessions() as session:
                 assert await session.get(Run, run.id) is None
+
                 for model in (RunStep, RunEvent, RunFile):
                     assert await session.scalar(select(model).where(model.run_id == run.id)) is None
+
                 assert await session.get(ContextFile, context_file.id) is not None
+
             assert (await client.delete(retained_path)).status_code == 204
     finally:
         app.dependency_overrides.clear()
         get_settings.cache_clear()
+
         await engine.dispose()
 
 
@@ -376,8 +486,10 @@ async def test_file_upload_run_snapshot_and_deletion(
     infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database_url, _ = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -389,9 +501,12 @@ async def test_file_upload_run_snapshot_and_deletion(
         pass
 
     app.dependency_overrides[get_session] = override_session
+
     monkeypatch.setattr("app.api.v1.runs.enqueue_plan", no_dispatch)
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             agent = Agent(
                 id=uuid4(),
@@ -411,71 +526,100 @@ async def test_file_upload_run_snapshot_and_deletion(
                 steps=[{"step_number": 1, "agent_id": str(agent.id), "depends_on": []}],
                 graph_layout={},
             )
+
             session.add_all([agent, workflow])
+
             await session.commit()
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             upload = await client.post(
                 "/api/v1/files", files={"file": ("brief.md", b"# Facts\nA fact", "text/markdown")}
             )
+
             assert upload.status_code == 201
+
             file_id = upload.json()["id"]
+
             assert "content" not in upload.json()
             assert (await client.get(f"/api/v1/files/{file_id}")).json() == upload.json()
+
             download = await client.get(f"/api/v1/files/{file_id}/download")
+
             assert download.content == b"# Facts\nA fact"
             assert download.headers["x-content-type-options"] == "nosniff"
+
             payload = {
                 "workflow_id": str(workflow.id),
                 "task": "Analyze",
                 "context_text": "User note",
                 "file_ids": [file_id],
             }
+
             assert (
                 await client.post("/api/v1/runs", json={**payload, "file_ids": [file_id, file_id]})
             ).status_code == 422
             assert (
                 await client.post("/api/v1/runs", json={**payload, "file_ids": [str(uuid4())]})
             ).status_code == 404
+
             monkeypatch.setenv("RUN_CONTEXT_MAX_CHARS", "5")
             get_settings.cache_clear()
+
             assert (await client.post("/api/v1/runs", json=payload)).status_code == 413
+
             monkeypatch.delenv("RUN_CONTEXT_MAX_CHARS")
             get_settings.cache_clear()
+
             run = await client.post("/api/v1/runs", json=payload)
+
             assert run.status_code == 201
+
             body = run.json()
+
             assert (
                 body["context_text"]
                 == f"User note\n\nAttachment: brief.md (file_id: {file_id})\n# Facts\nA fact"
             )
             assert body["files"] == [upload.json()]
+
             run_id = body["id"]
+
             assert (await client.get(f"/api/v1/runs/{run_id}/files")).json() == [upload.json()]
             assert (await client.delete(f"/api/v1/files/{file_id}")).status_code == 409
+
             async with sessions() as session:
                 repository = RunRepository(session)
+
                 persisted = await repository.get(UUID(run_id))
                 steps = await repository.steps(UUID(run_id))
+
                 assert persisted is not None
                 assert "# Facts" in build_input(persisted, steps[0], {})
+
                 prompts: list[str] = []
 
                 class CapturingMock(MockLLMProvider):
                     async def complete(self, system_prompt, user_prompt, model, **kwargs):
                         prompts.append(user_prompt)
+
                         return await super().complete(system_prompt, user_prompt, model, **kwargs)
 
                 await PlannerExecutor(
                     repository, LLMPlanner(lambda model: CapturingMock())
                 ).execute(persisted)
+
                 assert json.loads(prompts[0])["context"] == body["context_text"]
                 assert persisted.status == "AWAITING_CONFIRMATION"
+
             unused = await client.post(
                 "/api/v1/files", files={"file": ("unused.txt", b"discard", "text/plain")}
             )
+
             unused_id = unused.json()["id"]
+
             assert (await client.delete(f"/api/v1/files/{unused_id}")).status_code == 204
             assert (await client.get(f"/api/v1/files/{unused_id}")).status_code == 404
+
             from app.db.file_repository import FileRepository
             from app.llm.provider import ToolCall
             from app.orchestrator.executor import DAGExecutor
@@ -486,25 +630,41 @@ async def test_file_upload_run_snapshot_and_deletion(
             pdf = await client.post(
                 "/api/v1/files", files={"file": ("brief.pdf", pdf_bytes(), "application/pdf")}
             )
+
             assert pdf.status_code == 201
+
             pdf_id = pdf.json()["id"]
+
             created = await client.post(
                 "/api/v1/runs", json={**payload, "file_ids": [pdf_id], "token_budget": 10000}
             )
+
             assert created.status_code == 201
+
             pdf_run_id = UUID(created.json()["id"])
+
             assert created.json()["token_budget"] == 10000
             assert "Attachment fixture text" in created.json()["context_text"]
+
             async with sessions() as session:
                 repository = RunRepository(session)
+
                 persisted = await repository.get(pdf_run_id)
+
                 assert persisted is not None
+
                 await PlannerExecutor(repository).execute(persisted)
+
                 await RunService(repository).confirm(pdf_run_id)
+
                 steps = await repository.steps(pdf_run_id)
+
                 steps[0].agent_config = {**steps[0].agent_config, "tools": ["file_reader"]}
+
                 await repository.save()
+
                 texts = await FileRepository(session).text_for_run(pdf_run_id)
+
                 assert set(texts) == {pdf_id}
 
                 class ReadingMock(MockLLMProvider):
@@ -512,6 +672,7 @@ async def test_file_upload_run_snapshot_and_deletion(
 
                     async def complete_tools(self, system_prompt, messages, model, tools, **kwargs):
                         self.calls += 1
+
                         if self.calls == 1:
                             return LLMResponse(
                                 content="",
@@ -528,19 +689,25 @@ async def test_file_upload_run_snapshot_and_deletion(
                                 ],
                                 message={"role": "assistant", "blocks": []},
                             )
+
                         assert (
                             "Attachment fixture text" in json.loads(messages[-2]["content"])["text"]
                         )
                         assert "error" in json.loads(messages[-1]["content"])
+
                         return LLMResponse(
                             content="PDF reviewed", usage={"input_tokens": 20, "output_tokens": 4}
                         )
 
                 await DAGExecutor(repository, lambda _: ReadingMock()).execute(persisted)
+
                 assert persisted.status == "COMPLETED"
                 assert steps[0].tokens_prompt == 30 and steps[0].tokens_completion == 6
+
                 events = await repository.events(pdf_run_id, 0)
+
                 tool_events = [event for event in events if event.event.startswith("agent:tool_")]
+
                 assert [event.event for event in tool_events] == [
                     "agent:tool_call",
                     "agent:tool_result",
@@ -551,15 +718,19 @@ async def test_file_upload_run_snapshot_and_deletion(
                 assert "Attachment fixture text" not in json.dumps(
                     [event.data for event in tool_events]
                 )
+
             monkeypatch.setenv("CONTEXT_FILE_MAX_BYTES", "4")
             get_settings.cache_clear()
+
             oversized = await client.post(
                 "/api/v1/files", files={"file": ("large.txt", b"12345", "text/plain")}
             )
+
             assert oversized.status_code == 413
     finally:
         app.dependency_overrides.clear()
         get_settings.cache_clear()
+
         await engine.dispose()
 
 
@@ -570,14 +741,18 @@ async def test_confirm_queue_execution_and_redelivery(
     deferred_dispatch: bool,
 ) -> None:
     database_url, redis_url = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
+
     settings = Settings(
         _env_file=None, database_url=database_url, redis_url=redis_url, llm_provider_mode="mock"
     )
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+
     pool = await create_pool(RedisSettings.from_dsn(redis_url))
+
     worker = OrchestratorWorker(
         functions=[plan_run, execute_run],
         redis_pool=pool,
@@ -592,9 +767,11 @@ async def test_confirm_queue_execution_and_redelivery(
             yield session
 
     app.dependency_overrides[get_session] = override_session
+
     monkeypatch.setattr("app.workers.tasks.engine", engine)
     monkeypatch.setattr("app.workers.tasks.async_session_factory", sessions)
     monkeypatch.setattr("app.workers.queue.get_settings", lambda: settings)
+
     if deferred_dispatch:
 
         async def unavailable(run_id: UUID) -> None:
@@ -602,8 +779,10 @@ async def test_confirm_queue_execution_and_redelivery(
 
         monkeypatch.setattr("app.api.v1.runs.enqueue_run", unavailable)
         monkeypatch.setattr("app.api.v1.runs.enqueue_plan", unavailable)
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             agent = Agent(
                 id=uuid4(),
@@ -626,112 +805,165 @@ async def test_confirm_queue_execution_and_redelivery(
                 ],
                 graph_layout={},
             )
+
             session.add_all([agent, workflow])
+
             await session.commit()
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             created = await client.post(
                 "/api/v1/runs", json={"workflow_id": str(workflow.id), "task": "Analyze"}
             )
+
             assert created.status_code == 201
+
             run_id = created.json()["id"]
+
             assert created.json()["status"] == "PLANNING"
             assert created.json()["plan"] is None
             assert (await client.post(f"/api/v1/runs/{run_id}/confirm")).status_code == 409
+
             # Even an accidentally delivered job cannot execute before confirmation.
             await execute_run({}, run_id)
+
             if deferred_dispatch:
                 await recover_runs({"redis": pool})
+
             await worker.async_run()
+
             before = (await client.get(f"/api/v1/runs/{run_id}")).json()
+
             assert before["status"] == "AWAITING_CONFIRMATION"
             assert before["planning_prompt_tokens"] > 0
             assert before["plan"]["steps"][0]["attempt"] == 0
+
             # Duplicate planning delivery cannot overwrite an approved draft or add usage.
             await asyncio.gather(plan_run({}, run_id), plan_run({}, run_id))
+
             assert (await client.get(f"/api/v1/runs/{run_id}")).json()["total_tokens"] == before[
                 "total_tokens"
             ]
+
             plan = before["plan"]["steps"]
             plan[0]["subtask"] = "User edited task"
+
             assert (
                 await client.patch(f"/api/v1/runs/{run_id}/plan", json={"steps": plan})
             ).status_code == 200
+
             confirms = await asyncio.gather(
                 *[client.post(f"/api/v1/runs/{run_id}/confirm") for _ in range(2)]
             )
+
             assert sorted(response.status_code for response in confirms) == [200, 409]
+
             if deferred_dispatch:
                 # Simulate persisted checkpoints left by a terminated worker.
                 async with sessions() as session:
                     checkpoint = await RunRepository(session).steps(UUID(run_id))
+
                     checkpoint[0].status = "COMPLETED"
                     checkpoint[0].output = "Checkpoint: User edited task"
                     checkpoint[0].attempt = 1
                     checkpoint[0].tokens_prompt = 3
                     checkpoint[1].status = "IN_PROGRESS"
                     checkpoint[1].attempt = 1
+
                     await session.commit()
+
                 await recover_runs({"redis": pool})
+
             await worker.async_run()
+
             detail = (await client.get(f"/api/v1/runs/{run_id}")).json()
+
             assert detail["status"] == "COMPLETED"
             assert all(step["status"] == "COMPLETED" for step in detail["plan"]["steps"])
             assert detail["total_tokens"] > 0
             assert "User edited task" in detail["final_report"]
+
             for format in ("json", "md", "pdf"):
                 exported = await client.get(f"/api/v1/runs/{run_id}/export?format={format}")
+
                 assert exported.status_code == 200
                 assert exported.content
+
             defaults = {"default_model": "claude-haiku", "temperature": 0.4, "max_tokens": 2048}
+
             assert (await client.patch("/api/v1/settings/config", json=defaults)).status_code == 200
+
             # GET uses a new API session, proving defaults survive beyond the write request.
             config = (await client.get("/api/v1/settings/config")).json()
+
             assert all(config[key] == value for key, value in defaults.items())
+
             # PostgreSQL ownership protects concurrent delivery and completed steps are skipped.
             await asyncio.gather(execute_run({}, run_id), execute_run({}, run_id))
+
             async with sessions() as session:
                 steps = list(
                     await session.scalars(select(RunStep).where(RunStep.run_id == UUID(run_id)))
                 )
+
                 steps.sort(key=lambda step: step.step_number)
+
                 assert [step.attempt for step in steps] == [1, 2 if deferred_dispatch else 1]
                 assert steps[0].output and steps[0].output in (steps[1].input or "")
+
                 events = await RunRepository(session).events(UUID(run_id), 0)
+
                 assert events[0].event == "plan:ready"
                 assert events[-1].event == "task:finished"
+
                 chunks = [event for event in events if event.event == "agent:stream_chunk"]
+
                 assert chunks
+
                 for event in chunks:
                     step = next(s for s in steps if s.step_number == event.data["stepNumber"])
+
                     assert event.data["attempt"] == step.attempt
+
                     if event.data["reset"]:
                         assert event.data["output"] == ""
+
                 for step in steps:
                     streamed = [
                         event for event in chunks if event.data["stepNumber"] == step.step_number
                     ]
+
                     if streamed:
                         assert streamed[-1].data["output"] == step.output
+
                 assert sum(event.event == "agent:completed" for event in events) == (
                     1 if deferred_dispatch else 2
                 )
+
             stream = stream_run(sessions, UUID(run_id), events[0].id)
+
             try:
                 snapshot = await anext(stream)
+
                 assert snapshot["event"] == "run:snapshot"
                 assert "id" not in snapshot  # Snapshot must not advance the replay cursor.
                 assert json.loads(snapshot["data"])["data"]["run"]["status"] == "COMPLETED"
+
                 replayed = [await anext(stream) for _ in events[1:]]
+
                 assert [int(event["id"]) for event in replayed] == [e.id for e in events[1:]]
                 assert all(json.loads(e["data"])["runId"] == run_id for e in replayed)
             finally:
                 await stream.aclose()
+
             if not deferred_dispatch:
                 await check_cancel_retry(client, sessions, workflow.id, monkeypatch)
+
                 await check_planner_control(client, sessions, workflow.id, monkeypatch)
     finally:
         app.dependency_overrides.clear()
+
         await worker.close()
+
         await engine.dispose()
 
 
@@ -742,6 +974,7 @@ async def check_cancel_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Separate API and worker sessions exercise stale status protection."""
+
     created = (
         await client.post(
             "/api/v1/runs",
@@ -749,8 +982,10 @@ async def check_cancel_retry(
         )
     ).json()
     run_id = created["id"]
+
     await plan_run({}, run_id)
     await client.post(f"/api/v1/runs/{run_id}/confirm")
+
     provider = MockLLMProvider()
     original = provider.complete
 
@@ -766,14 +1001,22 @@ async def check_cancel_retry(
             super().__init__(repository, lambda _: provider)
 
     monkeypatch.setattr("app.workers.tasks.DAGExecutor", TestExecutor)
+
     await execute_run({}, run_id)
+
     assert (await client.get(f"/api/v1/runs/{run_id}")).json()["status"] == "FAILED"
+
     retried = await client.post(f"/api/v1/runs/{run_id}/steps/1/retry")
+
     assert retried.status_code == 200
     assert (await client.post(f"/api/v1/runs/{run_id}/steps/1/retry")).status_code == 409
+
     monkeypatch.setattr(provider, "complete", original)
+
     await execute_run({}, run_id)
+
     detail = (await client.get(f"/api/v1/runs/{run_id}")).json()
+
     assert detail["status"] == "COMPLETED"
     assert [step["attempt"] for step in detail["plan"]["steps"]] == [2, 1]
 
@@ -784,52 +1027,79 @@ async def check_cancel_retry(
         )
     ).json()
     run_id = created["id"]
+
     await plan_run({}, run_id)
     await client.post(f"/api/v1/runs/{run_id}/confirm")
+
     entered = asyncio.Event()
     released = asyncio.Event()
 
     async def blocked(*args: object, **kwargs: object) -> LLMResponse:
         entered.set()
+
         await released.wait()
+
         return await original("System", "Cancelled result", "claude-sonnet")
 
     monkeypatch.setattr(provider, "complete", blocked)
+
     job = asyncio.create_task(execute_run({}, run_id))
+
     try:
         await asyncio.wait_for(entered.wait(), 5)
+
         cancelled = await client.post(f"/api/v1/runs/{run_id}/cancel")
+
         assert cancelled.status_code == 200
+
         released.set()  # Race the successful result with the committed cancellation.
+
         await asyncio.wait_for(job, 5)
+
         detail = (await client.get(f"/api/v1/runs/{run_id}")).json()
+
         assert detail["status"] == "CANCELLED"
         assert all(step["output"] is None for step in detail["plan"]["steps"])
+
         async with sessions() as session:
             persisted = await session.get(Run, UUID(run_id))
+
             assert persisted is not None
             assert persisted.status == "CANCELLED"
+
             events = await RunRepository(session).events(UUID(run_id), 0)
+
             assert events[-1].event == "task:cancelled"
+
         # Fresh subscriptions deliver a snapshot, then changes committed afterwards.
         stream = stream_run(sessions, UUID(run_id), None)
+
         try:
             snapshot = await anext(stream)
+
             cursor = int(snapshot["id"])
+
             async with sessions() as session:
                 repository = RunRepository(session)
+
                 await repository.get(UUID(run_id), lock=True)
+
                 repository.emit(UUID(run_id), "task:cancelled", {"taskId": run_id})
+
                 await repository.save()
+
             live = await asyncio.wait_for(anext(stream), 3)
+
             assert int(live["id"]) > cursor
             assert live["event"] == "task:cancelled"
         finally:
             await stream.aclose()
     finally:
         released.set()
+
         if not job.done():
             job.cancel()
+
         await asyncio.gather(job, return_exceptions=True)
 
 
@@ -852,10 +1122,13 @@ async def check_planner_control(
 
     async def blocked(*args: object, **kwargs: object) -> LLMResponse:
         entered.set()
+
         await released.wait()
+
         return LLMResponse(content="invalid", usage={"input_tokens": 10, "output_tokens": 2})
 
     monkeypatch.setattr(provider, "complete", blocked)
+
     created = (
         await client.post(
             "/api/v1/runs",
@@ -867,26 +1140,37 @@ async def check_planner_control(
     ).json()
     run_id = created["id"]
     job = asyncio.create_task(plan_run({}, run_id))
+
     try:
         await asyncio.wait_for(entered.wait(), 3)
+
         assert (await client.post(f"/api/v1/runs/{run_id}/cancel")).status_code == 200
+
         released.set()
+
         await asyncio.wait_for(job, 3)
+
         detail = (await client.get(f"/api/v1/runs/{run_id}")).json()
+
         assert detail["status"] == "CANCELLED"
+
         async with sessions() as session:
             events = await RunRepository(session).events(UUID(run_id), 0)
+
             assert all(event.event != "plan:ready" for event in events)
     finally:
         released.set()
+
         if not job.done():
             job.cancel()
+
         await asyncio.gather(job, return_exceptions=True)
 
     async def invalid(*args: object, **kwargs: object) -> LLMResponse:
         return LLMResponse(content="invalid", usage={"input_tokens": 10, "output_tokens": 2})
 
     monkeypatch.setattr(provider, "complete", invalid)
+
     created = (
         await client.post(
             "/api/v1/runs",
@@ -897,8 +1181,11 @@ async def check_planner_control(
         )
     ).json()
     run_id = created["id"]
+
     await plan_run({}, run_id)
+
     detail = (await client.get(f"/api/v1/runs/{run_id}")).json()
+
     assert detail["status"] == "FAILED"
     assert detail["plan"] is None
     assert detail["planning_error"]["code"] == "invalid_plan"
@@ -916,10 +1203,13 @@ async def test_run_creation_serializes_with_workflow_deletion(
     from app.services.workflows import WorkflowError, WorkflowService
 
     database_url, _ = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+
     owner_locked, contender_started, release_owner = (
         asyncio.Event(),
         asyncio.Event(),
@@ -930,25 +1220,35 @@ async def test_run_creation_serializes_with_workflow_deletion(
         async def workflow(self, workflow_id: UUID, *, lock: bool = False) -> Workflow | None:
             if lock and deletion_first:
                 contender_started.set()
+
             workflow = await super().workflow(workflow_id, lock=lock)
+
             if lock and not deletion_first:
                 owner_locked.set()
+
                 await release_owner.wait()
+
             return workflow
 
     class CoordinatedWorkflows(WorkflowRepository):
         async def get_for_deletion(self, workflow_id: UUID) -> Workflow | None:
             if not deletion_first:
                 contender_started.set()
+
             workflow = await super().get_for_deletion(workflow_id)
+
             if deletion_first:
                 owner_locked.set()
+
                 await release_owner.wait()
+
             return workflow
 
     tasks = []
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             agent = Agent(
                 id=uuid4(),
@@ -968,7 +1268,9 @@ async def test_run_creation_serializes_with_workflow_deletion(
                 steps=[{"step_number": 1, "agent_id": str(agent.id), "depends_on": []}],
                 graph_layout={},
             )
+
             session.add_all([agent, workflow])
+
             await session.commit()
 
         async def create():
@@ -982,31 +1284,46 @@ async def test_run_creation_serializes_with_workflow_deletion(
                 await WorkflowService(CoordinatedWorkflows(session)).delete(workflow.id)
 
         owner = asyncio.create_task(delete() if deletion_first else create())
+
         tasks.append(owner)
+
         await asyncio.wait_for(owner_locked.wait(), 3)
+
         contender = asyncio.create_task(create() if deletion_first else delete())
+
         tasks.append(contender)
+
         await asyncio.wait_for(contender_started.wait(), 3)
+
         release_owner.set()
+
         results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 5)
+
         assert not isinstance(results[0], BaseException)
+
         error = results[1]
+
         if deletion_first:
             assert isinstance(error, RunError)
             assert error.status_code == 404
+
             async with sessions() as session:
                 assert await session.get(Workflow, workflow.id) is None
         else:
             assert isinstance(error, WorkflowError)
             assert error.code == "workflow_has_runs"
+
             async with sessions() as session:
                 assert await session.scalar(select(Run.id).where(Run.workflow_id == workflow.id))
     finally:
         release_owner.set()
+
         for task in tasks:
             if not task.done():
                 task.cancel()
+
         await asyncio.gather(*tasks, return_exceptions=True)
+
         await engine.dispose()
 
 
@@ -1014,9 +1331,11 @@ async def test_catalogue_domain_errors_and_sse_cursor(
     infrastructure: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database_url, _ = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
     monkeypatch.setattr("app.api.v1.runs.enqueue_plan", AsyncMock())
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -1025,8 +1344,10 @@ async def test_catalogue_domain_errors_and_sse_cursor(
             yield session
 
     app.dependency_overrides[get_session] = override_session
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             payload = {
                 "name": f"CRUD reviewer {uuid4()}",
@@ -1034,25 +1355,35 @@ async def test_catalogue_domain_errors_and_sse_cursor(
                 "system_prompt": "Be precise",
                 "model": "claude-sonnet",
             }
+
             response = await client.post("/api/v1/agents", json=payload)
+
             assert response.status_code == 201
+
             agent_id = response.json()["id"]
+
             duplicate = await client.post("/api/v1/agents", json=payload)
+
             assert duplicate.status_code == 409
             assert duplicate.json()["error"]["code"] == "duplicate_agent_name"
+
             for extra in [
                 {"tools": ["terminal_access"]},
                 {"context_window": get_model_registry()["claude-sonnet"].context_window + 1},
             ]:
                 invalid = await client.put(f"/api/v1/agents/{agent_id}", json={**payload, **extra})
+
                 assert invalid.status_code == 422
                 assert invalid.json()["error"]["code"] == "invalid_agent"
+
             assert (await client.get(f"/api/v1/agents/{agent_id}")).json()["tools"] == []
+
             definition = {
                 "title": "Review pipeline",
                 "execution_type": "sequential",
                 "steps": [{"step_number": 1, "agent_id": agent_id, "depends_on": []}],
             }
+
             for steps in [
                 [{"step_number": 1, "agent_id": str(uuid4()), "depends_on": []}],
                 [{"step_number": 1, "agent_id": agent_id, "depends_on": [1]}],
@@ -1060,33 +1391,48 @@ async def test_catalogue_domain_errors_and_sse_cursor(
                 invalid = await client.post(
                     "/api/v1/workflows", json={**definition, "steps": steps}
                 )
+
                 assert invalid.status_code == 422
                 assert invalid.json()["error"]["code"] == "invalid_workflow"
                 assert invalid.json()["error"]["details"]["errors"]
+
             created = await client.post("/api/v1/workflows", json=definition)
+
             assert created.status_code == 201
+
             workflow_id = created.json()["id"]
+
             update = await client.put(
                 f"/api/v1/workflows/{workflow_id}", json={**definition, "title": "Updated pipeline"}
             )
+
             assert update.status_code == 200
             assert update.json()["title"] == "Updated pipeline"
             assert (await client.get("/api/v1/workflows")).status_code == 200
             assert (await client.get("/api/v1/agents")).status_code == 200
+
             response = await client.post(
                 "/api/v1/runs", json={"workflow_id": workflow_id, "task": "Review"}
             )
+
             assert response.status_code == 201
+
             run_id = UUID(response.json()["id"])
 
         stream = stream_run(sessions, run_id, 9223372036854775807)
+
         try:
             assert (await anext(stream))["event"] == "run:snapshot"
+
             async with sessions() as session:
                 repository = RunRepository(session)
+
                 repository.emit(run_id, "task:cancelled", {"taskId": str(run_id)})
+
                 await repository.save()
+
             event = await asyncio.wait_for(anext(stream), 2)
+
             assert event["event"] == "task:cancelled"
         finally:
             await stream.aclose()
@@ -1094,9 +1440,13 @@ async def test_catalogue_domain_errors_and_sse_cursor(
         # Simulate deletion after route preflight but before generator snapshot.
         async with sessions() as session:
             run = await RunRepository(session).get(run_id)
+
             assert run is not None
+
             await RunRepository(session).delete(run)
+
         stream = stream_run(sessions, run_id, None)
+
         try:
             with pytest.raises(StopAsyncIteration):
                 await anext(stream)
@@ -1104,6 +1454,7 @@ async def test_catalogue_domain_errors_and_sse_cursor(
             await stream.aclose()
     finally:
         app.dependency_overrides.clear()
+
         await engine.dispose()
 
 
@@ -1121,11 +1472,15 @@ async def test_checkpoint_recovery_bypasses_stale_arq_keys_and_live_owner(
     from test_tools import FixtureTools
 
     database_url, redis_url = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+
     pool = await create_pool(RedisSettings.from_dsn(redis_url))
+
     worker = OrchestratorWorker(
         functions=[plan_run, execute_run],
         redis_pool=pool,
@@ -1134,13 +1489,19 @@ async def test_checkpoint_recovery_bypasses_stale_arq_keys_and_live_owner(
         handle_signals=False,
         poll_delay=0.01,
     )
+
     monkeypatch.setattr("app.workers.tasks.engine", engine)
     monkeypatch.setattr("app.workers.tasks.async_session_factory", sessions)
+
     execute_tool = AsyncMock(return_value=json.dumps({"value": 20.0}))
+
     monkeypatch.setattr("app.orchestrator.executor.ToolRuntime.execute", execute_tool)
+
     owned_id = None
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             agent = Agent(
                 id=uuid4(),
@@ -1160,35 +1521,51 @@ async def test_checkpoint_recovery_bypasses_stale_arq_keys_and_live_owner(
                 steps=[{"step_number": 1, "agent_id": str(agent.id), "depends_on": []}],
                 graph_layout={},
             )
+
             session.add_all([agent, workflow])
+
             await session.commit()
+
             repository = RunRepository(session)
             service = RunService(repository)
             ids = []
+
             for task in ["Interrupt tool result", "Live worker owns this run"]:
                 created = await service.create(RunCreate(workflow_id=workflow.id, task=task))
                 run = await service.require(created.id)
+
                 await PlannerExecutor(repository).execute(run)
+
                 await service.confirm(run.id)
+
                 ids.append(run.id)
+
             interrupted_id, owned_id = ids
+
             interrupted = await service.require(interrupted_id)
+
             step = (await repository.steps(interrupted_id))[0]
             original_save = repository.save
 
             async def crash_after_commit():
                 await original_save()
+
                 turns = (step.checkpoint or {}).get("turns", [])
+
                 if turns and turns[0]["tools"].get("0", {}).get("state") == "done":
                     raise asyncio.CancelledError
 
             repository.save = crash_after_commit
+
             with pytest.raises(asyncio.CancelledError):
                 await DAGExecutor(repository, lambda _: FixtureTools()).execute(interrupted)
+
         async with sessions() as session:
             step = (await RunRepository(session).steps(interrupted_id))[0]
+
             assert step.checkpoint["turns"][0]["tools"]["0"]["state"] == "done"
             assert step.tokens_prompt == 10 and step.tokens_completion == 4
+
         execute_tool.assert_awaited_once()
 
         resumed = FixtureTools()
@@ -1199,24 +1576,35 @@ async def test_checkpoint_recovery_bypasses_stale_arq_keys_and_live_owner(
                 super().__init__(repository, lambda _: resumed)
 
         monkeypatch.setattr("app.workers.tasks.DAGExecutor", ResumingExecutor)
+
         # These keys would reject dispatch using the original fixed run job ID.
         await pool.set(f"arq:job:run:{interrupted_id}", b"stale", ex=600)
         await pool.set(f"arq:in-progress:run:{interrupted_id}", b"stale", ex=600)
+
         async with engine.connect() as ownership:
             key = run_lock_key(owned_id)
+
             await ownership.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
+
             try:
                 await recover_runs({"redis": pool})
+
                 queued = await pool.queued_jobs()
+
                 assert any(str(interrupted_id) in str(job.args) for job in queued)
                 assert not any(str(owned_id) in str(job.args) for job in queued)
+
                 await worker.async_run()
             finally:
                 await ownership.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+
         async with sessions() as session:
             repository = RunRepository(session)
+
             run = await repository.get(interrupted_id)
+
             step = (await repository.steps(interrupted_id))[0]
+
             assert run.status == "COMPLETED"
             assert not step.checkpoint
             assert step.tokens_prompt == 28 and step.tokens_completion == 10
@@ -1224,14 +1612,18 @@ async def test_checkpoint_recovery_bypasses_stale_arq_keys_and_live_owner(
                 run.total_tokens == run.planning_prompt_tokens + run.planning_completion_tokens + 38
             )
             assert (await repository.get(owned_id)).status == "IN_PROGRESS"
+
         execute_tool.assert_awaited_once()
     finally:
         # Leave no intentionally active runs for another test's recovery sweep.
         if owned_id is not None:
             async with sessions() as session:
                 await RunService(RunRepository(session)).cancel(owned_id)
+
         await worker.close()
+
         await pool.aclose()
+
         await engine.dispose()
 
 
@@ -1244,15 +1636,19 @@ async def test_retention_cleanup_preserves_attachments_results_and_locked_runs(
     from app.services.cleanup import CleanupService
 
     database_url, _ = infrastructure
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("CLEANUP_BATCH_SIZE", "1")
     get_settings.cache_clear()
+
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     now = datetime.now(UTC)
     old_file, old_event = now - timedelta(days=8), now - timedelta(days=31)
+
     try:
         await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
+
         async with sessions() as session:
             workflow = Workflow(
                 id=uuid4(),
@@ -1261,8 +1657,11 @@ async def test_retention_cleanup_preserves_attachments_results_and_locked_runs(
                 steps=[],
                 graph_layout={},
             )
+
             session.add(workflow)
+
             await session.flush()
+
             completed = Run(
                 id=uuid4(),
                 workflow_id=workflow.id,
@@ -1304,9 +1703,13 @@ async def test_retention_cleanup_preserves_attachments_results_and_locked_runs(
                 )
                 for created in [old_file, old_file, old_file, now]
             ]
+
             session.add_all([completed, active, locked, *files])
+
             await session.flush()
+
             session.add(RunFile(run_id=completed.id, file_id=files[1].id))
+
             events = [
                 RunEvent(
                     run_id=run.id,
@@ -1321,39 +1724,59 @@ async def test_retention_cleanup_preserves_attachments_results_and_locked_runs(
                     (locked, old_event),
                 ]
             ]
+
             session.add_all(events)
+
             await session.commit()
+
         async with sessions() as owner:
             repository = RunRepository(owner)
+
             await repository.get(locked.id, lock=True)
+
             # An uploader attaching this file holds the same lock as cleanup.
             await owner.scalar(
                 select(ContextFile).where(ContextFile.id == files[2].id).with_for_update()
             )
+
             async with sessions() as session:
                 counts = await CleanupService(CleanupRepository(session)).execute(now)
+
                 assert counts == {"files": 1, "events": 1}
+
             owner.add(RunFile(run_id=completed.id, file_id=files[2].id))
+
             pending = await repository.get(locked.id)
+
             pending.status = "IN_PROGRESS"
             pending.finished_at = None
+
             await owner.commit()
+
         async with sessions() as session:
             counts = await CleanupService(CleanupRepository(session)).execute(now)
+
             assert counts == {"files": 0, "events": 0}
             assert await session.get(ContextFile, files[0].id) is None
+
             for file in files[1:]:
                 assert await session.get(ContextFile, file.id) is not None
+
             assert await session.get(RunEvent, events[0].id) is None
+
             for event in events[1:]:
                 assert await session.get(RunEvent, event.id) is not None
+
             assert (await session.get(Run, completed.id)).final_report == "Preserved result"
+
         # Keep intentionally active rows from participating in later sweeps.
         async with sessions() as session:
             for identifier in [active.id, locked.id]:
                 run = await session.get(Run, identifier)
+
                 run.status = "CANCELLED"
                 run.finished_at = now
+
             await session.commit()
     finally:
         await engine.dispose()

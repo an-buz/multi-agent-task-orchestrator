@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     def require_async_postgres(cls, value: PostgresDsn) -> PostgresDsn:
         if value.scheme != "postgresql+asyncpg":
             raise ValueError("DATABASE_URL must use postgresql+asyncpg")
+
         return value
 
     @model_validator(mode="after")
@@ -103,10 +104,12 @@ class Settings(BaseSettings):
             self.llm_provider_mode = "mock"
             self.code_executor_backend = "disabled"
             self.run_token_budget = None
+
         return self
 
 
 @lru_cache
 def get_settings() -> Settings:
     """Return cached process settings."""
+
     return Settings()

@@ -44,15 +44,20 @@ class FixtureStream(MockLLMProvider):
         max_tokens: int,
     ) -> AsyncGenerator[LLMChunk]:
         self.calls += 1
+
         try:
             yield LLMChunk(
                 text_delta="Discard me" if self.fail_first and self.calls == 1 else "Fixture "
             )
+
             if self.fail_first and self.calls == 1:
                 raise TimeoutError("Private prompt")
+
             if self.hang:
                 await asyncio.Event().wait()
+
             await asyncio.sleep(0.01)
+
             yield LLMChunk(text_delta="result")
             yield LLMChunk(response=fixture_response())
         finally:
@@ -73,6 +78,7 @@ async def test_mock_stream_preserves_text_usage_and_tools() -> None:
         )
     ]
     terminal = chunks[-1].response
+
     assert terminal is not None
     assert "".join(chunk.text_delta for chunk in chunks) == terminal.content
     assert terminal.content == "Mock response: Привет 🌍"
@@ -82,35 +88,48 @@ async def test_mock_stream_preserves_text_usage_and_tools() -> None:
 
 async def test_complete_only_provider_emits_waiting_reset_without_pausing() -> None:
     repository, run = await make_run([[]])
+
     provider = SimpleNamespace(
         complete_tools=AsyncMock(return_value=fixture_response()),
         aclose=AsyncMock(),
     )
+
     await DAGExecutor(repository, lambda _: provider).execute(run)
+
     assert run.status == "COMPLETED"
+
     names = [name for name, _ in repository.saved_events]
+
     assert "task:paused" not in names
     assert names.index("agent:stream_chunk") < names.index("agent:completed")
+
     chunks = [data for name, data in repository.saved_events if name == "agent:stream_chunk"]
+
     assert len(chunks) == 1 and chunks[0]["reset"] is True
     assert chunks[0]["textDelta"] == chunks[0]["output"] == ""
+
     EventEnvelope(event="agent:stream_chunk", runId=run.id, ts=datetime.now(UTC), data=chunks[0])
     provider.aclose.assert_awaited_once()
 
 
 async def test_stream_persists_partial_output_before_completion() -> None:
     repository, run = await make_run([[]])
+
     provider = FixtureStream()
     snapshots: list[tuple[str, str | None]] = []
     original_save = repository.save
 
     async def save() -> None:
         snapshots.append((repository.saved_steps[0].status, repository.saved_steps[0].output))
+
         await original_save()
 
     repository.save = save  # type: ignore[method-assign]
+
     await DAGExecutor(repository, lambda _: provider).execute(run)
+
     chunks = [data for event, data in repository.saved_events if event == "agent:stream_chunk"]
+
     assert chunks[0]["reset"] is True
     assert chunks[-1]["output"] == "Fixture result"
     assert ("IN_PROGRESS", "Fixture result") in snapshots
@@ -118,9 +137,12 @@ async def test_stream_persists_partial_output_before_completion() -> None:
     assert run.status == "COMPLETED"
     assert repository.saved_steps[0].tokens_prompt == fixture_response().usage.input_tokens
     assert provider.closed == 1
+
     for data in chunks:
         EventEnvelope(event="agent:stream_chunk", runId=run.id, ts=datetime.now(UTC), data=data)
+
     names = [event for event, _ in repository.saved_events]
+
     assert names.index("agent:stream_chunk") < names.index("agent:completed")
 
 
@@ -134,10 +156,15 @@ async def test_transient_stream_retry_resets_partial_text(monkeypatch: pytest.Mo
             reraise=True,
         ),
     )
+
     repository, run = await make_run([[]])
+
     provider = FixtureStream(fail_first=True)
+
     await DAGExecutor(repository, lambda _: provider).execute(run)
+
     chunks = [data for event, data in repository.saved_events if event == "agent:stream_chunk"]
+
     assert sum(data["reset"] for data in chunks) == 2
     assert chunks[-1]["output"] == "Fixture result"
     assert repository.saved_steps[0].output == "Fixture result"
@@ -149,17 +176,22 @@ async def test_cancellation_stops_stream_and_preserves_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(get_settings(), "run_poll_interval", 0.001)
+
     repository, run = await make_run([[]])
+
     provider = FixtureStream(hang=True)
     original_save = repository.save
 
     async def save() -> None:
         await original_save()
+
         if repository.saved_steps[0].output == "Fixture ":
             run.status = "CANCELLED"
 
     repository.save = save  # type: ignore[method-assign]
+
     await asyncio.wait_for(DAGExecutor(repository, lambda _: provider).execute(run), 1)
+
     assert run.status == "CANCELLED"
     assert repository.saved_steps[0].output == "Fixture "
     assert provider.closed == 1
@@ -182,9 +214,13 @@ async def test_incomplete_stream_fails_without_fabricating_usage() -> None:
             yield LLMChunk(text_delta="Partial")
 
     repository, run = await make_run([[]])
+
     await DAGExecutor(repository, lambda _: Incomplete()).execute(run)
+
     assert run.status == "FAILED"
+
     step = repository.saved_steps[0]
+
     assert step.output == "Partial"
     assert step.tokens_prompt == step.tokens_completion == 0
     assert step.error and "Private" not in json.dumps(step.error)

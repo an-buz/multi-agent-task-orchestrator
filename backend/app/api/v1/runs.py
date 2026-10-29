@@ -29,7 +29,9 @@ Service = Annotated[RunService, Depends(get_run_service)]
 @router.post("", response_model=RunRead, status_code=status.HTTP_201_CREATED)
 async def create_run(payload: RunCreate, service: Service) -> RunRead:
     run = await service.create(payload)
+
     await enqueue_plan(run.id)
+
     return run
 
 
@@ -56,6 +58,7 @@ async def delete_run(run_id: UUID, service: Service) -> None:
 async def export_run(run_id: UUID, service: Service, format: ExportFormat = "json") -> Response:
     run = await service.read(await service.require(run_id))
     content, media_type = await export_result(run, format)
+
     return Response(
         content,
         media_type=media_type,
@@ -80,7 +83,9 @@ async def confirm_run(
     run_id: UUID, service: Service, payload: RunPlanConfirmation | None = None
 ) -> RunRead:
     run = await service.confirm(run_id, payload.expected_subtasks if payload else None)
+
     await enqueue_run(run.id)
+
     return run
 
 
@@ -97,13 +102,17 @@ async def resolve_decision(
     service: Service,
 ) -> RunRead:
     run = await service.resolve_decision(run_id, decision_id, payload)
+
     if run.status == "IN_PROGRESS":
         await enqueue_run(run.id)
+
     return run
 
 
 @router.post("/{run_id}/steps/{step_number}/retry", response_model=RunRead)
 async def retry_step(run_id: UUID, step_number: int, service: Service) -> RunRead:
     run = await service.retry(run_id, step_number)
+
     await enqueue_run(run.id)
+
     return run

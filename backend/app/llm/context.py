@@ -27,7 +27,9 @@ def conservative_input_size(
     system_prompt: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
 ) -> int:
     """Byte-based admission fallback for mocks/custom providers, never billed usage."""
+
     payload = {"system": system_prompt, "messages": messages, "tools": tools}
+
     return len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
 
@@ -42,18 +44,24 @@ async def check_context(
 ) -> None:
     settings = get_settings()
     info = get_model_registry(settings)[model]
+
     if not 1 <= max_tokens <= info.max_output_tokens:
         raise ValueError("Requested response exceeds the model output limit")
+
     window = min(info.context_window, context_window or info.context_window)
     reserve = max_tokens + settings.context_safety_margin_tokens
+
     if reserve >= window:
         raise ContextTooLarge("The reserved response leaves no room for input.")
+
     if isinstance(provider, TokenCountingProvider):
         async with asyncio.timeout(settings.llm_request_timeout):
             count = await provider.count_input_tokens(system_prompt, messages, model, tools)
     else:
         count = await asyncio.to_thread(conservative_input_size, system_prompt, messages, tools)
+
     if type(count) is not int or count < 0:
         raise ValueError("Invalid context admission count")
+
     if count + reserve > window:
         raise ContextTooLarge("Input and reserved response exceed the context window.")

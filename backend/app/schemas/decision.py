@@ -41,8 +41,10 @@ class DecisionResolution(StorageModel):
     def validate_assignment(self) -> DecisionResolution:
         if self.action == "assign_fixes" and (self.agent_id is None or self.task is None):
             raise ValueError("Assigning fixes requires an agent and task.")
+
         if self.action != "assign_fixes" and (self.agent_id is not None or self.task is not None):
             raise ValueError("Only an assignment may specify an agent and task.")
+
         return self
 
 

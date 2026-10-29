@@ -10,12 +10,16 @@ StepNumber = Annotated[int, Field(ge=1, le=2147483647)]
 
 def validate_storage_text(value: object) -> object:
     """Check nested JSON strings without recursion or modifying their content."""
+
     pending = [value]
+
     while pending:
         item = pending.pop()
+
         if isinstance(item, str):
             if "\x00" in item:
                 raise ValueError("Text must not contain null characters.")
+
             try:
                 item.encode("utf-8")
             except UnicodeEncodeError as exception:
@@ -25,6 +29,7 @@ def validate_storage_text(value: object) -> object:
             pending.extend(item.values())
         elif isinstance(item, list | tuple):
             pending.extend(item)
+
     return value
 
 

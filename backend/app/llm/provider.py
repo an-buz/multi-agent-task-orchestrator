@@ -37,8 +37,10 @@ class LLMResponse(StorageModel):
 
     def require_complete(self) -> None:
         """Check after usage is persisted and before executing any tool calls."""
+
         if self.refused or self.stop_reason not in {"stop", "end_turn", "tool_calls", "tool_use"}:
             raise IncompleteLLMResponse("The provider did not complete the response")
+
         if self.stop_reason in {"tool_calls", "tool_use"} and not self.tool_calls:
             raise IncompleteLLMResponse("The provider returned no requested tool calls")
 

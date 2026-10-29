@@ -33,6 +33,7 @@ def demo_id(kind: str, key: str) -> UUID:
 
 def agent_payloads(settings: Settings) -> list[AgentCreate]:
     model = get_model_registry(settings)[settings.default_agent_model]
+
     return [
         AgentCreate(
             name=f"Demo {name}",
@@ -54,16 +55,20 @@ def agent_payloads(settings: Settings) -> list[AgentCreate]:
 
 def workflow_payloads(*, with_decisions: bool = False) -> list[WorkflowWrite]:
     payloads: list[WorkflowWrite] = []
+
     for execution_type, dependencies in DEPENDENCIES.items():
         scenario = f"{execution_type}_decision" if with_decisions else execution_type
         steps = []
+
         for number, (role, parents) in enumerate(zip(ROLES, dependencies, strict=True), 1):
             template = (
                 f"[demo:{scenario}]\nTask: {{{{task}}}}\n"
                 "Subtask: {{subtask}}\nContext: {{context}}"
             )
+
             for parent in parents:
                 template += f"\n\nStep {parent}:\n{{{{steps.{parent}.output}}}}"
+
             steps.append(
                 WorkflowStepInput(
                     step_number=number,
@@ -72,6 +77,7 @@ def workflow_payloads(*, with_decisions: bool = False) -> list[WorkflowWrite]:
                     input_transform=template,
                 )
             )
+
         payload = WorkflowWrite.model_validate(
             {
                 "title": f"Demo: Task board release ({execution_type})"
@@ -87,30 +93,43 @@ def workflow_payloads(*, with_decisions: bool = False) -> list[WorkflowWrite]:
                 },
             }
         )
+
         if errors := validate_workflow_graph(payload):
             raise ValueError(errors)
+
         payloads.append(payload)
+
     return payloads
 
 
 async def seed_demo(session: AsyncSession, settings: Settings) -> None:
     """Insert missing demo records atomically; preserve edits and previous runs."""
+
     if not settings.demo_mode:
         raise ValueError("Seeding requires DEMO_MODE=true")
+
     # Serialize concurrent starts so they cannot insert the same catalogue twice.
     await session.execute(text("SELECT pg_advisory_xact_lock(41892361)"))
+
     for role, payload in zip(ROLES, agent_payloads(settings), strict=True):
         agent_id = demo_id("agent", role)
+
         if await session.get(Agent, agent_id) is None:
             existing = await session.scalar(select(Agent.id).where(Agent.name == payload.name))
+
             if existing is not None:
                 raise ValueError(f"Demo agent name is already used: {payload.name}")
+
             session.add(Agent(id=agent_id, **payload.model_dump(), requires_reconfiguration=False))
+
     await session.flush()
+
     for with_decisions in (False, True):
         for workflow in workflow_payloads(with_decisions=with_decisions):
             key = workflow.execution_type + ("_decision" if with_decisions else "")
             workflow_id = demo_id("workflow", key)
+
             if await session.get(Workflow, workflow_id) is None:
                 session.add(Workflow(id=workflow_id, **workflow.model_dump(mode="json")))
+
     await session.commit()

@@ -21,7 +21,9 @@ async def run_events(
     after: Annotated[int | None, Query(ge=0, le=9223372036854775807)] = None,
 ) -> EventSourceResponse:
     await service.require(run_id)
+
     await service.repository.release()
+
     return EventSourceResponse(
         stream_run(
             async_session_factory, run_id, last_event_id if last_event_id is not None else after

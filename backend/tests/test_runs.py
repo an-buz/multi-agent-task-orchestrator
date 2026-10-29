@@ -56,7 +56,9 @@ class MemoryRunRepository(RunRepository):
         self.saved_decisions: list[RunDecision] = []
         self.saved_events: list[tuple[str, dict[str, Any]]] = []
         self.session = cast(AsyncSession, AsyncMock())
+
         super().__init__(self.session)
+
         self.session.scalar.return_value = None
 
     def add(self, value: Run | RunStep | RunDecision) -> None:
@@ -94,6 +96,7 @@ class MemoryRunRepository(RunRepository):
 
     async def summaries(self, limit: int, offset: int) -> tuple[list[RunSummary], int]:
         runs, total = await self.list(limit, offset)
+
         return [
             RunSummary(
                 id=run.id,
@@ -115,6 +118,7 @@ class MemoryRunRepository(RunRepository):
 
     async def delete(self, run: Run) -> None:
         del self.runs[run.id]
+
         self.saved_steps = [step for step in self.saved_steps if step.run_id != run.id]
 
     def emit(self, run_id: UUID, event: str, data: dict[str, Any]) -> None:
@@ -125,13 +129,19 @@ async def test_new_runs_snapshot_saved_planner_without_changing_existing_runs(mo
     repository = MemoryRunRepository()
     selected = {"planner_model": "gpt-4o"}
     repository.session.scalar.return_value = selected
+
     monkeypatch.setattr(get_settings(), "planner_model", "unknown-environment-fallback")
+
     service = RunService(repository)
+
     first = await service.create(RunCreate(workflow_id=repository.saved_workflow.id, task="First"))
+
     selected["planner_model"] = "gemini-flash-lite"
+
     second = await service.create(
         RunCreate(workflow_id=repository.saved_workflow.id, task="Second")
     )
+
     assert repository.runs[first.id].planner_config["model"] == "gpt-4o"
     assert repository.runs[second.id].planner_config["model"] == "gemini-flash-lite"
     assert repository.runs[first.id].status == repository.runs[second.id].status == "PLANNING"
@@ -140,13 +150,16 @@ async def test_new_runs_snapshot_saved_planner_without_changing_existing_runs(mo
 async def test_new_runs_reject_an_unavailable_saved_planner(monkeypatch):
     repository = MemoryRunRepository()
     repository.session.scalar.return_value = {"planner_model": "gemini-flash-lite"}
+
     monkeypatch.setattr(
         "app.services.models.ModelService.available", AsyncMock(return_value={"claude-sonnet"})
     )
+
     with pytest.raises(RunError, match="planner model") as error:
         await RunService(repository).create(
             RunCreate(workflow_id=repository.saved_workflow.id, task="Task")
         )
+
     assert error.value.status_code == 422
     assert not repository.runs
 
@@ -166,17 +179,24 @@ async def test_new_runs_reject_an_unavailable_saved_planner(monkeypatch):
 async def test_delete_run_state_rules(status: str, allowed: bool) -> None:
     repository = MemoryRunRepository()
     run = Run(id=uuid4(), status=status)
+
     repository.add(run)
+
     service = RunService(repository)
+
     if allowed:
         await service.delete(run.id)
+
         assert await repository.get(run.id) is None
+
         with pytest.raises(RunError) as missing:
             await service.delete(run.id)
+
         assert missing.value.status_code == 404
     else:
         with pytest.raises(RunError) as active:
             await service.delete(run.id)
+
         assert active.value.status_code == 409
         assert await repository.get(run.id) is run
 
@@ -185,12 +205,14 @@ async def test_delete_run_state_rules(status: str, allowed: bool) -> None:
 def test_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, Any]:
     repository = MemoryRunRepository()
     app.dependency_overrides[get_run_service] = lambda: RunService(repository)
+
     monkeypatch.setattr("app.api.v1.runs.enqueue_run", AsyncMock())
 
     async def plan_immediately(run_id: UUID) -> None:
         await PlannerExecutor(repository).execute(repository.runs[run_id])
 
     monkeypatch.setattr("app.api.v1.runs.enqueue_plan", plan_immediately)
+
     try:
         with TestClient(app) as client:
             yield client
@@ -200,6 +222,7 @@ def test_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, Any]:
 
 def test_run_plan_can_be_created_edited_and_confirmed(test_client: TestClient) -> None:
     """A user can review and edit the mock plan before confirming it."""
+
     created = test_client.post(
         "/api/v1/runs",
         json={
@@ -208,26 +231,35 @@ def test_run_plan_can_be_created_edited_and_confirmed(test_client: TestClient) -
             "context_text": "Focus on API contracts",
         },
     )
+
     assert created.status_code == 201
+
     run = created.json()
+
     assert run["status"] == "PLANNING"
     assert run["plan"] is None
+
     run = test_client.get(f"/api/v1/runs/{run['id']}").json()
+
     assert run["status"] == "AWAITING_CONFIRMATION"
     assert run["plan"]["steps"][0]["agent_name"] == "Reviewer"
     assert run["plan"]["steps"][0]["subtask"] == ("Review code changes: Review the latest changes")
 
     run_id = run["id"]
     run["plan"]["steps"][0]["subtask"] = "Review only the API contract changes"
+
     edited = test_client.patch(f"/api/v1/runs/{run_id}/plan", json=run["plan"])
+
     assert edited.status_code == 200
     assert edited.json()["plan"]["steps"][0]["subtask"] == ("Review only the API contract changes")
 
     detail = test_client.get(f"/api/v1/runs/{run_id}")
+
     assert detail.status_code == 200
     assert detail.json()["context_text"] == "Focus on API contracts"
 
     confirmed = test_client.post(f"/api/v1/runs/{run_id}/confirm")
+
     assert confirmed.status_code == 200
     assert confirmed.json()["status"] == "IN_PROGRESS"
     assert test_client.post(f"/api/v1/runs/{run_id}/confirm").status_code == 409
@@ -236,11 +268,14 @@ def test_run_plan_can_be_created_edited_and_confirmed(test_client: TestClient) -
 
 def test_runs_list_returns_total_and_items(test_client: TestClient) -> None:
     """The paginated run history uses the shared items/total response shape."""
+
     test_client.post(
         "/api/v1/runs",
         json={"workflow_id": str(WORKFLOW_ID), "task": "Review the latest changes"},
     )
+
     response = test_client.get("/api/v1/runs?limit=10&offset=0")
+
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["workflow_title"] == "Repository review"
@@ -260,6 +295,7 @@ def test_stale_plan_edits_and_confirmation_preserve_the_latest_plan(
     step = run["plan"]["steps"][0]
     expected = {str(step["step_number"]): step["subtask"]}
     updated_step = {**step, "subtask": "Updated in another session"}
+
     assert (
         test_client.patch(
             f"{path}/plan", json={"steps": [updated_step], "expected_subtasks": expected}
@@ -268,11 +304,14 @@ def test_stale_plan_edits_and_confirmation_preserve_the_latest_plan(
     )
 
     stale = test_client.patch(f"{path}/plan", json={"steps": [step], "expected_subtasks": expected})
+
     assert stale.status_code == 409
     assert (
         test_client.post(f"{path}/confirm", json={"expected_subtasks": expected}).status_code == 409
     )
+
     latest = test_client.get(path).json()
+
     assert latest["status"] == "AWAITING_CONFIRMATION"
     assert latest["plan"]["steps"][0]["subtask"] == updated_step["subtask"]
     assert (
@@ -285,10 +324,12 @@ def test_stale_plan_edits_and_confirmation_preserve_the_latest_plan(
 
 def test_run_creation_rejects_unknown_workflow(test_client: TestClient) -> None:
     """Unknown workflow IDs fail before a run is persisted."""
+
     response = test_client.post(
         "/api/v1/runs",
         json={"workflow_id": str(uuid4()), "task": "Review the latest changes"},
     )
+
     assert response.status_code == 404
 
 
@@ -298,7 +339,9 @@ def test_plan_rejects_duplicate_step_numbers(test_client: TestClient) -> None:
     ).json()
     created = test_client.get(f"/api/v1/runs/{created['id']}").json()
     step = created["plan"]["steps"][0]
+
     response = test_client.patch(f"/api/v1/runs/{created['id']}/plan", json={"steps": [step, step]})
+
     assert response.status_code == 422
 
 
@@ -307,7 +350,9 @@ def test_cancel_unconfirmed_run_is_idempotent(test_client: TestClient) -> None:
         "/api/v1/runs", json={"workflow_id": str(WORKFLOW_ID), "task": "Review"}
     ).json()
     path = f"/api/v1/runs/{created['id']}"
+
     cancelled = test_client.post(f"{path}/cancel")
+
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "CANCELLED"
     assert cancelled.json()["plan"]["steps"][0]["status"] == "CANCELLED"
@@ -319,20 +364,27 @@ def test_cancel_unconfirmed_run_is_idempotent(test_client: TestClient) -> None:
 async def test_retry_rejects_nonfailed_steps_and_terminal_cancel() -> None:
     repository = MemoryRunRepository()
     service = RunService(repository)
+
     created = await service.create(RunCreate(workflow_id=WORKFLOW_ID, task="Review"))
+
     run = repository.runs[created.id]
     run.status = "FAILED"
+
     with pytest.raises(RunError):
         await service.retry(run.id, 1)
+
     with pytest.raises(RunError) as missing:
         await service.retry(run.id, 2)
+
     assert missing.value.status_code == 404
+
     with pytest.raises(RunError):
         await service.cancel(run.id)
 
 
 def test_sse_checks_run_and_validates_cursor_before_opening(test_client: TestClient) -> None:
     assert test_client.get(f"/api/v1/runs/{uuid4()}/events").status_code == 404
+
     for cursor in ("-1", "invalid", "9223372036854775808"):
         assert (
             test_client.get(
@@ -363,6 +415,7 @@ def test_sse_query_replay_and_reconnect_header_priority(
         yield {"event": "run:snapshot", "data": "{}"}
 
     monkeypatch.setattr("app.api.v1.events.stream_run", fake_stream)
+
     assert test_client.get(f"/api/v1/runs/{created['id']}/events?after=0").status_code == 200
     assert (
         test_client.get(
@@ -376,8 +429,13 @@ def test_sse_query_replay_and_reconnect_header_priority(
 async def test_run_step_model_comes_from_execution_snapshot() -> None:
     repository = MemoryRunRepository()
     service = RunService(repository)
+
     created = await service.create(RunCreate(workflow_id=WORKFLOW_ID, task="Snapshot QA"))
+
     await PlannerExecutor(repository).execute(repository.runs[created.id])
+
     repository.agent.model = "claude-haiku"
+
     read = await service.read(repository.runs[created.id])
+
     assert read.plan and read.plan.steps[0].model == "claude-sonnet"

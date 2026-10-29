@@ -36,12 +36,15 @@ class MemorySession:
 
     async def get(self, model: type[Agent], agent_id: UUID) -> Agent | None:
         del model
+
         if self.agent is not None and self.agent.id == agent_id and not self.deleted:
             return self.agent
+
         return None
 
     async def delete(self, agent: Agent) -> None:
         assert agent is self.agent
+
         self.deleted = True
 
     async def scalars(self, statement: object) -> list[object]:
@@ -59,6 +62,7 @@ def test_client() -> Generator[TestClient, Any]:
         yield session  # type: ignore[misc]
 
     app.dependency_overrides[get_session] = override_session
+
     try:
         with TestClient(app) as client:
             yield client
@@ -68,6 +72,7 @@ def test_client() -> Generator[TestClient, Any]:
 
 def test_create_agent_persists_agent(test_client: TestClient) -> None:
     """The frontend payload returns a created agent with its defaults and fields."""
+
     response = test_client.post(
         "/api/v1/agents",
         json={
@@ -90,6 +95,7 @@ def test_create_agent_persists_agent(test_client: TestClient) -> None:
 
 def test_create_agent_rejects_unknown_model(test_client: TestClient) -> None:
     """Unknown public model keys cannot be stored."""
+
     response = test_client.post(
         "/api/v1/agents",
         json={"name": "Agent", "role": "Role", "system_prompt": "Prompt", "model": "unknown"},
@@ -102,6 +108,7 @@ def test_create_agent_rejects_unknown_model(test_client: TestClient) -> None:
 
 def test_models_and_tools_catalogues_are_available(test_client: TestClient) -> None:
     """Frontend catalogues match the accepted model aliases and safe tools."""
+
     models = test_client.get("/api/v1/agents/models")
     tools = test_client.get("/api/v1/agents/tools")
 
@@ -113,6 +120,7 @@ def test_models_and_tools_catalogues_are_available(test_client: TestClient) -> N
 
 def test_agent_can_be_read_updated_and_deleted(test_client: TestClient) -> None:
     """Agent detail, full update, and delete routes return the expected contract."""
+
     payload = {
         "name": "Market Analyst",
         "role": "Analyze the market",
@@ -123,19 +131,25 @@ def test_agent_can_be_read_updated_and_deleted(test_client: TestClient) -> None:
         "context_window": 128000,
         "tools": ["web_search"],
     }
+
     created = test_client.post("/api/v1/agents", json=payload)
+
     agent_id = created.json()["id"]
 
     detail = test_client.get(f"/api/v1/agents/{agent_id}")
+
     assert detail.status_code == 200
     assert detail.json()["name"] == "Market Analyst"
 
     payload["name"] = "Updated Analyst"
+
     updated = test_client.put(f"/api/v1/agents/{agent_id}", json=payload)
+
     assert updated.status_code == 200
     assert updated.json()["name"] == "Updated Analyst"
 
     deleted = test_client.delete(f"/api/v1/agents/{agent_id}")
+
     assert deleted.status_code == 204
     assert test_client.get(f"/api/v1/agents/{agent_id}").status_code == 404
 
@@ -145,9 +159,11 @@ def test_invalid_storage_text_returns_422_without_echoing_input(
     test_client: TestClient, text: str
 ) -> None:
     payload = {"name": "Agent", "role": "Role", "system_prompt": text}
+
     response = test_client.post(
         "/api/v1/agents", content=json.dumps(payload), headers={"Content-Type": "application/json"}
     )
+
     assert response.status_code == 422
     assert response.json()["detail"]
     assert all("input" not in error and "ctx" not in error for error in response.json()["detail"])

@@ -28,6 +28,7 @@ from test_planner import planning_run
 def immediate_retry():
     retry = llm_retrying()
     retry.wait = wait_none()
+
     return retry
 
 
@@ -42,9 +43,11 @@ def immediate_retry():
 )
 async def test_provider_connection_failures_retry(exception: Exception) -> None:
     call = AsyncMock(side_effect=[exception, exception, "success"])
+
     async for attempt in immediate_retry():
         with attempt:
             result = await call()
+
     assert result == "success"
     assert call.await_count == 3
 
@@ -54,10 +57,12 @@ async def test_application_error_named_timeout_is_not_retried() -> None:
         pass
 
     call = AsyncMock(side_effect=InvalidTimeoutConfiguration("fixture"))
+
     with pytest.raises(InvalidTimeoutConfiguration):
         async for attempt in immediate_retry():
             with attempt:
                 await call()
+
     assert call.await_count == 1
 
 
@@ -66,13 +71,17 @@ async def test_non_streaming_step_timeout_retries_and_closes(
     monkeypatch: pytest.MonkeyPatch, tools: list[str]
 ) -> None:
     repository, run = await make_run([[]])
+
     repository.saved_steps[0].agent_config["tools"] = tools
+
     monkeypatch.setattr(get_settings(), "llm_request_timeout", 0.01)
     monkeypatch.setattr("app.orchestrator.executor.llm_retrying", immediate_retry)
+
     cancelled = 0
 
     async def blocked(*args: object, **kwargs: object):
         nonlocal cancelled
+
         try:
             await asyncio.Event().wait()
         finally:
@@ -83,17 +92,23 @@ async def test_non_streaming_step_timeout_retries_and_closes(
         complete_tools=AsyncMock(side_effect=blocked),
         aclose=AsyncMock(),
     )
+
     await asyncio.wait_for(DAGExecutor(repository, lambda _: provider).execute(run), 1)
+
     assert run.status == "FAILED"
     assert cancelled == 3
+
     provider.aclose.assert_awaited_once()
+
     step = repository.saved_steps[0]
+
     assert step.error and step.error["code"] == "llm_error"
     assert step.tokens_prompt == step.tokens_completion == 0
 
 
 async def test_planning_timeout_retries_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
     repository, _, run = await planning_run()
+
     monkeypatch.setattr(get_settings(), "llm_request_timeout", 0.01)
     monkeypatch.setattr("app.orchestrator.planner.llm_retrying", immediate_retry)
 
@@ -102,11 +117,15 @@ async def test_planning_timeout_retries_and_closes(monkeypatch: pytest.MonkeyPat
 
     provider = SimpleNamespace(complete=AsyncMock(side_effect=blocked), aclose=AsyncMock())
     executor = PlannerExecutor(repository, LLMPlanner(lambda _: provider))
+
     await asyncio.wait_for(executor.execute(run), 1)
+
     assert run.status == "FAILED"
     assert run.planning_error and run.planning_error["code"] == "planning_error"
     assert provider.complete.await_count == 3
+
     provider.aclose.assert_awaited_once()
+
     assert not any(event == "plan:ready" for event, _ in repository.saved_events)
 
 
@@ -120,13 +139,16 @@ async def test_openai_response_requires_authoritative_usage(
             usage=None,
         )
     )
+
     monkeypatch.setattr(
         "app.llm.providers.AsyncOpenAI",
         lambda **kwargs: SimpleNamespace(
             chat=SimpleNamespace(completions=SimpleNamespace(create=create))
         ),
     )
+
     provider = OpenAIProvider("test-placeholder")
+
     with pytest.raises(ValueError, match="no token usage"):
         if tools:
             await provider.complete_tools(
@@ -144,6 +166,7 @@ async def test_openai_response_requires_authoritative_usage(
 @pytest.mark.parametrize("field", ["input_tokens", "output_tokens"])
 def test_negative_provider_usage_is_rejected(field: str) -> None:
     usage = {"input_tokens": 1, "output_tokens": 1, field: -1}
+
     with pytest.raises(ValidationError):
         LLMUsage.model_validate(usage)
 

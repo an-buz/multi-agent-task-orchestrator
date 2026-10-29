@@ -28,6 +28,7 @@ Service = Annotated[FileService, Depends(get_file_service)]
 async def upload_file(file: UploadFile, service: Service) -> ContextFileRead:
     try:
         content = await file.read(get_settings().context_file_max_bytes + 1)
+
         return await service.upload(file.filename or "", file.content_type or "", content)
     finally:
         await file.close()
@@ -41,6 +42,7 @@ async def get_file(file_id: UUID, service: Service) -> ContextFileRead:
 @router.get("/{file_id}/download")
 async def download_file(file_id: UUID, service: Service) -> Response:
     file = await service.require(file_id)
+
     return Response(
         file.content,
         media_type="application/octet-stream",
@@ -54,4 +56,5 @@ async def download_file(file_id: UUID, service: Service) -> Response:
 @router.delete("/{file_id}", status_code=204)
 async def delete_file(file_id: UUID, service: Service) -> Response:
     await service.delete(file_id)
+
     return Response(status_code=204)

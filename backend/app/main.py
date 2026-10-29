@@ -55,8 +55,10 @@ async def handle_domain_error(_request: Request, exception: AppError) -> JSONRes
 @app.exception_handler(Exception)
 async def handle_unexpected_error(_request: Request, _exception: Exception) -> JSONResponse:
     """Return the common API error envelope for unexpected failures."""
+
     # Exception messages/tracebacks can expose provider keys or uploaded content.
     logger.error("request_failed", method=_request.method, error_type=type(_exception).__name__)
+
     return JSONResponse(
         status_code=500,
         content={
@@ -72,4 +74,5 @@ async def handle_unexpected_error(_request: Request, _exception: Exception) -> J
 @app.get("/health", tags=["health"])
 async def health_check() -> dict[str, str]:
     """Return process liveness status."""
+
     return {"status": "ok"}

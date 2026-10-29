@@ -13,6 +13,7 @@ class CleanupService:
     async def execute(self, now: datetime | None = None) -> dict[str, int]:
         settings = get_settings()
         moment = now or datetime.now(UTC)
+
         return {
             "files": await self.repository.files(
                 moment - timedelta(days=settings.unused_file_retention_days),

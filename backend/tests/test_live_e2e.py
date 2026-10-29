@@ -15,9 +15,12 @@ def test_live_environment_overrides_inherited_provider_and_storage_settings(monk
         "GEMINI_API_KEY",
     ):
         monkeypatch.setenv(key, "must-not-be-used")
+
     monkeypatch.setenv("LLM_PROVIDER_MODE", "real")
     monkeypatch.setenv("DEMO_MODE", "true")
+
     env = live_environment("isolated-postgres", "isolated-redis", 18123, 3123)
+
     assert env["DATABASE_URL"] == "isolated-postgres"
     assert env["REDIS_URL"] == "isolated-redis"
     assert env["LLM_PROVIDER_MODE"] == "mock"
@@ -34,6 +37,7 @@ def test_live_services_reject_real_clients_before_network_access(monkeypatch):
     monkeypatch.setattr(providers, "AsyncOpenAI", providers.AsyncOpenAI)
     monkeypatch.setattr(gemini, "GeminiClient", gemini.GeminiClient)
     guard_providers()
+
     for client in (providers.AsyncAnthropic, providers.AsyncOpenAI, gemini.GeminiClient):
         with pytest.raises(AssertionError, match="forbidden in live E2E"):
             client(api_key="unused")

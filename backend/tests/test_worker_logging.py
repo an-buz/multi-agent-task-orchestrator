@@ -41,19 +41,27 @@ with structlog.contextvars.bound_contextvars(run_id='run-123'):
     logging.getLogger('arq.worker').warning('queue_ready')
 """
     env = dict(os.environ)
+
     env.pop("NO_COLOR", None)
+
     if no_color:
         env["NO_COLOR"] = "1"
+
     result = subprocess.run(  # noqa: S603 - fixed interpreter and local test script
         [sys.executable, "-c", script], capture_output=True, text=True, env=env, check=True
     )
+
     assert not result.stdout
     assert "hidden_info" not in result.stderr
     assert ("\x1b[" in result.stderr) is expect_color
+
     lines = result.stderr.splitlines()
+
     assert len(lines) == 2
+
     if expect_json:
         first, second = map(json.loads, lines)
+
         assert first["event"] == "visible_warning"
         assert first["level"] == "warning"
         assert first["step_number"] == 2
@@ -69,6 +77,7 @@ async def test_events_logged_only_after_commit_and_without_user_content() -> Non
     session = Mock(commit=AsyncMock(), rollback=AsyncMock())
     repository = RunRepository(session, event_observer=log_run_event)
     run_id, agent_id = uuid4(), uuid4()
+
     with capture_logs() as logs:
         repository.emit(
             run_id,
@@ -81,9 +90,12 @@ async def test_events_logged_only_after_commit_and_without_user_content() -> Non
                 "executionTime": 1.25,
             },
         )
+
         assert logs == []
+
         await repository.save()
         await repository.save()
+
     assert len(logs) == 1
     assert logs[0]["run_id"] == str(run_id)
     assert logs[0]["agent_id"] == str(agent_id)
@@ -96,21 +108,30 @@ async def test_rollback_and_failed_commit_do_not_log_events() -> None:
     observer = Mock()
     repository = RunRepository(session, event_observer=observer)
     run_id = uuid4()
+
     repository.emit(run_id, "task:cancelled", {"taskId": str(run_id)})
+
     await repository.release()
     await repository.save()
+
     observer.assert_not_called()
     repository.emit(run_id, "task:cancelled", {"taskId": str(run_id)})
+
     session.commit.side_effect = RuntimeError("database unavailable")
+
     with pytest.raises(RuntimeError):
         await repository.save()
+
     session.commit.side_effect = None
+
     await repository.save()
+
     observer.assert_not_called()
 
 
 def test_stream_noise_and_sensitive_payloads_are_excluded() -> None:
     run_id = uuid4()
+
     with capture_logs() as logs:
         log_run_event(run_id, "agent:stream_chunk", {"textDelta": "PRIVATE DELTA"})
         log_run_event(run_id, "agent:stream_chunk", {"reset": True, "attempt": 2})
@@ -122,6 +143,7 @@ def test_stream_noise_and_sensitive_payloads_are_excluded() -> None:
         log_run_event(
             run_id, "agent:failed", {"error": {"code": "llm_error", "message": "PRIVATE ERROR"}}
         )
+
     assert [item["event"] for item in logs] == [
         "llm_request_started",
         "agent:tool_result",
@@ -133,16 +155,21 @@ def test_stream_noise_and_sensitive_payloads_are_excluded() -> None:
 
 async def test_job_failure_keeps_identity_without_leaking_context(monkeypatch) -> None:
     monkeypatch.setattr(tasks, "_run_job", AsyncMock(side_effect=RuntimeError("PRIVATE ERROR")))
+
     before = structlog.contextvars.get_contextvars()
+
     with (
         capture_logs(processors=[structlog.contextvars.merge_contextvars]) as logs,
         pytest.raises(RuntimeError),
     ):
         await tasks.plan_run({"job_id": "job-123"}, "run-123")
+
     assert [item["event"] for item in logs] == ["run_job_started", "run_job_failed"]
+
     for item in logs:
         assert item["run_id"] == "run-123"
         assert item["job_id"] == "job-123"
         assert item["phase"] == "planning"
+
     assert "PRIVATE" not in str(logs)
     assert structlog.contextvars.get_contextvars() == before

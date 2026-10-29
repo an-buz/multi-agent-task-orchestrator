@@ -47,7 +47,9 @@ async def test_only_connected_provider_models_are_exposed(provider: str) -> None
         gemini_api_key="secret" if provider == "gemini" else "",
     )
     service = ModelService(repository, settings)
+
     catalogue = await service.catalogue()
+
     expected = (
         {"anthropic", "openai", "gemini"}
         if provider == "mock"
@@ -55,12 +57,16 @@ async def test_only_connected_provider_models_are_exposed(provider: str) -> None
         if provider == "none"
         else {provider}
     )
+
     assert {model.provider for model in catalogue.items} == expected
+
     from app.llm.registry import get_model_registry
 
     registry = get_model_registry(settings)
+
     for model in catalogue.model_dump()["items"]:
         assert model["max_output_tokens"] == registry[model["key"]].max_output_tokens
+
     assert "claude-opus" not in await service.available()
     assert "secret" not in catalogue.model_dump_json()
 
@@ -70,16 +76,20 @@ async def model_client(
     infrastructure: tuple[str, str],
 ) -> AsyncIterator[tuple[AsyncClient, async_sessionmaker[AsyncSession]]]:
     database_url, _ = infrastructure
+
     from app.core.config import get_settings
 
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+
     # Alembic reads its URL from cached environment settings.
     import os
 
     old_url = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = database_url
+
     get_settings.cache_clear()
+
     await asyncio.to_thread(command.upgrade, Config("alembic.ini"), "head")
 
     async def override_session() -> AsyncIterator[AsyncSession]:
@@ -87,6 +97,7 @@ async def model_client(
             yield session
 
     app.dependency_overrides[get_session] = override_session
+
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test/api/v1"
@@ -96,14 +107,18 @@ async def model_client(
                 assert (
                     await client.patch(f"/settings/models/{key}", json={"enabled": True})
                 ).status_code == 200
+
             yield client, sessions
     finally:
         app.dependency_overrides.clear()
+
         if old_url is None:
             os.environ.pop("DATABASE_URL", None)
         else:
             os.environ["DATABASE_URL"] = old_url
+
         get_settings.cache_clear()
+
         await engine.dispose()
 
 
@@ -120,9 +135,13 @@ async def create_confirmed(
         "max_tokens": 1024,
         "temperature": 0.2,
     }
+
     response = await client.post("/agents", json=payload)
+
     assert response.status_code == 201, response.text
+
     agent_id = response.json()["id"]
+
     workflow = await client.post(
         "/workflows",
         json={
@@ -134,17 +153,24 @@ async def create_confirmed(
             ],
         },
     )
+
     assert workflow.status_code == 201, workflow.text
+
     async with sessions() as session:
         repository = RunRepository(session)
         service = RunService(repository)
+
         created = await service.create(
             RunCreate(workflow_id=workflow.json()["id"], task="Review", file_ids=file_ids or [])
         )
         run = await repository.get(created.id)
+
         assert run is not None
+
         await PlannerExecutor(repository).execute(run)
+
         await service.confirm(run.id)
+
     return created.id, {**payload, "id": agent_id}
 
 
@@ -153,29 +179,42 @@ async def test_repaired_file_reader_reads_attachment_and_preserves_completed_ste
     model_client: tuple[AsyncClient, async_sessionmaker[AsyncSession]], retry: bool
 ) -> None:
     client, sessions = model_client
+
     uploaded = await client.post(
         "/files", files={"file": ("evidence.txt", b"Attached evidence", "text/plain")}
     )
+
     assert uploaded.status_code == 201
+
     file_id = uploaded.json()["id"]
+
     run_id, agent = await create_confirmed(client, sessions, [UUID(file_id)])
+
     async with sessions() as session:
         repository = RunRepository(session)
+
         run = await repository.get(run_id)
+
         assert run is not None
+
         steps = await repository.steps(run_id)
+
         steps[0].status = "COMPLETED"
         steps[0].output = "Preserved result"
         steps[0].attempt = 1
         steps[0].tokens_prompt = 7
+
         if retry:
             run.status = "FAILED"
             steps[1].status = "FAILED"
             steps[1].error = {"code": "llm_error", "message": "Previous failure"}
+
         await repository.save()
+
     assert (
         await client.patch("/settings/models/claude-sonnet", json={"enabled": False})
     ).status_code == 200
+
     repaired = await client.put(
         f"/agents/{agent['id']}",
         json={
@@ -184,10 +223,13 @@ async def test_repaired_file_reader_reads_attachment_and_preserves_completed_ste
             "tools": ["file_reader"],
         },
     )
+
     assert repaired.status_code == 200
+
     if retry:
         async with sessions() as session:
             await RunService(RunRepository(session)).retry(run_id, 2)
+
     fixture = json.loads((Path(__file__).parent / "fixtures/llm/file_reader.json").read_text())
     received: list[dict[str, object]] = []
 
@@ -204,22 +246,34 @@ async def test_repaired_file_reader_reads_attachment_and_preserves_completed_ste
         ) -> LLMResponse:
             assert model == "claude-haiku"
             assert [tool["name"] for tool in tools] == ["file_reader", "request_user_decision"]
+
             if messages[-1]["role"] == "user":
                 response = LLMResponse.model_validate(fixture[0])
                 response.tool_calls[0].arguments["file_id"] = file_id
+
                 return response
+
             received.append(json.loads(messages[-1]["content"]))
+
             return LLMResponse.model_validate(fixture[1])
 
     async with sessions() as session:
         repository = RunRepository(session)
+
         run = await repository.get(run_id)
+
         assert run is not None
+
         await DAGExecutor(repository, lambda _: FileReaderMock()).execute(run)
+
     assert received == [{"text": "Attached evidence", "total_chars": 17, "offset": 0}]
+
     detail = (await client.get(f"/runs/{run_id}")).json()
+
     assert detail["status"] == "COMPLETED"
+
     first, second = detail["plan"]["steps"]
+
     assert first["output"] == "Preserved result" and first["attempt"] == 1
     assert second["output"] == fixture[1]["content"]
     assert second["model"] == "claude-haiku"
@@ -233,6 +287,7 @@ async def test_agent_list_has_constant_policy_query_count(
     model_client: tuple[AsyncClient, async_sessionmaker[AsyncSession]], limit: int
 ) -> None:
     client, sessions = model_client
+
     async with sessions() as session:
         session.add_all(
             Agent(
@@ -250,22 +305,28 @@ async def test_agent_list_has_constant_policy_query_count(
             )
             for index in range(50)
         )
+
         await session.commit()
+
     statements: list[str] = []
 
     def record_query(connection, cursor, statement, parameters, context, executemany):
         statements.append(statement)
 
     engine = sessions.kw["bind"]
+
     event.listen(engine.sync_engine, "before_cursor_execute", record_query)
+
     try:
         response = await client.get(f"/agents?limit={limit}")
     finally:
         event.remove(engine.sync_engine, "before_cursor_execute", record_query)
+
     assert response.status_code == 200
     assert len(response.json()["items"]) == limit
     assert len(statements) == 4
     assert sum("pg_advisory_xact_lock_shared" in statement for statement in statements) == 1
+
     for agent in response.json()["items"]:
         assert agent["available"] is not agent["requires_reconfiguration"]
 
@@ -275,7 +336,9 @@ async def test_disable_pause_reconfigure_resume_and_preserve_completed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, sessions = model_client
+
     run_id, agent = await create_confirmed(client, sessions)
+
     started, release = asyncio.Event(), asyncio.Event()
     calls: list[str] = []
 
@@ -291,7 +354,9 @@ async def test_disable_pause_reconfigure_resume_and_preserve_completed(
         ) -> LLMResponse:
             calls.append(model)
             started.set()
+
             await release.wait()
+
             return await super().complete(
                 system_prompt, user_prompt, model, temperature=temperature, max_tokens=max_tokens
             )
@@ -299,22 +364,31 @@ async def test_disable_pause_reconfigure_resume_and_preserve_completed(
     async def execute() -> None:
         async with sessions() as session:
             repository = RunRepository(session)
+
             run = await repository.get(run_id)
+
             assert run is not None
+
             await DAGExecutor(repository, lambda _: GatedMock()).execute(run)
 
     pending = asyncio.create_task(execute())
+
     try:
         await asyncio.wait_for(started.wait(), 5)
+
         disabled = await asyncio.wait_for(
             client.patch("/settings/models/claude-sonnet", json={"enabled": False}), 5
         )
+
         assert disabled.status_code == 200
         assert "claude-sonnet" not in {
             item["key"] for item in (await client.get("/agents/models")).json()["items"]
         }
+
         detail = (await client.get(f"/agents/{agent['id']}")).json()
+
         assert detail["available"] is False and detail["requires_reconfiguration"] is True
+
         blocked = await client.post(
             "/agents",
             json={
@@ -322,37 +396,56 @@ async def test_disable_pause_reconfigure_resume_and_preserve_completed(
                 "name": str(uuid4()),
             },
         )
+
         assert blocked.status_code == 422
+
         release.set()
+
         await asyncio.wait_for(pending, 5)
+
         paused = (await client.get(f"/runs/{run_id}")).json()
+
         assert paused["status"] == "PAUSED"
         assert [step["status"] for step in paused["plan"]["steps"]] == ["COMPLETED", "PENDING"]
+
         output, usage = paused["plan"]["steps"][0]["output"], paused["total_tokens"]
+
         # Re-enabling alone must not silently clear the durable repair requirement.
         await client.patch("/settings/models/claude-sonnet", json={"enabled": True})
         await execute()
+
         assert (await client.get(f"/runs/{run_id}")).json()["status"] == "PAUSED"
         assert len(calls) == 1
+
         values = {key: value for key, value in agent.items() if key != "id"}
         values["model"] = "claude-haiku"
+
         updated = await client.put(f"/agents/{agent['id']}", json=values)
+
         assert updated.status_code == 200 and updated.json()["available"] is True
+
         # The real recovery sweep must deliver PAUSED runs, not only active runs.
         from app.workers import tasks
 
         async with sessions() as session:
             monkeypatch.setattr(tasks, "engine", session.bind)
+
         monkeypatch.setattr(tasks, "async_session_factory", sessions)
+
         redis = AsyncMock()
+
         await tasks.recover_runs({"redis": redis})
+
         assert any(
             call.args[:2] == ("execute_run", str(run_id))
             for call in redis.enqueue_job.call_args_list
         )
+
         # Simulate a fresh recovery delivery after reconfiguration.
         await execute()
+
         completed = (await client.get(f"/runs/{run_id}")).json()
+
         assert completed["status"] == "COMPLETED"
         assert completed["plan"]["steps"][0]["output"] == output
         assert completed["plan"]["steps"][0]["attempt"] == 1
@@ -360,20 +453,28 @@ async def test_disable_pause_reconfigure_resume_and_preserve_completed(
         assert completed["plan"]["steps"][1]["model"] == "claude-haiku"
         assert completed["total_tokens"] > usage
         assert len(calls) == 2
+
         async with sessions() as session:
             repaired = await session.scalar(
                 select(RunStep).where(RunStep.run_id == run_id, RunStep.step_number == 2)
             )
+
             assert repaired and repaired.requires_reconfiguration is False
+
             events = await RunRepository(session).events(run_id, 0)
+
             assert {"task:paused", "task:resumed"} <= {event.event for event in events}
+
             paused = next(event for event in events if event.event == "task:paused")
+
             assert paused.data["pauseReasons"] == ["MODEL_UNAVAILABLE"]
+
             from app.schemas.event import EventEnvelope
 
             EventEnvelope(event=paused.event, runId=run_id, ts=paused.created_at, data=paused.data)
     finally:
         release.set()
+
         await asyncio.gather(pending, return_exceptions=True)
 
 
@@ -381,11 +482,14 @@ async def test_all_disabled_validation_and_paused_cancellation(
     model_client: tuple[AsyncClient, async_sessionmaker[AsyncSession]],
 ) -> None:
     client, sessions = model_client
+
     run_id, agent = await create_confirmed(client, sessions)
+
     for item in (await client.get("/settings/models")).json()["items"]:
         assert (
             await client.patch(f"/settings/models/{item['key']}", json={"enabled": False})
         ).status_code == 200
+
     assert (await client.get("/agents/models")).json()["items"] == []
     assert (
         await client.patch(
@@ -403,13 +507,20 @@ async def test_all_disabled_validation_and_paused_cancellation(
     assert (
         await client.patch("/settings/models/claude-sonnet", json={"enabled": "false"})
     ).status_code == 422
+
     async with sessions() as session:
         repository = RunRepository(session)
+
         run = await repository.get(run_id)
+
         assert run is not None
+
         await DAGExecutor(repository).execute(run)
+
     assert (await client.get(f"/runs/{run_id}")).json()["status"] == "PAUSED"
+
     run = (await client.get(f"/runs/{run_id}")).json()
+
     assert (
         await client.post("/runs", json={"workflow_id": run["workflow_id"], "task": "Blocked"})
     ).status_code == 422

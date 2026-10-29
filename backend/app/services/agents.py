@@ -18,6 +18,7 @@ class AgentError(AppError):
         self, message: str, code: str, status_code: int, details: dict[str, object] | None = None
     ) -> None:
         super().__init__(message, details)
+
         self.code = code
         self.status_code = status_code
 
@@ -28,7 +29,9 @@ class AgentService:
 
     def validate(self, payload: AgentCreate | AgentUpdate) -> None:
         model = get_model_registry().get(payload.model)
+
         details: dict[str, object] = {}
+
         if model is None:
             details = {"field": "model", "reason": "unknown_model"}
         elif payload.max_tokens > model.max_output_tokens:
@@ -39,8 +42,10 @@ class AgentService:
             details = {"field": "max_tokens", "reason": "must_leave_room_for_input"}
         else:
             invalid_tools = sorted(set(payload.tools) - TOOLS.keys())
+
             if invalid_tools:
                 details = {"field": "tools", "reason": "unknown_tools", "tools": invalid_tools}
+
         if details:
             raise AgentError("Invalid agent configuration.", "invalid_agent", 422, details)
 
@@ -49,9 +54,12 @@ class AgentService:
             parsed_id = UUID(agent_id)
         except ValueError as exception:
             raise AgentError("Agent not found", "agent_not_found", 404) from exception
+
         agent = await self.repository.get(parsed_id)
+
         if agent is None:
             raise AgentError("Agent not found", "agent_not_found", 404)
+
         return agent
 
     async def persist(self, agent: Agent) -> AgentRead:
@@ -59,9 +67,11 @@ class AgentService:
             await self.repository.save(agent)
         except IntegrityError as exception:
             await self.repository.rollback()
+
             raise AgentError(
                 "An agent with this name already exists.", "duplicate_agent_name", 409
             ) from exception
+
         return await self.representation(agent)
 
     async def representation(self, agent: Agent, available: set[str] | None = None) -> AgentRead:
@@ -71,6 +81,7 @@ class AgentService:
             if available is not None
             else await ModelService(ModelRepository(self.repository.session)).available()
         )
+
         return value
 
     async def validate_availability(self, model: str) -> None:
@@ -79,7 +90,9 @@ class AgentService:
 
     async def create(self, payload: AgentCreate) -> AgentRead:
         self.validate(payload)
+
         await self.validate_availability(payload.model)
+
         return await self.persist(Agent(**payload.model_dump(), requires_reconfiguration=False))
 
     async def read(self, agent_id: str) -> AgentRead:
@@ -87,11 +100,16 @@ class AgentService:
 
     async def update(self, agent_id: str, payload: AgentUpdate) -> AgentRead:
         agent = await self.require(agent_id)
+
         self.validate(payload)
+
         await self.validate_availability(payload.model)
+
         for field, value in payload.model_dump().items():
             setattr(agent, field, value)
+
         agent.requires_reconfiguration = False
+
         return await self.persist(agent)
 
     async def delete(self, agent_id: str) -> None:
@@ -101,6 +119,7 @@ class AgentService:
         # Keep policy stable while reading agents, without resolving it for each row.
         available = await ModelService(ModelRepository(self.repository.session)).available()
         agents, total = await self.repository.list(limit, offset)
+
         return {
             "items": [await self.representation(agent, available) for agent in agents],
             "total": total,

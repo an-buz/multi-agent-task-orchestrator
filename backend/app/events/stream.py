@@ -22,14 +22,20 @@ async def stream_run(
     async with sessions() as session:
         repository = RunRepository(session)
         service = RunService(repository)
+
         run = await repository.get(run_id, lock=True)
+
         if run is None:
             return
+
         snapshot = await service.read(run)
         watermark = await repository.event_cursor(run_id)
+
         await repository.release()
+
     # A stale cursor from another run must not suppress this run's future events.
     cursor = watermark if after is None else min(after, watermark)
+
     initial = {
         "event": "run:snapshot",
         "data": EventEnvelope(
@@ -39,17 +45,24 @@ async def stream_run(
             data={"run": snapshot.model_dump(mode="json")},
         ).model_dump_json(),
     }
+
     if after is None:
         initial["id"] = str(watermark)
+
     yield initial
+
     while True:
         async with sessions() as session:
             repository = RunRepository(session)
+
             if await repository.get(run_id) is None:
                 return
+
             events = await repository.events(run_id, cursor)
+
         for event in events:
             cursor = event.id
+
             yield {
                 "id": str(event.id),
                 "event": event.event,
@@ -60,5 +73,6 @@ async def stream_run(
                     data=event.data,
                 ).model_dump_json(),
             }
+
         if len(events) < 100:
             await asyncio.sleep(get_settings().run_poll_interval)

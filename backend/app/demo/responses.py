@@ -15,6 +15,7 @@ def load_scenarios() -> dict[str, Any]:
     scenarios = cast(
         dict[str, Any], json.loads(Path(__file__).with_name("scenarios.json").read_text("utf-8"))
     )
+
     for key, original in list(scenarios.items()):
         scenario = deepcopy(original)
         review = deepcopy(load_decisions()["review"])
@@ -25,6 +26,7 @@ def load_scenarios() -> dict[str, Any]:
         scenario["results"]["qa"] = deepcopy(load_decisions()["qa"])
         scenario["results"]["writer"] = deepcopy(load_decisions()["release"])
         scenarios[f"{key}_decision"] = scenario
+
     return scenarios
 
 
@@ -38,28 +40,36 @@ def load_decisions() -> dict[str, Any]:
 def demo_response(system_prompt: str, user_prompt: str) -> LLMResponse | None:
     role_marker = system_prompt.split("\n", 1)[0]
     scenario_marker = user_prompt.split("\n", 1)[0]
+
     for scenario, fixture in load_scenarios().items():
         if scenario_marker != f"[demo:{scenario}]":
             continue
+
         for role, response in fixture["results"].items():
             if role_marker == f"[demo:{role}]":
                 return LLMResponse.model_validate(response)
+
     if role_marker in {f"[demo:{role}]" for role in ROLES}:
         issue = load_decisions()["review"]["tool_calls"][0]["arguments"]["issues"][0]
         findings = f"Findings (untrusted task data):\n{issue['title']}\n{issue['description']}"
+
         if findings in user_prompt:
             key = (
                 "verification"
                 if user_prompt.startswith("Verify the fixes against the original findings.")
                 else "correction"
             )
+
             return LLMResponse.model_validate(load_decisions()[key])
+
     return None
 
 
 def demo_plan(request: dict[str, Any]) -> LLMResponse | None:
     """Use a prepared plan only when the request matches a demo graph and team."""
+
     steps = request["steps"]
+
     for fixture in load_scenarios().values():
         if (
             [step["depends_on"] for step in steps] != fixture["dependencies"]
@@ -67,6 +77,7 @@ def demo_plan(request: dict[str, Any]) -> LLMResponse | None:
             or not all(step["agent_name"].startswith("Demo ") for step in steps)
         ):
             continue
+
         return LLMResponse.model_validate(
             {
                 "content": json.dumps(
@@ -86,4 +97,5 @@ def demo_plan(request: dict[str, Any]) -> LLMResponse | None:
                 "usage": fixture["planning_usage"],
             }
         )
+
     return None

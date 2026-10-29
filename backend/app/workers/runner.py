@@ -17,18 +17,22 @@ class OrchestratorWorker(Worker):
         if sys.platform == "win32" and not self._handle_signals:
             # ARQ 0.26 uses SIGUSR1 for programmatic shutdown, unavailable on Windows.
             self.handle_sig(signal.SIGTERM)
+
             self._handle_signals = True
+
         await super().close()
 
 
 async def main() -> None:
     settings = get_settings()
+
     configure_logging(
         settings.log_level,
         log_format=settings.worker_log_format,
         log_colors=settings.worker_log_colors,
     )
     structlog.get_logger(__name__).info("worker_starting")
+
     worker = OrchestratorWorker(
         functions=WorkerSettings.functions,
         redis_settings=WorkerSettings.redis_settings,
@@ -39,6 +43,7 @@ async def main() -> None:
         on_shutdown=WorkerSettings.on_shutdown,
         handle_signals=sys.platform != "win32",
     )
+
     try:
         await worker.async_run()
     finally:

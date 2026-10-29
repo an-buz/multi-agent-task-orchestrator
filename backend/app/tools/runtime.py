@@ -54,9 +54,12 @@ SCHEMAS: dict[str, tuple[type[Arguments], str]] = {
 
 def calculate(expression: str) -> int | float:
     """Evaluate a small arithmetic AST, never Python code."""
+
     root = ast.parse(expression, mode="eval")
+
     if len(list(ast.walk(root))) > 100:
         raise ToolError("Expression is too complex.")
+
     binary = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
@@ -74,13 +77,17 @@ def calculate(expression: str) -> int | float:
             value = visit(node.operand) * (-1 if isinstance(node.op, ast.USub) else 1)
         elif isinstance(node, ast.BinOp) and type(node.op) in binary:
             left, right = visit(node.left), visit(node.right)
+
             if isinstance(node.op, ast.Pow) and abs(right) > 100:
                 raise ToolError("Exponent is too large.")
+
             value = binary[type(node.op)](left, right)
         else:
             raise ToolError("Only arithmetic expressions are supported.")
+
         if not isinstance(value, float | int) or abs(value) > 10**100 or not math.isfinite(value):
             raise ToolError("Result is outside the supported range.")
+
         return value
 
     return visit(root.body)
@@ -88,9 +95,12 @@ def calculate(expression: str) -> int | float:
 
 async def docker_code(code: str) -> str:
     """Execute only inside Docker; cancellation and timeouts remove the container."""
+
     settings = get_settings()
+
     if settings.code_executor_backend != "docker":
         raise ToolError("Code executor is disabled.")
+
     name = f"orchestrator-{uuid4().hex}"
     process: asyncio.subprocess.Process | None = None
     expires_at = time() + 2 * settings.tool_timeout + settings.cleanup_docker_timeout
@@ -129,19 +139,24 @@ async def docker_code(code: str) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
+
         try:
             await asyncio.wait_for(creation.communicate(), timeout=settings.tool_timeout)
+
             if creation.returncode != 0:
                 raise ToolError("Code container could not be created; check the configured image.")
         finally:
             if creation.returncode is None:
                 creation.kill()
+
                 await creation.wait()
 
     # Provisioning finishes before cleanup even when cancellation races Docker create.
     creation_task = asyncio.create_task(provision())
+
     try:
         await asyncio.shield(creation_task)
+
         process = await asyncio.create_subprocess_exec(
             "docker",
             "start",
@@ -150,20 +165,27 @@ async def docker_code(code: str) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
+
         assert process.stdout is not None
+
         chunks = bytearray()
+
         async with asyncio.timeout(settings.tool_timeout):
             while chunk := await process.stdout.read(4096):
                 chunks.extend(chunk)
+
                 if len(chunks) > settings.tool_output_max_chars:
                     raise ToolError("Code output exceeds the configured limit.")
+
             if await process.wait() != 0:
                 raise ToolError("Code execution failed.")
+
         return chunks.decode("utf-8", errors="replace")
     finally:
 
         async def cleanup() -> None:
             await asyncio.gather(creation_task, return_exceptions=True)
+
             removal = await asyncio.create_subprocess_exec(
                 "docker",
                 "rm",
@@ -172,13 +194,17 @@ async def docker_code(code: str) -> str:
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
+
             try:
                 await asyncio.wait_for(removal.wait(), timeout=10)
             except TimeoutError:
                 removal.kill()
+
                 await removal.wait()
+
             if process is not None and process.returncode is None:
                 process.kill()
+
                 await process.wait()
 
         await asyncio.shield(cleanup())
@@ -204,13 +230,17 @@ class ToolRuntime:
         try:
             if call.name not in self.allowed or call.name not in SCHEMAS:
                 raise ToolError("Tool is not permitted for this agent.")
+
             arguments = SCHEMAS[call.name][0].model_validate(call.arguments)
+
             if isinstance(arguments, Calculation):
                 result: object = {"value": calculate(arguments.expression)}
             elif isinstance(arguments, FileRead):
                 if arguments.file_id not in self.files:
                     raise ToolError("File is not attached to the current run.")
+
                 text = self.files[arguments.file_id]
+
                 result = {
                     "text": text[arguments.offset : arguments.offset + arguments.limit],
                     "total_chars": len(text),
@@ -218,11 +248,13 @@ class ToolRuntime:
                 }
             elif isinstance(arguments, Search):
                 settings = get_settings()
+
                 if settings.llm_provider_mode == "mock":
                     result = {"results": [], "mock": True}
                 else:
                     if not settings.tavily_api_key:
                         raise ToolError("Web search is not configured.")
+
                     async with httpx.AsyncClient(timeout=settings.tool_timeout) as client:
                         response = await client.post(
                             settings.tavily_search_url,
@@ -233,7 +265,9 @@ class ToolRuntime:
                                 "include_raw_content": False,
                             },
                         )
+
                         response.raise_for_status()
+
                         result = {
                             "results": [
                                 {
@@ -247,12 +281,16 @@ class ToolRuntime:
                         }
             else:
                 assert isinstance(arguments, Code)
+
                 result = {"stdout": await docker_code(arguments.code)}
+
             encoded = json.dumps(result, ensure_ascii=False)
+
             if len(encoded) > get_settings().tool_output_max_chars:
                 raise ToolError(
                     "Tool output exceeds the configured limit; request a smaller slice."
                 )
+
             return encoded
         except ToolError as exception:
             return json.dumps({"error": str(exception)})

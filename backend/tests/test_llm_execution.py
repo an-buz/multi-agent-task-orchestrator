@@ -17,9 +17,11 @@ async def test_transient_failures_retry_three_times(exception: Exception) -> Non
     call = AsyncMock(side_effect=[exception, exception, "success"])
     retry = llm_retrying()
     retry.wait = wait_none()
+
     async for attempt in retry:
         with attempt:
             result = await call()
+
     assert result == "success"
     assert call.await_count == 3
 
@@ -29,8 +31,10 @@ async def test_retry_exhaustion_and_non_retryable_failure() -> None:
         call = AsyncMock(side_effect=failure)
         retry = llm_retrying()
         retry.wait = wait_none()
+
         with pytest.raises(HTTPFailure):
             async for attempt in retry:
                 with attempt:
                     await call()
+
         assert call.await_count == expected

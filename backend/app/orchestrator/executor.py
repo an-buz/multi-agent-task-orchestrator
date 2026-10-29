@@ -38,27 +38,35 @@ logger = structlog.get_logger()
 
 def build_input(run: Run, step: RunStep, by_number: dict[int, RunStep]) -> str:
     """Expand only declared input variables; never execute template code."""
+
     values = {"task": run.task, "subtask": step.subtask, "context": run.context_text}
+
     for number in step.depends_on:
         values[f"steps.{number}.output"] = by_number[number].output or ""
+
     if not step.input_transform:
         dependencies = [
             f"Step {number}:\n{values[f'steps.{number}.output']}" for number in step.depends_on
         ]
+
         return "\n\n".join(
             value for value in [step.subtask, run.context_text, *dependencies] if value
         )
 
     def replace(match: re.Match[str]) -> str:
         key = match.group(1).strip()
+
         if key not in values:
             raise ValueError("Input template references an unsupported variable or dependency")
+
         return values[key]
 
     # Check the template before substitution so model output is never interpreted.
     remainder = re.sub(r"\{\{([^{}]+)\}\}", "", step.input_transform)
+
     if any(marker in remainder for marker in ("{{", "}}", "{%", "{#")):
         raise ValueError("Input templates support variable substitution only")
+
     return re.sub(r"\{\{([^{}]+)\}\}", replace, step.input_transform)
 
 
@@ -94,6 +102,7 @@ class DAGExecutor:
         started = perf_counter()
         provider: LLMProvider | None = None
         prompt_tokens = completion_tokens = 0
+
         checkpoint = deepcopy(step.checkpoint or {})
         turns: list[dict[str, Any]] = checkpoint.get("turns", [])
         previous_duration = int(checkpoint.get("duration_ms", 0))
@@ -115,36 +124,48 @@ class DAGExecutor:
                 )
 
         error_code = "llm_error"
+
         try:
             if provider_pending:
                 prompt_tokens = int(checkpoint.get("prompt_tokens", 0))
                 completion_tokens = int(checkpoint.get("completion_tokens", 0))
                 error_code = "llm_execution_interrupted"
+
                 raise ValueError("Provider outcome is unknown; explicit retry is required")
+
             config = step.agent_config
+
             runtime = ToolRuntime(config.get("tools", []), files)
             definitions = [*runtime.definitions(), decision_tool()]
+
             messages: list[dict[str, Any]] = [{"role": "user", "content": step.input or ""}]
+
             call_count = 0
+
             for round_number in range(get_settings().tool_max_rounds + 1):
                 remaining = (
                     token_allowance - prompt_tokens - completion_tokens
                     if token_allowance is not None
                     else None
                 )
+
                 if remaining is not None and remaining <= 0 and round_number >= len(turns):
                     error_code = "token_budget_exceeded"
+
                     raise ValueError("Budget exhausted")
+
                 max_tokens = (
                     min(int(config["max_tokens"]), remaining)
                     if remaining is not None
                     else int(config["max_tokens"])
                 )
+
                 if round_number < len(turns):
                     response = LLMResponse.model_validate(turns[round_number]["response"])
                 else:
                     if provider is None:
                         provider = self.provider_factory(str(config["model"]))
+
                     async for attempt in llm_retrying():
                         with attempt:
                             await check_context(
@@ -156,20 +177,26 @@ class DAGExecutor:
                                 max_tokens,
                                 config.get("context_window"),
                             )
+
                             provider_pending = True
+
                             await persist()
+
                             identity = {
                                 "agentId": str(step.agent_id),
                                 "stepNumber": step.step_number,
                                 "attempt": step.attempt,
                             }
+
                             if on_tool is not None:
                                 on_tool(
                                     "agent:stream_chunk",
                                     {**identity, "textDelta": "", "reset": True},
                                 )
+
                             if isinstance(provider, StreamingLLMProvider):
                                 terminal: LLMResponse | None = None
+
                                 async with asyncio.timeout(get_settings().llm_request_timeout):
                                     stream = provider.stream(
                                         str(config["system_prompt"]),
@@ -179,10 +206,12 @@ class DAGExecutor:
                                         temperature=float(config["temperature"]),
                                         max_tokens=max_tokens,
                                     )
+
                                     try:
                                         async for chunk in stream:
                                             if terminal is not None:
                                                 raise ValueError("Chunk after terminal response")
+
                                             if chunk.text_delta and on_tool is not None:
                                                 on_tool(
                                                     "agent:stream_chunk",
@@ -192,11 +221,14 @@ class DAGExecutor:
                                                         "reset": False,
                                                     },
                                                 )
+
                                             terminal = chunk.response
                                     finally:
                                         await stream.aclose()
+
                                 if terminal is None:
                                     raise ValueError("Stream ended without response usage")
+
                                 response = terminal
                             else:
                                 async with asyncio.timeout(get_settings().llm_request_timeout):
@@ -208,27 +240,39 @@ class DAGExecutor:
                                         temperature=float(config["temperature"]),
                                         max_tokens=max_tokens,
                                     )
+
                 prompt_tokens += response.usage.input_tokens
                 completion_tokens += response.usage.output_tokens
+
                 if round_number == len(turns):
                     provider_pending = False
+
                     turns.append({"response": response.model_dump(mode="json"), "tools": {}})
+
                     await persist()
+
                 if (
                     token_allowance is not None
                     and prompt_tokens + completion_tokens > token_allowance
                 ):
                     error_code = "token_budget_exceeded"
+
                     raise ValueError("Budget exceeded")
+
                 response.require_complete()
+
                 requests = [
                     call for call in response.tool_calls if call.name == "request_user_decision"
                 ]
+
                 if requests:
                     error_code = "invalid_decision_request"
+
                     if len(response.tool_calls) != 1:
                         raise ValueError("Decision requests must be terminal and exclusive")
+
                     decision = DecisionRequest.model_validate(requests[0].arguments)
+
                     return StepResult(
                         response,
                         duration(),
@@ -236,6 +280,7 @@ class DAGExecutor:
                         completion_tokens=completion_tokens,
                         decision=decision,
                     )
+
                 if not response.tool_calls:
                     return StepResult(
                         response,
@@ -243,41 +288,57 @@ class DAGExecutor:
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
                     )
+
                 call_count += len(response.tool_calls)
                 ids = [call.id for call in response.tool_calls]
+
                 if (
                     round_number >= get_settings().tool_max_rounds
                     or call_count > get_settings().tool_max_calls
                     or len(set(ids)) != len(ids)
                 ):
                     error_code = "tool_limit_exceeded"
+
                     raise ValueError("Tool loop limit exceeded")
+
                 messages.append(response.message)
+
                 receipts = turns[round_number]["tools"]
+
                 for index, call in enumerate(response.tool_calls):
                     receipt = receipts.get(str(index))
+
                     if receipt is not None and receipt["state"] == "started":
                         error_code = "tool_execution_interrupted"
+
                         raise ValueError("Tool outcome is unknown; explicit retry is required")
+
                     identity = {
                         "agentId": str(step.agent_id),
                         "stepNumber": step.step_number,
                         "toolName": call.name,
                     }
+
                     if receipt is None and on_tool is not None:
                         on_tool(
                             "agent:tool_call",
                             {**identity, "input": {"argumentNames": sorted(call.arguments)}},
                         )
+
                     if receipt is None:
                         receipts[str(index)] = {"state": "started"}
+
                         await persist()
+
                         tool_result = await runtime.execute(call)
+
                         receipts[str(index)] = {"state": "done", "result": tool_result}
                     else:
                         tool_result = str(receipt["result"])
+
                     if receipt is None and on_tool is not None:
                         ok = "error" not in json.loads(tool_result)
+
                         on_tool(
                             "agent:tool_result",
                             {
@@ -286,9 +347,11 @@ class DAGExecutor:
                                 "summary": "Tool completed." if ok else "Tool failed.",
                             },
                         )
+
                     if receipt is None:
                         # Commit the receipt and its public result event together.
                         await persist()
+
                     messages.append(
                         {
                             "role": "tool",
@@ -296,12 +359,15 @@ class DAGExecutor:
                             "content": tool_result,
                         }
                     )
+
             raise ValueError("Tool loop did not finish")
         except Exception as exception:
             if isinstance(exception, IncompleteLLMResponse):
                 error_code = "llm_incomplete_response"
+
             if isinstance(exception, ContextTooLarge):
                 error_code = "context_too_large"
+
             # Provider exception strings may contain prompts/keys; persist a safe message.
             logger.warning(
                 "step_failed",
@@ -310,6 +376,7 @@ class DAGExecutor:
                 agent_id=str(step.agent_id),
                 error_type=type(exception).__name__,
             )
+
             return StepResult(
                 None,
                 duration(),
@@ -344,46 +411,71 @@ class DAGExecutor:
 
     async def execute(self, run: Run) -> None:
         current = await self.repository.get(run.id, lock=True)
+
         if current is None or current.status not in {"IN_PROGRESS", "PAUSED"}:
             await self.repository.save()
+
             return
+
         steps = await self.repository.steps(run.id)
+
         if current.status == "PAUSED":
             if "USER_DECISION_REQUIRED" in (current.pause_reasons or []):
                 await self.repository.save()
+
                 return
+
             if not await self.models_ready(run, steps):
                 await self.repository.save()
+
                 return
+
             current.status = "IN_PROGRESS"
             current.pause_reasons = []
+
             self.repository.emit(run.id, "task:resumed", {"taskId": str(run.id)})
+
         if not steps:
             run.status = "FAILED"
             run.finished_at = datetime.now(UTC)
+
             self.repository.emit(run.id, "task:failed", {"taskId": str(run.id), "failedSteps": []})
+
             await self.repository.save()
+
             return
+
         by_number = {step.step_number: step for step in steps}
+
         budget = run.planner_config.get("token_budget")
+
         # Serialize budgeted runs so parallel steps cannot spend the same remainder.
         limit = 1 if budget is not None else self.limit
+
         files: dict[str, str] | None = None
+
         # A worker owns this run exclusively; recover only unfinished calls.
         for step in steps:
             if step.status == "IN_PROGRESS":
                 step.status = "PENDING"
+
                 self.status_event(run, step)
+
         await self.repository.save()
+
         active: dict[asyncio.Task[StepResult], RunStep] = {}
+
         tool_events: list[tuple[EventName, dict[str, Any]]] = []
         checkpoints: list[tuple[int, dict[str, Any], asyncio.Future[None]]] = []
+
         event_ready = asyncio.Event()
 
         async def on_checkpoint(number: int, value: dict[str, Any]) -> None:
             receipt: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+
             checkpoints.append((number, value, receipt))
             event_ready.set()
+
             await receipt
 
         def on_tool(name: EventName, data: dict[str, Any]) -> None:
@@ -393,16 +485,21 @@ class DAGExecutor:
         async def flush_tool_events() -> bool:
             if not tool_events and not checkpoints:
                 return True
+
             if not await self.still_running(run):
                 return False
+
             for name, data in tool_events:
                 if name == "agent:stream_chunk":
                     step = by_number[int(data["stepNumber"])]
                     output = ("" if data["reset"] else step.output or "") + str(data["textDelta"])
                     step.output = output or None
                     data["output"] = output
+
                 self.repository.emit(run.id, name, data)
+
             acknowledged = list(checkpoints)
+
             for number, value, _ in acknowledged:
                 step = by_number[number]
                 previous = step.checkpoint or {}
@@ -412,60 +509,84 @@ class DAGExecutor:
                 )
                 step.execution_time_ms += value["duration_ms"] - previous.get("duration_ms", 0)
                 step.checkpoint = value
+
             self.update_totals(run, steps)
             checkpoints.clear()
             tool_events.clear()
             event_ready.clear()
+
             await self.repository.save()
+
             for _, _, receipt in acknowledged:
                 if not receipt.done():
                     receipt.set_result(None)
+
             return True
 
         try:
             while True:
                 if not await flush_tool_events():
                     return
+
                 user_blocked = "USER_DECISION_REQUIRED" in (run.pause_reasons or [])
+
                 models_ready = await self.models_ready(run, steps)
+
                 for step in steps:
                     if user_blocked or not models_ready:
                         break
+
                     if len(active) >= limit:
                         break
+
                     if step.status != "PENDING" or any(
                         number not in by_number or by_number[number].status != "COMPLETED"
                         for number in step.depends_on
                     ):
                         continue
+
                     # A switch may have committed after the previous step was dispatched.
                     if not await self.models_ready(run, steps):
                         models_ready = False
+
                         break
+
                     if not await self.still_running(run):
                         return
+
                     step.attempt += 1
+
                     try:
                         if step.input is None:
                             step.input = build_input(run, step, by_number)
                     except ValueError:
                         step.status = "FAILED"
+
                         step.error = {
                             "code": "invalid_input_template",
                             "message": "Invalid input template.",
                         }
+
                         self.result_event(run, step)
+
                         await self.repository.save()
+
                         continue
+
                     # Snapshot repair can add file_reader after execution starts.
                     if files is None and "file_reader" in step.agent_config.get("tools", []):
                         files = await FileRepository(self.repository.session).text_for_run(run.id)
+
                     step.status = "IN_PROGRESS"
                     step.error = None
                     step.output = None
+
                     self.status_event(run, step)
+
                     await self.repository.save()
+
                     self.update_totals(run, steps)
+
                     allowance = (
                         max(
                             0,
@@ -488,45 +609,62 @@ class DAGExecutor:
                             )
                         )
                     ] = step
+
                 if not active:
                     if user_blocked or not models_ready:
                         if not await self.still_running(run):
                             return
+
                         run.status = "PAUSED"
                         run.pause_reasons = (["USER_DECISION_REQUIRED"] if user_blocked else []) + (
                             ["MODEL_UNAVAILABLE"] if not models_ready else []
                         )
+
                         self.repository.emit(
                             run.id,
                             "task:paused",
                             {"taskId": str(run.id), "pauseReasons": run.pause_reasons},
                         )
+
                         await self.repository.save()
+
                         return
+
                     break
+
                 # Release policy/agent locks before waiting for external I/O.
                 await self.repository.save()
+
                 notification = asyncio.create_task(event_ready.wait())
+
                 try:
                     ready, _ = await asyncio.wait(
                         [*active, notification],
                         timeout=get_settings().run_poll_interval,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
+
                     done = {task for task in active if task in ready}
                 finally:
                     notification.cancel()
+
                     await asyncio.gather(notification, return_exceptions=True)
+
                 if not await flush_tool_events():
                     return
+
                 if not done:
                     if not await self.still_running(run):
                         return
+
                     await self.repository.save()
+
                     continue
+
                 for task in done:
                     if not await self.still_running(run):
                         return
+
                     step = active.pop(task)
                     result = task.result()
                     previous = step.checkpoint or {}
@@ -537,18 +675,22 @@ class DAGExecutor:
                         "completion_tokens", 0
                     )
                     step.checkpoint = {}
+
                     if result.response is None:
                         step.status = "FAILED"
                     else:
                         step.status = "COMPLETED"
                         step.output = result.response.content
+
                         if result.decision is not None:
                             request = result.decision
+
                             if not step.output:
                                 step.output = "\n\n".join(
                                     f"{issue.title}\n{issue.description}"
                                     for issue in request.issues
                                 )
+
                             decision = RunDecision(
                                 id=uuid4(),
                                 run_id=run.id,
@@ -560,7 +702,9 @@ class DAGExecutor:
                                 created_at=datetime.now(UTC),
                                 followup_step_numbers=[],
                             )
+
                             self.repository.add(decision)
+
                             run.pause_reasons = list(
                                 dict.fromkeys(
                                     [
@@ -569,6 +713,7 @@ class DAGExecutor:
                                     ]
                                 )
                             )
+
                             self.repository.emit(
                                 run.id,
                                 "decision:required",
@@ -579,15 +724,21 @@ class DAGExecutor:
                                     ),
                                 },
                             )
+
                     self.update_totals(run, steps)
                     self.result_event(run, step)
+
                     await self.repository.save()
+
             if not await self.still_running(run):
                 return
+
             self.update_totals(run, steps)
+
             run.status = (
                 "COMPLETED" if all(step.status == "COMPLETED" for step in steps) else "FAILED"
             )
+
             if run.status == "COMPLETED":
                 # Follow-up numbers are allocated last, but the plan places them before dependants.
                 plan = RunPlan.model_validate(run.plan)
@@ -596,7 +747,9 @@ class DAGExecutor:
                     f"\n\n{by_number[planned.step_number].output or ''}"
                     for planned in plan.steps
                 )
+
             run.finished_at = datetime.now(UTC)
+
             if run.status == "COMPLETED":
                 self.repository.emit(
                     run.id,
@@ -619,29 +772,41 @@ class DAGExecutor:
                         ],
                     },
                 )
+
             await self.repository.save()
         finally:
             for task in active:
                 task.cancel()
+
             if active:
                 await asyncio.gather(*active, return_exceptions=True)
 
     async def models_ready(self, run: Run, steps: list[RunStep]) -> bool:
         """Drain active work before pausing; repair only invalidated snapshots."""
+
         unfinished = [step for step in steps if step.status in {"PENDING", "IN_PROGRESS"}]
+
         if not unfinished:
             return True
+
         available = await ModelService(ModelRepository(self.repository.session)).available()
+
         flags = await self.repository.reconfiguration_flags(run.id)
         agents = await self.repository.agents({step.agent_id for step in unfinished})
+
         ready = True
+
         for step in unfinished:
             if step.step_number in flags:
                 set_committed_value(step, "requires_reconfiguration", flags[step.step_number])
+
             invalidated = flags.get(step.step_number, False) or step.requires_reconfiguration
+
             if not invalidated and step.agent_config.get("model") in available:
                 continue
+
             agent = agents.get(step.agent_id)
+
             if (
                 step.status == "IN_PROGRESS"
                 or agent is None
@@ -649,12 +814,16 @@ class DAGExecutor:
                 or agent.model not in available
             ):
                 ready = False
+
                 continue
+
             replacement = snapshot_agent(agent)
+
             if step.checkpoint and replacement != step.agent_config:
                 # Native conversations and tool receipts belong to the original snapshot.
                 # Only an explicit retry may discard them and start with new permissions.
                 step.status = "FAILED"
+
                 step.error = {
                     "code": "checkpoint_configuration_changed",
                     "message": (
@@ -662,19 +831,25 @@ class DAGExecutor:
                         "Retry the step explicitly to use the new configuration."
                     ),
                 }
+
                 self.result_event(run, step)
                 continue
+
             step.agent_config = replacement
             step.agent_name = agent.name
             step.requires_reconfiguration = False
+
         return ready
 
     async def still_running(self, run: Run) -> bool:
         # Serialize checkpoints with cancel/retry; refresh avoids stale ORM status.
         current = await self.repository.get(run.id, lock=True)
+
         if current is None or current.status != "IN_PROGRESS":
             await self.repository.save()
+
             return False
+
         return True
 
     def status_event(self, run: Run, step: RunStep) -> None:
@@ -690,10 +865,12 @@ class DAGExecutor:
 
     def result_event(self, run: Run, step: RunStep) -> None:
         self.status_event(run, step)
+
         data: dict[str, object] = {
             "agentId": str(step.agent_id),
             "stepNumber": step.step_number,
         }
+
         if step.status == "COMPLETED":
             data.update(
                 {

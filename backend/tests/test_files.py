@@ -34,6 +34,7 @@ def test_invalid_context(name: str, mime: str, content: bytes) -> None:
 )
 def test_valid_context(name: str, mime: str, content: bytes, canonical: str) -> None:
     filename, media_type, text = validate_text_file(name, mime, content)
+
     assert "/" not in filename and "\\" not in filename
     assert media_type == canonical
     assert text and not text.startswith("\ufeff")
@@ -42,7 +43,10 @@ def test_valid_context(name: str, mime: str, content: bytes, canonical: str) -> 
 def test_file_size_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONTEXT_FILE_MAX_BYTES", "4")
     get_settings.cache_clear()
+
     assert validate_text_file("brief.txt", "text/plain", b"1234")[2] == "1234"
+
     with pytest.raises(FileError) as error:
         validate_text_file("brief.txt", "text/plain", b"12345")
+
     assert error.value.status_code == 413

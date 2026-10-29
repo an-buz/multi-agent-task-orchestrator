@@ -33,6 +33,7 @@ class WorkflowRepository:
             .limit(limit)
             .offset(offset)
         )
+
         return list(values), total or 0
 
     async def agent_ids(self, agent_ids: set[UUID]) -> set[UUID]:
@@ -47,6 +48,7 @@ class WorkflowRepository:
 
     async def save(self, workflow: Workflow) -> None:
         self.session.add(workflow)
+
         await self.session.commit()
         await self.session.refresh(workflow)
 

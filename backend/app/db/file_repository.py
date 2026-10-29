@@ -16,14 +16,18 @@ class FileRepository:
     async def attach(self, run_id: UUID, file_ids: list[UUID]) -> None:
         if not file_ids:
             return
+
         # Flush the new run before references; all rows still commit atomically.
         await self.session.flush()
+
         self.session.add_all(RunFile(run_id=run_id, file_id=file_id) for file_id in file_ids)
 
     async def get(self, file_id: UUID, *, lock: bool = False) -> ContextFile | None:
         query = select(ContextFile).where(ContextFile.id == file_id)
+
         if lock:
             query = query.with_for_update()
+
         return await self.session.scalar(query)
 
     async def for_run(self, run_id: UUID) -> list[ContextFile]:
@@ -42,6 +46,7 @@ class FileRepository:
             .where(RunFile.run_id == run_id)
             .order_by(ContextFile.created_at, ContextFile.id)
         )
+
         return list(result)
 
     async def text_for_run(self, run_id: UUID) -> dict[str, str]:
@@ -50,6 +55,7 @@ class FileRepository:
             .join(RunFile, RunFile.file_id == ContextFile.id)
             .where(RunFile.run_id == run_id)
         )
+
         return {str(file_id): text for file_id, text in rows}
 
     async def is_attached(self, file_id: UUID) -> bool:
@@ -62,6 +68,7 @@ class FileRepository:
 
     async def save(self, file: ContextFile) -> None:
         self.session.add(file)
+
         await self.session.commit()
         await self.session.refresh(file)
 

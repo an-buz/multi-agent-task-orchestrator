@@ -16,6 +16,7 @@ class SettingsRepository:
 
     async def save(self, defaults: dict[str, object]) -> None:
         statement = insert(AppConfig).values(id=1, defaults=defaults)
+
         await self.session.execute(
             statement.on_conflict_do_update(
                 index_elements=[AppConfig.id],

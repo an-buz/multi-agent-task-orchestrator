@@ -33,6 +33,7 @@ async def list_workflows(
 @router.post("/validate")
 async def validate_workflow(payload: WorkflowWrite, service: Service) -> dict[str, object]:
     await service.validate(payload)
+
     return {"valid": True, "execution_type": payload.execution_type}
 
 

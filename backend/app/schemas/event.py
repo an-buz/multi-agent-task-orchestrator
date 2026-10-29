@@ -150,6 +150,8 @@ class EventEnvelope(BaseModel):
     @classmethod
     def validate_payload(cls, value: dict[str, Any], info: ValidationInfo) -> dict[str, Any]:
         event = info.data.get("event")
+
         if event in PAYLOAD_MODELS:
             return PAYLOAD_MODELS[event].model_validate(value).model_dump(mode="json")
+
         return value

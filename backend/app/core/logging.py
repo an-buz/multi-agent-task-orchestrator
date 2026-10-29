@@ -15,10 +15,12 @@ def configure_logging(
     log_colors: Literal["auto", "always", "never"] = "auto",
 ) -> None:
     """Configure standard logging and structlog processors."""
+
     console = log_format == "console" or (log_format == "auto" and sys.stderr.isatty())
     colors = log_colors == "always" or (
         log_colors == "auto" and sys.stderr.isatty() and "NO_COLOR" not in os.environ
     )
+
     shared: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
@@ -26,12 +28,15 @@ def configure_logging(
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
     ]
+
     renderer: structlog.types.Processor = (
         structlog.dev.ConsoleRenderer(colors=colors, force_colors=log_colors == "always")
         if console
         else structlog.processors.JSONRenderer()
     )
+
     handler = logging.StreamHandler(sys.stderr)
+
     handler.setFormatter(
         structlog.stdlib.ProcessorFormatter(
             foreign_pre_chain=shared,

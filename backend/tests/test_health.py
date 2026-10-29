@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 def test_health_check_returns_ok() -> None:
     """The liveness route is available without external services."""
+
     with TestClient(app) as client:
         response = client.get("/health")
 

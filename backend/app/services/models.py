@@ -13,6 +13,7 @@ def connected(model: ModelInfo, settings: Settings) -> bool:
         "openai": settings.openai_api_key,
         "gemini": settings.gemini_api_key,
     }
+
     return settings.llm_provider_mode == "mock" or bool(keys[model.provider])
 
 
@@ -28,6 +29,7 @@ class ModelService:
 
     async def available(self) -> set[str]:
         disabled = await self.repository.disabled()
+
         return {
             key
             for key, model in get_model_registry(self.settings).items()
@@ -36,6 +38,7 @@ class ModelService:
 
     async def catalogue(self, *, enabled_only: bool = False) -> ModelCatalogue:
         disabled = await self.repository.disabled()
+
         return ModelCatalogue(
             items=[
                 ModelRead(**model.__dict__, enabled=key not in disabled)
@@ -46,7 +49,10 @@ class ModelService:
 
     async def update(self, key: str, enabled: bool) -> ModelCatalogue:
         model = get_model_registry(self.settings).get(key)
+
         if model is None or not connected(model, self.settings):
             raise ModelUnavailable("This model does not belong to a connected provider.")
+
         await self.repository.set_enabled(key, enabled)
+
         return await self.catalogue()
