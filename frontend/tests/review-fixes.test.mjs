@@ -44,6 +44,19 @@ test("manual token edits are rejected above model output and context limits", ()
   assert.equal(schema.safeParse({ ...agent, model: "disabled" }).success, false);
 });
 
+test("discovered models with unknown limits preserve user limits and context validation", () => {
+  const discovered = { ...model, key: "gpt-new", context_window: null, max_output_tokens: null };
+  const values = { ...agent, model: discovered.key };
+  const schema = agentSchemaForModels([discovered]);
+
+  assert.equal(schema.safeParse(values).success, true);
+  assert.deepEqual(modelTokenLimits(values, discovered), {
+    context_window: values.context_window,
+    max_tokens: values.max_tokens,
+  });
+  assert.equal(schema.safeParse({ ...values, max_tokens: values.context_window }).success, false);
+});
+
 test("plan review detects remote edits, missing steps and step renumbering", () => {
   const original = planFormValues([{ step_number: 1, subtask: "Original" }]);
   const refreshed = planFormValues([{ step_number: 1, subtask: "Updated remotely" }]);

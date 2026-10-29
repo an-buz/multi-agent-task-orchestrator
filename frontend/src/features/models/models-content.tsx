@@ -89,20 +89,28 @@ export default function ModelsContent() {
               <AlertDescription>{mutation.error.message}</AlertDescription>
             </Alert>
           )}
-          {query.isSuccess && models.length === 0 && (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Cpu />
-                </EmptyMedia>
-                <EmptyTitle>No connected providers</EmptyTitle>
-                <EmptyDescription>
-                  Configure an Anthropic, OpenAI, or Gemini API key on the server to manage its
-                  models.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          )}
+          {Object.entries(query.data?.discovery_errors ?? {}).map(([provider, message]) => (
+            <Alert key={provider} variant="destructive">
+              <AlertTitle>Could not fetch {provider} models</AlertTitle>
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
+          ))}
+          {query.isSuccess &&
+            models.length === 0 &&
+            !Object.keys(query.data.discovery_errors ?? {}).length && (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Cpu />
+                  </EmptyMedia>
+                  <EmptyTitle>No available models</EmptyTitle>
+                  <EmptyDescription>
+                    Configure an Anthropic, OpenAI, or Gemini API key on the server to manage its
+                    models.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
           {providers.map((provider) => {
             const items = models.filter((model) => model.provider === provider.key);
 
@@ -114,7 +122,7 @@ export default function ModelsContent() {
                   <CardTitle>
                     <h2>{provider.name} provider</h2>
                   </CardTitle>
-                  <CardDescription>Models from the configured provider catalogue.</CardDescription>
+                  <CardDescription>Available models from the provider catalogue.</CardDescription>
                   <CardAction>
                     <Badge variant="outline">
                       {items.filter((model) => model.enabled).length} / {items.length} enabled
@@ -132,8 +140,10 @@ export default function ModelsContent() {
                         <FieldContent>
                           <FieldLabel htmlFor={`model-${model.key}`}>{model.model_id}</FieldLabel>
                           <FieldDescription id={`model-info-${model.key}`}>
-                            {model.tier} · {model.context_window.toLocaleString()} context tokens ·{" "}
-                            {model.enabled ? "Enabled" : "Disabled"}
+                            {model.context_window === null
+                              ? "Context limit not reported"
+                              : `${model.context_window.toLocaleString()} context tokens`}{" "}
+                            · {model.enabled ? "Enabled" : "Disabled"}
                           </FieldDescription>
                         </FieldContent>
                         <Switch

@@ -154,7 +154,9 @@ class GeminiProvider:
         if info.provider != "gemini":
             raise ValueError("Gemini requires a Gemini model")
 
-        if not 1 <= max_tokens <= info.max_output_tokens:
+        if max_tokens < 1 or (
+            info.max_output_tokens is not None and max_tokens > info.max_output_tokens
+        ):
             raise ValueError("Requested response exceeds the model output limit")
 
         payload = self._input(system_prompt, messages, tools)

@@ -124,6 +124,15 @@ async def test_legacy_defaults_use_fallback_and_legacy_updates_preserve_planner(
 
 @pytest.mark.parametrize("disabled", [False, True])
 async def test_planner_selection_rejects_disconnected_or_disabled_models(monkeypatch, disabled):
+    from app.llm.registry import get_model_registry
+
+    registry = get_model_registry(Settings(_env_file=None, llm_provider_mode="mock"))
+
+    async def fetch_models(provider, token, url, settings):
+        return {key: info for key, info in registry.items() if info.provider == provider}
+
+    monkeypatch.setattr("app.llm.discovery.fetch_models", fetch_models)
+
     repository = MemorySettingsRepository()
     settings = Settings(
         _env_file=None,

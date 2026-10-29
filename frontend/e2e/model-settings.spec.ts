@@ -284,7 +284,7 @@ for (const theme of ["light", "dark"]) {
 test("no connected providers shows setup instructions", async ({ page }) => {
   await setup(page, "light", { empty: true });
   await page.goto("/models");
-  await expect(page.getByText("No connected providers", { exact: true })).toBeVisible();
+  await expect(page.getByText("No available models", { exact: true })).toBeVisible();
   await expect(page.getByRole("switch")).toHaveCount(0);
   await page.goto("/settings");
   await expect(page.getByRole("combobox", { name: "Planner model", exact: true })).toBeDisabled();
@@ -304,3 +304,58 @@ test("failed model update preserves the saved switch state", async ({ page }) =>
   await expect(page.getByText("Could not save model switch.", { exact: true })).toBeVisible();
   await expect(toggle).toBeChecked();
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`discovered models show unknown limits and isolate provider errors (${theme})`, async ({
+    page,
+  }) => {
+    const requests = await setup(page, theme);
+    const discovered = {
+      key: "gpt-discovered",
+      model_id: "gpt-discovered",
+      provider: "openai",
+      tier: "balanced",
+      context_window: null,
+      max_output_tokens: null,
+      enabled: true,
+    };
+    const headers = {
+      "access-control-allow-origin": "http://localhost:3000",
+      "access-control-allow-methods": "GET,OPTIONS",
+      "access-control-allow-headers": "content-type",
+    };
+
+    await page.route("**/api/v1/settings/models", (route) =>
+      route.fulfill({
+        headers,
+        json: {
+          items: [discovered],
+          discovery_errors: { anthropic: "Authentication failed. Check the provider API key." },
+        },
+      }),
+    );
+    await page.route("**/api/v1/agents/models", (route) =>
+      route.fulfill({ headers, json: { items: [discovered] } }),
+    );
+
+    await page.goto("/models");
+    await expect(page.getByRole("heading", { name: "OpenAI provider" })).toBeVisible();
+    await expect(page.getByText("Could not fetch anthropic models", { exact: true })).toBeVisible();
+    await expect(page.getByText("Context limit not reported", { exact: false })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "gpt-discovered" })).toBeChecked();
+
+    await page.goto("/agents");
+    await page.getByRole("button", { name: "Edit Model reviewer", exact: true }).click();
+    await page.getByRole("combobox", { name: "AI model" }).click();
+    await page.getByRole("option", { name: /gpt-discovered/ }).click();
+    await expect(
+      page.getByText("Context limit not reported by provider", { exact: false }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /Save changes/i }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    expect(requests.agents).toMatchObject([
+      { model: "gpt-discovered", max_tokens: 1024, context_window: 128000 },
+    ]);
+  });
+}

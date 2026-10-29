@@ -163,10 +163,9 @@ class RunService:
                 "Choose an enabled planner model from a connected provider in Settings.", 422
             )
 
-        if (
-            settings.planner_max_tokens
-            > get_model_registry(settings)[planner_model].max_output_tokens
-        ):
+        planner_limit = get_model_registry(settings)[planner_model].max_output_tokens
+
+        if planner_limit is not None and settings.planner_max_tokens > planner_limit:
             raise RunError("The planner token limit exceeds this model's output limit.", 422)
 
         if len(set(payload.file_ids)) != len(payload.file_ids):

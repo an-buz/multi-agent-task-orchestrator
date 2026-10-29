@@ -109,9 +109,13 @@ def parse_tool_arguments(raw: str) -> dict[str, Any]:
 class AnthropicProvider:
     """Adapter for Anthropic's Messages API."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, settings: Settings | None = None) -> None:
+        self.settings = settings or get_settings()
         self._client = AsyncAnthropic(
-            api_key=api_key, max_retries=0, timeout=get_settings().llm_request_timeout
+            api_key=api_key,
+            max_retries=0,
+            timeout=self.settings.llm_request_timeout,
+            base_url=self.settings.anthropic_api_url.removesuffix("/v1"),
         )
 
     async def complete(
@@ -123,9 +127,11 @@ class AnthropicProvider:
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> LLMResponse:
-        info = get_model_registry()[model]
+        info = get_model_registry(self.settings)[model]
 
-        if not 1 <= max_tokens <= info.max_output_tokens:
+        if max_tokens < 1 or (
+            info.max_output_tokens is not None and max_tokens > info.max_output_tokens
+        ):
             raise ValueError("Requested response exceeds the model output limit")
 
         response = await self._client.messages.create(
@@ -157,7 +163,7 @@ class AnthropicProvider:
         tools: list[dict[str, Any]],
     ) -> int:
         response = await self._client.messages.count_tokens(
-            model=get_model_registry()[model].model_id,
+            model=get_model_registry(self.settings)[model].model_id,
             system=system_prompt,
             messages=cast(list[MessageParam], anthropic_messages(messages)),
             tools=cast(list[ToolParam], tools),
@@ -176,9 +182,11 @@ class AnthropicProvider:
         max_tokens: int,
     ) -> LLMResponse:
         native = anthropic_messages(messages)
-        info = get_model_registry()[model]
+        info = get_model_registry(self.settings)[model]
 
-        if not 1 <= max_tokens <= info.max_output_tokens:
+        if max_tokens < 1 or (
+            info.max_output_tokens is not None and max_tokens > info.max_output_tokens
+        ):
             raise ValueError("Requested response exceeds the model output limit")
 
         response = await self._client.messages.create(
@@ -211,9 +219,13 @@ class AnthropicProvider:
 class OpenAIProvider:
     """Adapter for OpenAI Chat Completions API."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, settings: Settings | None = None) -> None:
+        self.settings = settings or get_settings()
         self._client = AsyncOpenAI(
-            api_key=api_key, max_retries=0, timeout=get_settings().llm_request_timeout
+            api_key=api_key,
+            max_retries=0,
+            timeout=self.settings.llm_request_timeout,
+            base_url=self.settings.openai_api_url,
         )
 
     async def complete(
@@ -225,15 +237,17 @@ class OpenAIProvider:
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> LLMResponse:
-        info = get_model_registry()[model]
+        info = get_model_registry(self.settings)[model]
 
-        if not 1 <= max_tokens <= info.max_output_tokens:
+        if max_tokens < 1 or (
+            info.max_output_tokens is not None and max_tokens > info.max_output_tokens
+        ):
             raise ValueError("Requested response exceeds the model output limit")
 
         response = await self._client.chat.completions.create(
             model=info.model_id,
             max_completion_tokens=max_tokens,
-            temperature=temperature,
+            **self.sampling(info.model_id, temperature),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -258,6 +272,14 @@ class OpenAIProvider:
 
     async def aclose(self) -> None:
         await self._client.close()
+
+    @staticmethod
+    def sampling(model_id: str, temperature: float) -> dict[str, Any]:
+        # Reasoning families do not accept arbitrary temperature values.
+        if model_id.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")):
+            return {}
+
+        return {"temperature": temperature}
 
     async def count_input_tokens(
         self,
@@ -286,9 +308,11 @@ class OpenAIProvider:
         temperature: float,
         max_tokens: int,
     ) -> LLMResponse:
-        info = get_model_registry()[model]
+        info = get_model_registry(self.settings)[model]
 
-        if not 1 <= max_tokens <= info.max_output_tokens:
+        if max_tokens < 1 or (
+            info.max_output_tokens is not None and max_tokens > info.max_output_tokens
+        ):
             raise ValueError("Requested response exceeds the model output limit")
 
         response = await self._client.chat.completions.create(
@@ -301,7 +325,7 @@ class OpenAIProvider:
                 list[ChatCompletionToolParam],
                 openai_tools(tools),
             ),
-            temperature=temperature,
+            **self.sampling(info.model_id, temperature),
             max_completion_tokens=max_tokens,
         )
 
@@ -491,9 +515,9 @@ def create_provider(
         if not active.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER_MODE=real")
 
-        return AnthropicProvider(active.anthropic_api_key)
+        return AnthropicProvider(active.anthropic_api_key, active)
 
     if not active.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER_MODE=real")
 
-    return OpenAIProvider(active.openai_api_key)
+    return OpenAIProvider(active.openai_api_key, active)

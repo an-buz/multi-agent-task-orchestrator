@@ -36,7 +36,18 @@ infrastructure = _infrastructure
 
 
 @pytest.mark.parametrize("provider", ["anthropic", "openai", "gemini", "none", "mock"])
-async def test_only_connected_provider_models_are_exposed(provider: str) -> None:
+async def test_only_connected_provider_models_are_exposed(
+    provider: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.llm.registry import get_model_registry
+
+    mock_registry = get_model_registry(Settings(_env_file=None, llm_provider_mode="mock"))
+
+    async def fetch_models(provider, token, url, settings):
+        return {key: info for key, info in mock_registry.items() if info.provider == provider}
+
+    monkeypatch.setattr("app.llm.discovery.fetch_models", fetch_models)
+
     repository = AsyncMock(spec=ModelRepository)
     repository.disabled.return_value = {"claude-opus"}
     settings = Settings(
@@ -59,8 +70,6 @@ async def test_only_connected_provider_models_are_exposed(provider: str) -> None
     )
 
     assert {model.provider for model in catalogue.items} == expected
-
-    from app.llm.registry import get_model_registry
 
     registry = get_model_registry(settings)
 

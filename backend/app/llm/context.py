@@ -45,13 +45,16 @@ async def check_context(
     settings = get_settings()
     info = get_model_registry(settings)[model]
 
-    if not 1 <= max_tokens <= info.max_output_tokens:
+    if max_tokens < 1 or (
+        info.max_output_tokens is not None and max_tokens > info.max_output_tokens
+    ):
         raise ValueError("Requested response exceeds the model output limit")
 
-    window = min(info.context_window, context_window or info.context_window)
+    windows = [value for value in (info.context_window, context_window) if value is not None]
+    window = min(windows) if windows else None
     reserve = max_tokens + settings.context_safety_margin_tokens
 
-    if reserve >= window:
+    if window is not None and reserve >= window:
         raise ContextTooLarge("The reserved response leaves no room for input.")
 
     if isinstance(provider, TokenCountingProvider):
@@ -63,5 +66,5 @@ async def check_context(
     if type(count) is not int or count < 0:
         raise ValueError("Invalid context admission count")
 
-    if count + reserve > window:
+    if window is not None and count + reserve > window:
         raise ContextTooLarge("Input and reserved response exceed the context window.")

@@ -376,8 +376,10 @@ export function CreateAgentDialog({
             )}
             {selectedModelInfo && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {selectedModelInfo.provider} · {selectedModelInfo.context_window.toLocaleString()}{" "}
-                token context
+                {selectedModelInfo.provider} ·{" "}
+                {selectedModelInfo.context_window === null
+                  ? "Context limit not reported by provider"
+                  : `${selectedModelInfo.context_window.toLocaleString()} token context`}
               </p>
             )}
             {catalog.isError && (
@@ -487,7 +489,7 @@ export function CreateAgentDialog({
                     {...form.register("max_tokens", { valueAsNumber: true })}
                     type="number"
                     min="1"
-                    max={selectedModelInfo?.max_output_tokens}
+                    max={selectedModelInfo?.max_output_tokens ?? undefined}
                     aria-label="Max tokens"
                     aria-invalid={Boolean(form.formState.errors.max_tokens)}
                     aria-describedby={
@@ -536,7 +538,10 @@ export function CreateAgentDialog({
                           <SelectItem value="128000">128K tokens</SelectItem>
                           <SelectItem
                             value="200000"
-                            disabled={(selectedModelInfo?.context_window ?? 0) < 200000}
+                            disabled={
+                              selectedModelInfo?.context_window != null &&
+                              selectedModelInfo.context_window < 200000
+                            }
                           >
                             200K tokens
                           </SelectItem>

@@ -13,6 +13,7 @@ export interface ManagedModel extends AgentModel {
 
 export interface ModelCatalogue {
   items: ManagedModel[];
+  discovery_errors?: Partial<Record<AgentModel["provider"], string>>;
 }
 
 const modelsQueryKey = ["model-settings"] as const;

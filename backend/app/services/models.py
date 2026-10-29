@@ -3,6 +3,7 @@
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.db.model_repository import ModelRepository
+from app.llm.discovery import discovery_errors, refresh_model_registry
 from app.llm.registry import ModelInfo, get_model_registry
 from app.schemas.model_setting import ModelCatalogue, ModelRead
 
@@ -28,26 +29,33 @@ class ModelService:
         self.settings = settings or get_settings()
 
     async def available(self) -> set[str]:
+        registry = await refresh_model_registry(self.settings)
         disabled = await self.repository.disabled()
 
         return {
             key
-            for key, model in get_model_registry(self.settings).items()
+            for key, model in registry.items()
             if key not in disabled and connected(model, self.settings)
         }
 
     async def catalogue(self, *, enabled_only: bool = False) -> ModelCatalogue:
+        registry = await refresh_model_registry(self.settings)
         disabled = await self.repository.disabled()
 
         return ModelCatalogue(
             items=[
                 ModelRead(**model.__dict__, enabled=key not in disabled)
-                for key, model in get_model_registry(self.settings).items()
+                for key, model in registry.items()
                 if connected(model, self.settings) and (not enabled_only or key not in disabled)
-            ]
+            ],
+            discovery_errors=(
+                discovery_errors(self.settings) if self.settings.llm_provider_mode == "real" else {}
+            ),
         )
 
     async def update(self, key: str, enabled: bool) -> ModelCatalogue:
+        await refresh_model_registry(self.settings)
+
         model = get_model_registry(self.settings).get(key)
 
         if model is None or not connected(model, self.settings):

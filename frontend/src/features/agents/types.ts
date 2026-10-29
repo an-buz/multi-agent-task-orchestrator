@@ -19,8 +19,8 @@ export interface AgentModel {
   provider: "anthropic" | "openai" | "gemini";
   model_id: string;
   tier: "fast" | "balanced" | "powerful";
-  context_window: number;
-  max_output_tokens: number;
+  context_window: number | null;
+  max_output_tokens: number | null;
 }
 
 export interface AgentTool {

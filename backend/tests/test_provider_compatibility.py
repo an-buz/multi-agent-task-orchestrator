@@ -124,7 +124,14 @@ async def test_sdk_requests_and_stop_metadata(
         response = await provider.complete("System", "User", key, temperature=0.2, max_tokens=1024)
 
     constructor.assert_called_once_with(
-        api_key="fixture-placeholder", max_retries=0, timeout=get_settings().llm_request_timeout
+        api_key="fixture-placeholder",
+        max_retries=0,
+        timeout=get_settings().llm_request_timeout,
+        base_url=(
+            get_settings().anthropic_api_url.removesuffix("/v1")
+            if provider_name == "anthropic"
+            else get_settings().openai_api_url
+        ),
     )
 
     kwargs = create.await_args.kwargs
@@ -156,7 +163,7 @@ async def test_sdk_requests_and_stop_metadata(
         assert response.tool_calls == []
 
 
-def test_reviewed_defaults_and_unknown_overrides() -> None:
+def test_mock_catalogue_is_independent_of_removed_model_overrides() -> None:
     registry = get_model_registry(Settings(_env_file=None))
 
     assert registry["claude-haiku"].model_id == "claude-haiku-4-5-20251001"
@@ -171,8 +178,7 @@ def test_reviewed_defaults_and_unknown_overrides() -> None:
     ]:
         settings = Settings(_env_file=None).model_copy(update={field: model_id})
 
-        with pytest.raises(ValueError, match="compatibility profile"):
-            get_model_registry(settings)
+        assert get_model_registry(settings) == registry
 
 
 async def test_output_limit_rejected_before_counting_and_generation(

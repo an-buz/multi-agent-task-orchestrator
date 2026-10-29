@@ -16,10 +16,11 @@ class ModelRead(BaseModel):
     provider: Literal["anthropic", "openai", "gemini"]
     model_id: str
     tier: Literal["fast", "balanced", "powerful"]
-    context_window: int
-    max_output_tokens: int
+    context_window: int | None
+    max_output_tokens: int | None
     enabled: bool
 
 
 class ModelCatalogue(BaseModel):
     items: list[ModelRead]
+    discovery_errors: dict[str, str] = Field(default_factory=dict)

@@ -372,7 +372,7 @@ async def test_factory_mock_missing_key_and_output_limit(monkeypatch):
 
     settings.llm_provider_mode = "real"
 
-    with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+    with pytest.raises(ValueError, match="Unknown model key"):
         create_provider("gemini-flash-lite", settings)
 
     requests = []

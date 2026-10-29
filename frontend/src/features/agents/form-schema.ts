@@ -33,7 +33,7 @@ export function agentSchemaForModels(models: AgentModel[]) {
       return;
     }
 
-    if (values.max_tokens > model.max_output_tokens) {
+    if (model.max_output_tokens !== null && values.max_tokens > model.max_output_tokens) {
       context.addIssue({
         code: "custom",
         path: ["max_tokens"],
@@ -41,7 +41,7 @@ export function agentSchemaForModels(models: AgentModel[]) {
       });
     }
 
-    if (values.context_window > model.context_window) {
+    if (model.context_window !== null && values.context_window > model.context_window) {
       context.addIssue({
         code: "custom",
         path: ["context_window"],
@@ -52,10 +52,17 @@ export function agentSchemaForModels(models: AgentModel[]) {
 }
 
 export function modelTokenLimits(values: AgentFormValues, model: AgentModel) {
-  const context_window = Math.min(values.context_window, model.context_window);
+  const context_window = Math.min(
+    values.context_window,
+    model.context_window ?? values.context_window,
+  );
 
   return {
     context_window,
-    max_tokens: Math.min(values.max_tokens, model.max_output_tokens, context_window - 1),
+    max_tokens: Math.min(
+      values.max_tokens,
+      model.max_output_tokens ?? values.max_tokens,
+      context_window - 1,
+    ),
   };
 }

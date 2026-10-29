@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from app.core.config import get_settings
 from app.db.run_repository import RunRepository
 from app.llm.context import ContextTooLarge, check_context
+from app.llm.discovery import refresh_model_registry
 from app.llm.planning import PLANNER_SYSTEM_PROMPT, PlannedWorkflow
 from app.llm.provider import IncompleteLLMResponse, LLMProvider, LLMResponse
 from app.llm.providers import create_provider
@@ -118,6 +119,8 @@ class LLMPlanner:
                     response = LLMResponse.model_validate(turns[repair])
                 else:
                     if provider is None:
+                        await refresh_model_registry()
+
                         provider = self.provider_factory(model)
 
                     async for attempt in llm_retrying():

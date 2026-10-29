@@ -4,6 +4,7 @@ import { Activity, Bot, Cpu, GitBranch, LayoutGrid, Settings } from "lucide-reac
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { AppIcon } from "@/components/app-icon";
 import { CreateAgentDialog } from "@/features/agents/create-agent-dialog";
 import { useAgents } from "@/features/agents/queries";
 
@@ -17,7 +18,7 @@ export function Sidebar() {
     <aside className="flex flex-col border-b border-border bg-card p-5 lg:min-h-screen lg:border-b-0 lg:border-r">
       <Link className="mb-7 flex items-center gap-3" href="/">
         <span className="grid size-8 place-items-center rounded-md border bg-status-completed/15 text-status-completed">
-          <Cpu size={19} />
+          <AppIcon className="size-6" />
         </span>
         <span className="block text-lg font-bold tracking-wide">AgentFlow</span>
         <span className="rounded-sm bg-secondary px-2 py-px font-mono text-xs text-muted-foreground">

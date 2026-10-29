@@ -26,19 +26,12 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     gemini_api_key: str | None = None
     gemini_api_url: str = "https://generativelanguage.googleapis.com/v1beta"
-    gemini_model_flash: str = "gemini-3.8-flash"
-    gemini_model_flash_lite: str = "gemini-3.5-flash-lite"
-    # Provider model identifiers stay configurable as providers retire model versions.
-    anthropic_model_haiku: str = Field(
-        default="claude-haiku-4-5-20251001", validation_alias="ANTHROPIC_MODEL_HAIKU"
-    )
-    anthropic_model_sonnet: str = Field(
-        default="claude-sonnet-4-6", validation_alias="ANTHROPIC_MODEL_SONNET"
-    )
-    anthropic_model_opus: str = Field(
-        default="claude-opus-4-6", validation_alias="ANTHROPIC_MODEL_OPUS"
-    )
-    openai_model_default: str = Field(default="gpt-4o", validation_alias="OPENAI_MODEL_DEFAULT")
+    anthropic_api_url: str = "https://api.anthropic.com/v1"
+    openai_api_url: str = "https://api.openai.com/v1"
+    model_discovery_cache_seconds: float = Field(default=300, gt=0)
+    model_discovery_error_cache_seconds: float = Field(default=30, gt=0)
+    model_discovery_timeout: float = Field(default=15, gt=0)
+    model_discovery_max_pages: int = Field(default=100, ge=1)
     tavily_api_key: str | None = None
     tavily_search_url: str = "https://api.tavily.com/search"
     tool_max_rounds: int = Field(default=8, ge=1, le=50)

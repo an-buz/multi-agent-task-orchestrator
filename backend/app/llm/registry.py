@@ -12,8 +12,8 @@ class ModelInfo:
     provider: Literal["anthropic", "openai", "gemini"]
     model_id: str
     tier: Literal["fast", "balanced", "powerful"]
-    context_window: int
-    max_output_tokens: int
+    context_window: int | None
+    max_output_tokens: int | None
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,11 @@ def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]
     """Build public model keys mapped to current provider API model IDs."""
 
     active = settings or get_settings()
+
+    if active.llm_provider_mode == "real":
+        from app.llm.discovery import cached_models
+
+        return cached_models(active)
 
     # Only reviewed model IDs may reuse these limits and sampling parameters.
     profiles: dict[str, tuple[str, int, int]] = {
@@ -53,17 +58,13 @@ def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]
         return ModelInfo(key, provider, model_id, tier, profile[1], profile[2])
 
     return {
-        "claude-haiku": reviewed("claude-haiku", "anthropic", active.anthropic_model_haiku, "fast"),
-        "claude-sonnet": reviewed(
-            "claude-sonnet", "anthropic", active.anthropic_model_sonnet, "balanced"
-        ),
-        "claude-opus": reviewed(
-            "claude-opus", "anthropic", active.anthropic_model_opus, "powerful"
-        ),
-        "gpt-4o": reviewed("gpt-4o", "openai", active.openai_model_default, "balanced"),
-        "gemini-flash": reviewed("gemini-flash", "gemini", active.gemini_model_flash, "balanced"),
+        "claude-haiku": reviewed("claude-haiku", "anthropic", "claude-haiku-4-5-20251001", "fast"),
+        "claude-sonnet": reviewed("claude-sonnet", "anthropic", "claude-sonnet-4-6", "balanced"),
+        "claude-opus": reviewed("claude-opus", "anthropic", "claude-opus-4-6", "powerful"),
+        "gpt-4o": reviewed("gpt-4o", "openai", "gpt-4o", "balanced"),
+        "gemini-flash": reviewed("gemini-flash", "gemini", "gemini-3.8-flash", "balanced"),
         "gemini-flash-lite": reviewed(
-            "gemini-flash-lite", "gemini", active.gemini_model_flash_lite, "fast"
+            "gemini-flash-lite", "gemini", "gemini-3.5-flash-lite", "fast"
         ),
     }
 

@@ -4,6 +4,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.db.model_repository import ModelRepository
 from app.db.settings_repository import SettingsRepository
+from app.llm.discovery import refresh_model_registry
 from app.llm.registry import get_model_registry
 from app.schemas.settings import AgentDefaults, AppConfigRead, AppConfigUpdate
 from app.services.models import ModelService, ModelUnavailable
@@ -22,8 +23,10 @@ class SettingsService:
     def validate(self, defaults: AgentDefaults) -> None:
         model = get_model_registry(self.settings).get(defaults.default_model)
 
-        if model is None or defaults.max_tokens > min(
-            model.context_window, model.max_output_tokens
+        if model is None or any(
+            defaults.max_tokens > limit
+            for limit in (model.context_window, model.max_output_tokens)
+            if limit is not None
         ):
             raise SettingsError("Choose a registered model and a supported token limit.")
 
@@ -54,8 +57,6 @@ class SettingsService:
             )
         )
 
-        self.validate(defaults)
-
         return self.public(defaults, defaults.planner_model or self.settings.planner_model)
 
     async def resolve_planner_model(self) -> str:
@@ -68,6 +69,8 @@ class SettingsService:
         return model if isinstance(model, str) else self.settings.planner_model
 
     async def update(self, defaults: AppConfigUpdate) -> AppConfigRead:
+        await refresh_model_registry(self.settings)
+
         self.validate(defaults)
 
         available = await ModelService(
@@ -83,7 +86,10 @@ class SettingsService:
 
             info = get_model_registry(self.settings)[defaults.planner_model]
 
-            if self.settings.planner_max_tokens > info.max_output_tokens:
+            if (
+                info.max_output_tokens is not None
+                and self.settings.planner_max_tokens > info.max_output_tokens
+            ):
                 raise SettingsError("The planner token limit exceeds this model's output limit.")
 
         # Legacy clients omit planner_model; the atomic JSON merge preserves its value.

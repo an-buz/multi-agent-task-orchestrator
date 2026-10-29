@@ -20,6 +20,7 @@ from app.db.file_repository import FileRepository
 from app.db.model_repository import ModelRepository
 from app.db.run_repository import RunRepository
 from app.llm.context import ContextTooLarge, check_context
+from app.llm.discovery import refresh_model_registry
 from app.llm.provider import IncompleteLLMResponse, LLMProvider, LLMResponse, StreamingLLMProvider
 from app.llm.providers import create_provider
 from app.llm.retry import llm_retrying
@@ -164,6 +165,8 @@ class DAGExecutor:
                     response = LLMResponse.model_validate(turns[round_number]["response"])
                 else:
                     if provider is None:
+                        await refresh_model_registry()
+
                         provider = self.provider_factory(str(config["model"]))
 
                     async for attempt in llm_retrying():
