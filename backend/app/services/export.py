@@ -2,19 +2,16 @@
 
 import asyncio
 from hashlib import sha256
-from io import BytesIO
 from pathlib import Path
 from threading import Lock
 from typing import Literal
-from xml.sax.saxutils import escape
 
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFError, TTFont
-from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate, Spacer
 
 from app.core.config import get_settings
 from app.schemas.run import RunRead
+from app.services.report_pdf import build_pdf
 from app.services.runs import RunError
 
 ExportFormat = Literal["json", "md", "pdf"]
@@ -30,28 +27,42 @@ def render_pdf(report: str, font_path: Path) -> bytes:
         with _font_lock:
             if font_name not in pdfmetrics.getRegisteredFontNames():
                 pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
+                variants = {}
+
+                for style, suffix, windows_suffix in (
+                    ("bold", "-Bold", "bd"),
+                    ("italic", "-Oblique", "i"),
+                    ("boldItalic", "-BoldOblique", "bi"),
+                ):
+                    candidates = [
+                        font_path.with_stem(font_path.stem + suffix),
+                        font_path.with_stem(font_path.stem + windows_suffix),
+                    ]
+                    variants[style] = font_name
+
+                    for candidate in candidates:
+                        if not candidate.is_file():
+                            continue
+
+                        variant_name = f"{font_name}-{style}"
+
+                        try:
+                            pdfmetrics.registerFont(TTFont(variant_name, str(candidate)))
+                        except OSError, ValueError, TTFError:
+                            continue
+
+                        variants[style] = variant_name
+                        break
+
+                pdfmetrics.registerFontFamily(
+                    font_name,
+                    normal=font_name,
+                    **variants,
+                )
     except (OSError, ValueError, TTFError) as error:
         raise RunError("PDF font is unavailable. Configure EXPORT_PDF_FONT_PATH.", 503) from error
 
-    body = ParagraphStyle("Body", fontName=font_name, fontSize=10, leading=15)
-    heading = ParagraphStyle("Heading", parent=body, fontSize=14, leading=20, spaceAfter=8)
-
-    story: list[Flowable] = []
-
-    for line in report.splitlines():
-        if not line.strip():
-            story.append(Spacer(1, 8))
-        else:
-            is_heading = line.startswith("#")
-            text = line.lstrip("# ") if is_heading else line
-
-            story.append(Paragraph(escape(text), heading if is_heading else body))
-
-    output = BytesIO()
-
-    SimpleDocTemplate(output, title="Workflow run report").build(story)
-
-    return output.getvalue()
+    return build_pdf(report, font_name)
 
 
 async def export_result(run: RunRead, format: ExportFormat) -> tuple[bytes, str]:

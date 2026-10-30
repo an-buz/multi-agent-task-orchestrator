@@ -27,10 +27,10 @@ from app.llm.retry import llm_retrying
 from app.models.run import Run
 from app.models.run_decision import RunDecision
 from app.models.run_step import RunStep
+from app.orchestrator.report import build_report
 from app.orchestrator.snapshots import snapshot_agent
 from app.schemas.decision import DecisionRead, DecisionRequest, decision_tool
 from app.schemas.event import EventName
-from app.schemas.run import RunPlan
 from app.services.models import ModelService
 from app.tools.runtime import ToolRuntime
 
@@ -743,13 +743,7 @@ class DAGExecutor:
             )
 
             if run.status == "COMPLETED":
-                # Follow-up numbers are allocated last, but the plan places them before dependants.
-                plan = RunPlan.model_validate(run.plan)
-                run.final_report = "\n\n".join(
-                    f"## Step {planned.step_number}: {by_number[planned.step_number].agent_name}"
-                    f"\n\n{by_number[planned.step_number].output or ''}"
-                    for planned in plan.steps
-                )
+                run.final_report = build_report(run, by_number)
 
             run.finished_at = datetime.now(UTC)
 

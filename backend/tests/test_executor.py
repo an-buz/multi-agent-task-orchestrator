@@ -139,6 +139,11 @@ async def test_execution_order_inputs_and_metrics(dependencies: list[list[int]],
             ) < provider.calls.index(step.input)
 
     assert run.final_report and "Fixture result" in run.final_report
+    assert run.final_report.startswith("# Workflow run report\n")
+    assert "## Original task\n\nAnalyze" in run.final_report
+    assert f"Total tokens (including planning): {run.total_tokens:,}" in run.final_report
+    assert "### Assigned task\n\nTask 1" in run.final_report
+    assert "### Agent output\n\nFixture result" in run.final_report
 
     await DAGExecutor(repository, lambda _: provider).execute(run)
 

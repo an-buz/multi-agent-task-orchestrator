@@ -3,14 +3,16 @@
 import json
 from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 from app.api.v1.runs import get_run_service
+from app.core.config import get_settings
 from app.main import app
 from app.schemas.run import RunRead
-from app.services.export import export_result
+from app.services.export import export_result, render_pdf
 from app.services.runs import RunError, RunService
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
@@ -88,3 +90,49 @@ def test_export_http_returns_attachment_and_rejects_unknown_format() -> None:
             assert client.get(f"/api/v1/runs/{run.id}/export?format=exe").status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+def test_pdf_markdown_blocks_and_untrusted_markup() -> None:
+    report = (
+        "# Completed task\n\n## Results\n\n"
+        "**Verified** and *reviewed* with `inline code`.\n\n"
+        "- First item\n1. Ordered item\n\n"
+        "| Check | Result |\n| --- | --- |\n| Unicode | Перевірено |\n\n"
+        "```python\n# This is code, not a heading\n    print('<safe> & value')\n```\n\n"
+        '[Source](https://example.com)\n<img src="https://invalid.example/private"/>\n'
+    )
+    pdf = PdfReader(BytesIO(render_pdf(report, get_settings().export_pdf_font_path)))
+    text = "\n".join(page.extract_text() for page in pdf.pages)
+
+    assert "Verified and reviewed with inline code." in text
+    assert "**Verified**" not in text
+    assert "Перевірено" in text
+    assert "| --- |" not in text
+    assert "# This is code, not a heading" in text
+    assert "print('<safe> & value')" in text
+    assert "Source (https://example.com)" in text
+    assert '<img src="https://invalid.example/private"/>' in text
+    assert "Page 1" in text
+    assert not pdf.pages[0].get("/Annots")
+
+
+def test_pdf_long_table_cells_code_and_unbroken_words_paginate() -> None:
+    report = (
+        "# Large report\n\n| Item | Detail |\n| --- | --- |\n"
+        "| Long cell | " + "Cell content. " * 800 + " |\n\n"
+        "```\n" + "    code line\n" * 130 + "```\n\n" + "x" * 1500 + "\nEnd of report"
+    )
+    pdf = PdfReader(BytesIO(render_pdf(report, get_settings().export_pdf_font_path)))
+    text = "\n".join(page.extract_text() for page in pdf.pages)
+
+    assert len(pdf.pages) > 3
+    assert "End of report" in text
+    assert text.count("code line") == 130
+
+    for number, page in enumerate(pdf.pages, 1):
+        assert f"Page {number}" in page.extract_text()
+
+
+def test_pdf_missing_font_returns_actionable_error(tmp_path: Path) -> None:
+    with pytest.raises(RunError, match="EXPORT_PDF_FONT_PATH"):
+        render_pdf("# Report", tmp_path / "missing.ttf")
