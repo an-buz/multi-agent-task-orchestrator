@@ -208,6 +208,75 @@ async function setup(page: Page, theme: string, options: { empty?: boolean; fail
 }
 
 for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 390]) {
+    test(`provider model lists scroll independently (${theme}, ${width}px)`, async ({ page }) => {
+      await setup(page, theme);
+      await page.setViewportSize({ width, height: 900 });
+
+      const providers = ["Anthropic", "OpenAI", "Gemini"];
+      const items = providers.flatMap((provider) =>
+        Array.from({ length: 30 }, (_, index) => ({
+          key: `${provider.toLowerCase()}-${index}`,
+          model_id: `${provider.toLowerCase()}-${index}`,
+          provider: provider.toLowerCase(),
+          tier: "balanced",
+          context_window: null,
+          max_output_tokens: null,
+          enabled: true,
+        })),
+      );
+
+      await page.route("**/api/v1/settings/models", (route) =>
+        route.fulfill({
+          headers: { "access-control-allow-origin": "http://localhost:3000" },
+          json: { items },
+        }),
+      );
+      await page.goto("/models");
+
+      for (const provider of providers) {
+        const region = page.getByRole("region", { name: `${provider} models`, exact: true });
+
+        await expect(region.getByRole("switch")).toHaveCount(30);
+        await expect(region).toBeVisible();
+
+        const dimensions = await region.evaluate((element) => ({
+          height: element.clientHeight,
+          content: element.scrollHeight,
+        }));
+
+        expect(dimensions.height).toBeLessThanOrEqual(384);
+        expect(dimensions.content).toBeGreaterThan(dimensions.height);
+
+        await region.focus();
+        await page.keyboard.press("End");
+        await expect
+          .poll(() =>
+            region.evaluate(
+              (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+            ),
+          )
+          .toBeLessThanOrEqual(1);
+
+        const lastSwitch = region.getByRole("switch").last();
+
+        await lastSwitch.focus();
+        await expect(lastSwitch).toBeInViewport();
+        await expect(lastSwitch).toBeEnabled();
+
+        for (const other of providers.filter((name) => name !== provider)) {
+          await expect(
+            page.getByRole("region", { name: `${other} models`, exact: true }),
+          ).toHaveJSProperty("scrollTop", 0);
+        }
+
+        await region.evaluate((element) => {
+          element.scrollTop = 0;
+        });
+      }
+    });
+  }
+
   test(`model switches persist and agent repair excludes disabled choices (${theme})`, async ({
     page,
   }) => {
@@ -225,8 +294,16 @@ for (const theme of ["light", "dark"]) {
     await toggle.focus();
     await page.keyboard.press("Space");
     await expect(toggle).not.toBeChecked();
+
+    const anthropicSwitches = page
+      .getByRole("region", { name: "Anthropic models" })
+      .getByRole("switch");
+
+    await expect(anthropicSwitches.first()).toHaveAccessibleName("claude-haiku-test");
+    await expect(anthropicSwitches.last()).toHaveAccessibleName("claude-sonnet-test");
     await page.reload();
     await expect(page.getByRole("switch", { name: "claude-sonnet-test" })).not.toBeChecked();
+    await expect(anthropicSwitches.first()).toHaveAccessibleName("claude-haiku-test");
     await page.getByRole("link", { name: "Agents", exact: true }).click();
     await expect(page.getByText("UNAVAILABLE", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Edit Model reviewer", exact: true }).click();
@@ -266,6 +343,11 @@ for (const theme of ["light", "dark"]) {
     expect(requests.settings).toMatchObject([
       { default_model: "gemini-flash-lite", planner_model: "gemini-flash-lite" },
     ]);
+
+    await page.goto("/models");
+    await page.getByRole("switch", { name: "claude-sonnet-test" }).click();
+    await expect(page.getByRole("switch", { name: "claude-sonnet-test" })).toBeChecked();
+    await expect(anthropicSwitches.first()).toHaveAccessibleName("claude-sonnet-test");
   });
 
   test(`paused run explains reconfiguration and supports cancellation (${theme})`, async ({

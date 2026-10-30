@@ -247,39 +247,47 @@ a {
   display: none;
 }
 
-.dashboard-inspector-scroll {
+.dashboard-inspector-scroll,
+.model-catalogue-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--status-pending) transparent;
 }
 
 @supports selector(::-webkit-scrollbar) {
-  .dashboard-inspector-scroll {
+  .dashboard-inspector-scroll,
+  .model-catalogue-scroll {
     scrollbar-width: auto;
     scrollbar-color: auto;
   }
 }
 
-.dashboard-inspector-scroll::-webkit-scrollbar-button {
+.dashboard-inspector-scroll::-webkit-scrollbar-button,
+.model-catalogue-scroll::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
 }
 
-.dashboard-inspector-scroll::-webkit-scrollbar {
+.dashboard-inspector-scroll::-webkit-scrollbar,
+.model-catalogue-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 .dashboard-inspector-scroll::-webkit-scrollbar-track,
-.dashboard-inspector-scroll::-webkit-scrollbar-corner {
+.dashboard-inspector-scroll::-webkit-scrollbar-corner,
+.model-catalogue-scroll::-webkit-scrollbar-track,
+.model-catalogue-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-.dashboard-inspector-scroll::-webkit-scrollbar-thumb {
+.dashboard-inspector-scroll::-webkit-scrollbar-thumb,
+.model-catalogue-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--status-pending);
 }
 
-.dashboard-inspector-scroll::-webkit-scrollbar-thumb:hover {
+.dashboard-inspector-scroll::-webkit-scrollbar-thumb:hover,
+.model-catalogue-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }

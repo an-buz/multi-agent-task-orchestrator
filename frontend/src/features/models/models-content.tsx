@@ -112,7 +112,9 @@ export default function ModelsContent() {
               </Empty>
             )}
           {providers.map((provider) => {
-            const items = models.filter((model) => model.provider === provider.key);
+            const items = models
+              .filter((model) => model.provider === provider.key)
+              .sort((first, second) => Number(second.enabled) - Number(first.enabled));
 
             if (!items.length) return null;
 
@@ -129,7 +131,12 @@ export default function ModelsContent() {
                     </Badge>
                   </CardAction>
                 </CardHeader>
-                <CardContent>
+                <CardContent
+                  className="model-catalogue-scroll max-h-96 overflow-y-auto"
+                  role="region"
+                  aria-label={`${provider.name} models`}
+                  tabIndex={0}
+                >
                   <FieldGroup>
                     {items.map((model) => (
                       <Field
