@@ -15,7 +15,7 @@ export function Sidebar() {
   const agents = (agentsQuery.data?.items ?? []).filter((agent) => agent.available !== false);
 
   return (
-    <aside className="flex flex-col border-b border-border bg-card p-5 lg:min-h-screen lg:border-b-0 lg:border-r">
+    <aside className="flex flex-col border-b border-border bg-card p-5 lg:sticky lg:top-0 lg:h-dvh lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:border-b-0 lg:border-r lg:[&>*]:shrink-0">
       <Link className="mb-7 flex items-center gap-3" href="/">
         <span className="grid size-8 place-items-center rounded-md border bg-status-completed/15 text-status-completed">
           <AppIcon className="size-6" />
