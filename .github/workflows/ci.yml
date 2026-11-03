@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LLM_PROVIDER_MODE: mock
+      CODE_EXECUTOR_BACKEND: disabled
+      MOCK_STREAM_DELAY: "0"
+      NEXT_TELEMETRY_DISABLED: "1"
+      UV_LOCKED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm from packageManager
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Set up uv and Python 3.14
+        uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install backend dependencies
+        run: uv sync --locked --project backend
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Prepare integration test prerequisites
+        run: |
+          docker info
+          sudo apt-get update
+          sudo apt-get install --yes fonts-dejavu-core
+          cd backend
+          uv run python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
+
+      - name: Lint and typecheck
+        run: make lint
+
+      - name: Run unit and integration tests
+        run: make test
+
+      - name: Build backend and frontend
+        run: make build
