@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown } from "@/components/safe-markdown";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/app-shell";
@@ -193,7 +192,7 @@ export default function RunDetailContent({ id }: { id: string }) {
               {run.final_report && (
                 <section className="prose dark:prose-invert max-w-none rounded-xl border border-border bg-card p-5">
                   <h2>Final report</h2>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.final_report}</ReactMarkdown>
+                  <SafeMarkdown>{run.final_report}</SafeMarkdown>
                 </section>
               )}
               <section className="rounded-xl border border-border bg-background p-5">

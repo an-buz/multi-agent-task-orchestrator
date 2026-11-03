@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown } from "@/components/safe-markdown";
 import {
   Activity,
   ArrowDownToLine,
@@ -422,7 +421,7 @@ export function RunInspector({ run, step }: { run?: RunDetails; step?: RunStep }
         </div>
         {run?.final_report ? (
           <div className="dashboard-inspector-scroll prose mt-2 h-15 max-w-none overflow-auto text-xs prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-code:text-foreground">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.final_report}</ReactMarkdown>
+            <SafeMarkdown>{run.final_report}</SafeMarkdown>
           </div>
         ) : (
           <p className="mt-2 text-xs leading-5 text-muted-foreground">

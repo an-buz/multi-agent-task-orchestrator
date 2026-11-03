@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import ReactMarkdown from "react-markdown";
+import { SafeMarkdown } from "@/components/safe-markdown";
 import {
   Bot,
   ChevronDown,
@@ -16,7 +16,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import remarkGfm from "remark-gfm";
 import { useForm, useWatch } from "react-hook-form";
 
 import { agentSchemaForModels, modelTokenLimits, type AgentFormValues } from "./form-schema";
@@ -281,7 +280,7 @@ export function CreateAgentDialog({
                   className="prose dark:prose-invert min-h-36 max-w-none overflow-auto p-3 text-sm prose-headings:text-foreground prose-p:text-foreground prose-a:text-status-completed prose-code:text-status-completed prose-pre:bg-background prose-li:text-foreground prose-strong:text-foreground prose-th:text-foreground prose-td:text-foreground"
                 >
                   {systemPrompt.trim() ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{systemPrompt}</ReactMarkdown>
+                    <SafeMarkdown>{systemPrompt}</SafeMarkdown>
                   ) : (
                     <p className="m-0 text-muted-foreground">Markdown preview will appear here.</p>
                   )}
