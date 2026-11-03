@@ -44,7 +44,7 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Set up uv and Python 3.14
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.14"
           enable-cache: true
