@@ -13,8 +13,9 @@ from pathlib import Path
 import httpx
 import structlog
 from app.demo.launcher import stop_process
-from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
+from testcontainers.community.postgres import PostgresContainer
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.wait_strategies import ExecWaitStrategy
 
 SCRIPT = Path(__file__).resolve()
 ROOT = SCRIPT.parents[2]
@@ -81,7 +82,11 @@ async def run() -> int:
         raise RuntimeError("Install Node.js and run make frontend-install first")
 
     postgres = PostgresContainer("postgres:16-alpine")
-    redis = RedisContainer("redis:7-alpine")
+    redis = (
+        DockerContainer("redis:7-alpine")
+        .with_exposed_ports(6379)
+        .waiting_for(ExecWaitStrategy(["redis-cli", "ping"]))
+    )
     processes: list[asyncio.subprocess.Process] = []
     api_port, web_port = free_port(), free_port()
 

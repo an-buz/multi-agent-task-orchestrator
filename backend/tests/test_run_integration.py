@@ -32,8 +32,9 @@ from arq.connections import RedisSettings, create_pool
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
+from testcontainers.community.postgres import PostgresContainer
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.wait_strategies import ExecWaitStrategy
 
 from test_decisions import FindingMock
 
@@ -319,7 +320,9 @@ async def test_run_history_uses_two_queries_and_compact_pages(
 def infrastructure() -> Generator[tuple[str, str]]:
     with (
         PostgresContainer("postgres:16-alpine") as postgres,
-        RedisContainer("redis:7-alpine") as redis,
+        DockerContainer("redis:7-alpine")
+        .with_exposed_ports(6379)
+        .waiting_for(ExecWaitStrategy(["redis-cli", "ping"])) as redis,
     ):
         database_url = postgres.get_connection_url().replace(
             "postgresql+psycopg2", "postgresql+asyncpg"
