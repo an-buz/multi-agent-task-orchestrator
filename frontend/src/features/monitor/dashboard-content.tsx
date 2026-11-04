@@ -161,6 +161,14 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-5 text-xs text-foreground">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!monitor.latestRunId || monitor.latestRunId === monitor.runId}
+              onClick={monitor.followLatestRun}
+            >
+              Follow latest run
+            </Button>
             <span className="flex items-center gap-2">
               <i className="size-2 rounded-full bg-status-completed" />
               Completed: {monitoredSteps.filter((step) => step.status === "COMPLETED").length}
