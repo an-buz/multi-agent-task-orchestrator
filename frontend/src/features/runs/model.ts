@@ -1,5 +1,9 @@
 import type { RunDetails, RunEvent, RunStep } from "./types";
 
+export function isTerminalRun(run: { status: string } | undefined): boolean {
+  return Boolean(run && ["COMPLETED", "FAILED", "CANCELLED"].includes(run.status));
+}
+
 export function runSteps(run: RunDetails | undefined): RunStep[] {
   return run?.plan ? (Array.isArray(run.plan) ? run.plan : run.plan.steps) : [];
 }

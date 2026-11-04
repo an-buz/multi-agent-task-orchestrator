@@ -62,6 +62,8 @@ function mockBrowser(t) {
   const sources = [];
 
   class MockSource extends EventTarget {
+    static CLOSED = 2;
+    readyState = 0;
     closed = false;
 
     constructor(url) {
@@ -214,5 +216,46 @@ test("plan wait polls if SSE never delivers the ready event", async (t) => {
 
   await waiting;
 
+  assert.equal(source().closed, true);
+});
+
+test("CLOSED reconnect uses backoff, cursor and cancels pending timers", (t) => {
+  const source = mockBrowser(t);
+  const timers = [];
+  t.mock.method(globalThis, "setTimeout", (callback, delay) => {
+    const timer = { callback, delay };
+    timers.push(timer);
+    return timer;
+  });
+  t.mock.method(globalThis, "clearTimeout", (timer) => {
+    if (timer) timer.cancelled = true;
+  });
+  const close = subscribeToRun(
+    "run",
+    () => {},
+    () => {},
+    { after: 12 },
+  );
+  source().dispatchEvent(
+    new MessageEvent("plan:ready", {
+      data: JSON.stringify({ event: "plan:ready" }),
+      lastEventId: "13",
+    }),
+  );
+  source().onerror();
+  assert.equal(timers.length, 0);
+  for (const delay of [1000, 2000, 5000, 10000, 10000]) {
+    source().readyState = 2;
+    source().onerror();
+    assert.equal(timers.at(-1).delay, delay);
+    timers.at(-1).callback();
+    assert.ok(source().url.endsWith("?after=13"));
+  }
+  source().onopen();
+  source().readyState = 2;
+  source().onerror();
+  assert.equal(timers.at(-1).delay, 1000);
+  close();
+  assert.equal(timers.at(-1).cancelled, true);
   assert.equal(source().closed, true);
 });

@@ -22,7 +22,6 @@ export function useModelSettings() {
   return useQuery({
     queryKey: modelsQueryKey,
     queryFn: ({ signal }) => apiRequest<ModelCatalogue>("/settings/models", { signal }),
-    refetchInterval: 5000,
   });
 }
 

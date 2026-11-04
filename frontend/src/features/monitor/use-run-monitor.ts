@@ -1,6 +1,6 @@
 "use client";
 
-import { useRun, useRuns } from "@/features/runs/queries";
+import { useRuns } from "@/features/runs/queries";
 import { useRunEvents } from "@/features/runs/use-run-events";
 
 export function useRunMonitor(selectedId: string | null) {
@@ -14,8 +14,8 @@ export function useRunMonitor(selectedId: string | null) {
     )?.id ??
     items[0]?.id;
 
-  const detail = useRun(runId);
   const events = useRunEvents(runId);
+  const detail = events.query;
 
   return { runs, detail, run: detail.data, runId, ...events };
 }

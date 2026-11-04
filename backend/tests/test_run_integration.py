@@ -955,6 +955,9 @@ async def test_confirm_queue_execution_and_redelivery(
 
                 assert [int(event["id"]) for event in replayed] == [e.id for e in events[1:]]
                 assert all(json.loads(e["data"])["runId"] == run_id for e in replayed)
+
+                with pytest.raises(StopAsyncIteration):
+                    await asyncio.wait_for(anext(stream), 1)
             finally:
                 await stream.aclose()
 

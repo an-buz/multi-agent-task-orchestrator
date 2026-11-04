@@ -153,10 +153,14 @@ export function subscribeToRun(
   id: string,
   onEvent: (event: RunEvent) => void,
   onError: () => void,
-  options?: { after?: number },
+  options?: { after?: number; onOpen?: () => void },
 ) {
-  const replay = options?.after !== undefined ? `?after=${options.after}` : "";
-  const source = new EventSource(apiUrl(`/runs/${id}/events${replay}`));
+  let cursor = options?.after;
+  let stopped = false;
+  let attempts = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let detach = () => {};
+  const delays = [1000, 2000, 5000, 10000];
 
   const eventNames = [
     "run:snapshot",
@@ -178,35 +182,75 @@ export function subscribeToRun(
     "task:cancelled",
   ];
 
-  const listeners = eventNames.map((name) => {
-    const listener: EventListener = (message) => {
-      const incoming = message as MessageEvent<string>;
+  function connect() {
+    if (stopped) return;
 
-      let parsed: unknown;
+    const replay = cursor !== undefined ? `?after=${cursor}` : "";
+    const source = new EventSource(apiUrl(`/runs/${id}/events${replay}`));
+    const listeners = eventNames.map((name) => {
+      const listener: EventListener = (message) => {
+        const incoming = message as MessageEvent<string>;
 
-      try {
-        parsed = JSON.parse(incoming.data);
-      } catch {
-        return;
-      }
+        let parsed: unknown;
 
-      if (!parsed || typeof parsed !== "object" || !("event" in parsed) || parsed.event !== name)
-        return;
+        try {
+          parsed = JSON.parse(incoming.data);
+        } catch {
+          return;
+        }
 
-      const event = parsed as RunEvent;
+        if (!parsed || typeof parsed !== "object" || !("event" in parsed) || parsed.event !== name)
+          return;
 
-      onEvent({ ...event, id: incoming.lastEventId || undefined });
+        const event = parsed as RunEvent;
+
+        if (incoming.lastEventId && /^\d+$/.test(incoming.lastEventId)) {
+          cursor = Math.max(cursor ?? 0, Number(incoming.lastEventId));
+        }
+
+        onEvent({ ...event, id: incoming.lastEventId || undefined });
+      };
+
+      source.addEventListener(name, listener);
+
+      return [name, listener] as const;
+    });
+
+    source.onopen = () => {
+      attempts = 0;
+      options?.onOpen?.();
     };
 
-    source.addEventListener(name, listener);
+    source.onerror = () => {
+      if (stopped) return;
 
-    return [name, listener] as const;
-  });
+      onError();
 
-  source.onerror = onError;
+      if (source.readyState === EventSource.CLOSED && timer === undefined) {
+        detach();
+        timer = setTimeout(
+          () => {
+            timer = undefined;
+            connect();
+          },
+          delays[Math.min(attempts++, delays.length - 1)],
+        );
+      }
+    };
+
+    detach = () => {
+      source.onopen = null;
+      source.onerror = null;
+      listeners.forEach(([name, listener]) => source.removeEventListener(name, listener));
+      source.close();
+    };
+  }
+
+  connect();
 
   return () => {
-    listeners.forEach(([name, listener]) => source.removeEventListener(name, listener));
-    source.close();
+    stopped = true;
+    clearTimeout(timer);
+    detach();
   };
 }

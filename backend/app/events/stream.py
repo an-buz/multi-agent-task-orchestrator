@@ -51,6 +51,8 @@ async def stream_run(
 
     yield initial
 
+    terminal = snapshot.status in {"COMPLETED", "FAILED", "CANCELLED"}
+
     while True:
         async with sessions() as session:
             repository = RunRepository(session)
@@ -74,5 +76,15 @@ async def stream_run(
                 ).model_dump_json(),
             }
 
+            if event.id > watermark and event.event in {
+                "task:finished",
+                "task:failed",
+                "task:cancelled",
+            }:
+                return
+
         if len(events) < 100:
+            if terminal:
+                return
+
             await asyncio.sleep(get_settings().run_poll_interval)

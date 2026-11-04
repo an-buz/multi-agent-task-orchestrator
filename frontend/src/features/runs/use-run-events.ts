@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "@/lib/api";
 
 import { subscribeToRun } from "./api";
-import { appendRunEvent, applyStreamChunk, type RunEventLog } from "./model";
-import { runEventsQueryKey, runQueryKey, runsQueryKey } from "./queries";
+import { appendRunEvent, applyStreamChunk, isTerminalRun, type RunEventLog } from "./model";
+import { runEventsQueryKey, runQueryKey, runsQueryKey, useRun } from "./queries";
 
 import type { RunDetails } from "./types";
 
@@ -21,8 +22,14 @@ export function useRunEvents(runId: string | undefined) {
 
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
+  const [connectedRun, setConnectedRun] = useState<string | null>(null);
+  const query = useRun(runId, connectedRun !== runId || connectionError === runId);
+  const isTerminal = isTerminalRun(query.data);
+  const missing = query.error instanceof ApiError && query.error.status === 404;
+  const enabled = Boolean(query.data) && !isTerminal && !missing;
+
   useEffect(() => {
-    if (!runId) return;
+    if (!runId || !enabled) return;
 
     const key = runQueryKey(runId);
     const after = client.getQueryData<RunEventLog>(runEventsQueryKey(runId))?.after ?? 0;
@@ -73,19 +80,28 @@ export function useRunEvents(runId: string | undefined) {
       () => {
         if (active) setConnectionError(runId);
       },
-      { after },
+      {
+        after,
+        onOpen: () => {
+          if (active) {
+            setConnectedRun(runId);
+            setConnectionError(null);
+          }
+        },
+      },
     );
 
     return () => {
       active = false;
       close();
     };
-  }, [runId, client]);
+  }, [runId, client, isTerminal, enabled]);
 
   return {
+    query,
     events: log.data.events,
     activityEvents: log.data.activityEvents,
     activationOrder: log.data.activationOrder ?? [],
-    connectionError: Boolean(runId) && connectionError === runId,
+    connectionError: enabled && Boolean(runId) && connectionError === runId,
   };
 }

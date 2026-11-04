@@ -15,7 +15,6 @@ export function useAgents() {
     queryKey: agentsQueryKey,
     queryFn: ({ signal }) => loadCatalogue<Agent>("/agents", signal),
     staleTime: 30_000,
-    refetchInterval: 5000,
   });
 }
 
@@ -24,7 +23,6 @@ export function useAgentModels() {
     queryKey: agentModelsQueryKey,
     queryFn: ({ signal }) => apiRequest<{ items: AgentModel[] }>("/agents/models", { signal }),
     staleTime: 5 * 60_000,
-    refetchInterval: 5000,
   });
 }
 

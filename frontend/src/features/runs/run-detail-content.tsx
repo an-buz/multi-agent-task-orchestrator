@@ -13,7 +13,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { contextFileDownloadUrl } from "@/features/files/queries";
 import { cancelRun, exportRun, retryRunStep } from "@/features/runs/api";
 
-import { useRun, runsQueryKey } from "./queries";
+import { runsQueryKey } from "./queries";
 import { useRunEvents } from "./use-run-events";
 import { canRetryStep, runSteps as getRunSteps } from "./model";
 import { StatusBadge } from "@/components/status-badge";
@@ -22,8 +22,7 @@ import { PlanPreview } from "./plan-preview";
 
 export default function RunDetailContent({ id }: { id: string }) {
   const client = useQueryClient();
-  const query = useRun(id);
-  const { activityEvents: events, connectionError: streamError } = useRunEvents(id);
+  const { query, activityEvents: events, connectionError: streamError } = useRunEvents(id);
 
   const [actionError, setActionError] = useState("");
   const [pending, setPending] = useState(false);
