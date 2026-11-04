@@ -2,7 +2,8 @@
 
 Next.js App Router application for the Multi-Agent Task Orchestrator.
 
-The application targets Next.js 16 and requires Node.js 20.9 or later. The
+The application targets Next.js 16 and requires Node.js 22.15 or later and pnpm 11.
+Use `nvm use` in this directory to select the version in `.nvmrc`. The
 development server and production build use Turbopack, which is the Next.js 16
 default.
 

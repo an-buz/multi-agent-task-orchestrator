@@ -59,16 +59,11 @@ jobs:
       - name: Prepare integration test prerequisites
         run: |
           docker info
-          sudo apt-get update
-          sudo apt-get install --yes fonts-dejavu-core
           cd backend
           uv run python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
 
-      - name: Lint and typecheck
-        run: make lint
-
-      - name: Run unit and integration tests
-        run: make test
+      - name: Lint, format, typecheck and test
+        run: make check
 
       - name: Build backend and frontend
         run: make build

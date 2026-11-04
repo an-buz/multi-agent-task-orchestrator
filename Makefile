@@ -1,10 +1,10 @@
-.PHONY: up backend-dev worker frontend-dev migrate migration lint test build test-e2e test-e2e-live demo demo-prepare demo-stop
+.PHONY: up backend-dev worker frontend-dev frontend-install migrate migration lint format-check check test build test-e2e test-e2e-live demo demo-prepare demo-stop
 
 BACKEND_HOST ?= 0.0.0.0
 BACKEND_PORT ?= 8000
 
 up:
-	docker compose up -d postgres redis
+	docker compose up -d --wait postgres redis
 
 backend-dev:
 	cd backend && uv run uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
@@ -28,6 +28,14 @@ lint:
 test:
 	cd backend && uv run pytest
 	cd frontend && pnpm test
+
+format-check:
+	cd frontend && pnpm format:check
+
+check:
+	$(MAKE) lint
+	$(MAKE) format-check
+	$(MAKE) test
 
 build:
 	cd backend && uv build

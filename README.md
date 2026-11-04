@@ -4,7 +4,7 @@ A web app for building teams of AI agents, connecting them in visual workflows, 
 
 ## Run locally
 
-Requires Python 3.14, uv, Node.js with pnpm 11, Make, and Docker Compose with Docker running. Run commands from the repository root.
+Requires Python 3.14, uv, Node.js 22.15 or later with pnpm 11, Make, and Docker Compose v2 with `--wait` support and Docker running. Run commands from the repository root. `frontend/.nvmrc` pins the minimum supported Node.js version.
 
 1. Copy the environment templates (skip files that already exist):
 
@@ -22,6 +22,8 @@ Requires Python 3.14, uv, Node.js with pnpm 11, Make, and Docker Compose with Do
    ```
 
    Backend dependencies are installed automatically by uv.
+   `make up` waits for both PostgreSQL and Redis to pass their health checks
+   before returning, so migrations can run immediately afterward.
 
 3. Run each command in a separate terminal:
 

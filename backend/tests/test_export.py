@@ -9,13 +9,39 @@ from uuid import uuid4
 
 import pytest
 from app.api.v1.runs import get_run_service
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.main import app
 from app.schemas.run import RunRead
 from app.services.export import export_result, render_pdf
 from app.services.runs import RunError, RunService
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
+
+
+def test_default_pdf_font_is_bundled_and_independent_of_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("EXPORT_PDF_FONT_PATH", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    font_path = Settings(_env_file=None).export_pdf_font_path
+
+    assert font_path.is_absolute()
+    assert font_path.name == "DejaVuSans.ttf"
+    assert font_path.parent.name == "fonts"
+
+    pdf = PdfReader(BytesIO(render_pdf("Перевірка звіту", font_path)))
+
+    assert "Перевірка звіту" in pdf.pages[0].extract_text()
+
+
+def test_pdf_font_can_be_overridden_with_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_font = tmp_path / "custom.ttf"
+    monkeypatch.setenv("EXPORT_PDF_FONT_PATH", str(custom_font))
+
+    assert Settings(_env_file=None).export_pdf_font_path == custom_font
 
 
 def completed_run() -> RunRead:

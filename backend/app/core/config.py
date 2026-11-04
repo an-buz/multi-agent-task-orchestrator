@@ -1,6 +1,5 @@
 """Environment-backed application settings."""
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
@@ -67,11 +66,7 @@ class Settings(BaseSettings):
     default_agent_temperature: float = Field(default=0.7, ge=0, le=1)
     default_agent_max_tokens: int = Field(default=4096, ge=1, le=8192)
     export_pdf_font_path: Path = Field(
-        default_factory=lambda: (
-            Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/arial.ttf"
-            if os.name == "nt"
-            else Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-        )
+        default=Path(__file__).resolve().parents[1] / "assets/fonts/DejaVuSans.ttf"
     )
     planner_max_tokens: int = Field(default=4096, ge=1)
     planner_temperature: float = Field(default=0.2, ge=0, le=1)
