@@ -267,6 +267,14 @@ for (const theme of ["light", "dark"]) {
     await expect(card.getByRole("button", { name: "Assign fixes", exact: true })).toBeDisabled();
     await expect(card.getByRole("button", { name: "Continue without fixes" })).toBeDisabled();
     await card.getByRole("button", { name: "Cancel run", exact: true }).click();
+    await expect(page.getByRole("alertdialog")).toContainText("A cancelled run cannot be resumed");
+    await page.getByRole("alertdialog").getByRole("button", { name: "Keep running" }).click();
+    await expect(page.getByRole("alertdialog")).toBeHidden();
+    await card.getByRole("button", { name: "Cancel run", exact: true }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Cancel run", exact: true })
+      .click();
     await expect(card).toHaveCount(0);
 
     expect(requests.at(-1)?.action).toBe("cancel");

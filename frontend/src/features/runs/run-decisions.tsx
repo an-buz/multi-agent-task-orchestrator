@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { CancelRunButton } from "@/components/action-confirmation-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -203,16 +204,12 @@ function PendingDecision({ run, decision }: { run: RunDetails; decision: RunDeci
           >
             Continue without fixes
           </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={busy}
-            onClick={() =>
-              mutation.mutate({ action: "cancel", comment: form.getValues("comment") })
+          <CancelRunButton
+            pending={busy}
+            onConfirm={() =>
+              mutation.mutateAsync({ action: "cancel", comment: form.getValues("comment") })
             }
-          >
-            Cancel run
-          </Button>
+          />
         </div>
       </form>
     </section>

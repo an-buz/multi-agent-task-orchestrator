@@ -5,7 +5,8 @@ import { SafeMarkdown } from "@/components/safe-markdown";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/app-shell";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { CancelRunButton } from "@/components/action-confirmation-dialog";
+import { buttonVariants } from "@/components/ui/button";
 
 import Link from "next/link";
 
@@ -77,13 +78,7 @@ export default function RunDetailContent({ id }: { id: string }) {
               {["PLANNING", "AWAITING_CONFIRMATION", "IN_PROGRESS", "PAUSED"].includes(
                 run.status,
               ) && (
-                <Button
-                  variant="secondary"
-                  disabled={pending}
-                  onClick={() => void perform(() => cancelRun(id))}
-                >
-                  Cancel run
-                </Button>
+                <CancelRunButton pending={pending} onConfirm={() => perform(() => cancelRun(id))} />
               )}
             </div>
           )}

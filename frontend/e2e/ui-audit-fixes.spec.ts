@@ -228,6 +228,10 @@ for (const theme of ["dark", "light"] as const) {
       await expect(editor).toBeVisible();
       await editor.getByRole("button", { name: "Reviewer claude-sonnet" }).click();
       await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("alertdialog", { name: "Discard workflow changes?" }),
+      ).toBeVisible();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Discard changes" }).click();
       await expect(editor).not.toBeVisible();
     });
 
@@ -325,6 +329,16 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByRole("button", { name: "Decompose and Run" }).click();
       await expect(page.getByRole("dialog", { name: "Plan preview" })).toBeVisible();
       await page.getByRole("button", { name: "Cancel run", exact: true }).click();
+      await expect(page.getByRole("alertdialog")).toContainText(
+        "A cancelled run cannot be resumed",
+      );
+      await page.getByRole("alertdialog").getByRole("button", { name: "Keep running" }).click();
+      await expect(page.getByRole("alertdialog")).toBeHidden();
+      await page.getByRole("button", { name: "Cancel run", exact: true }).click();
+      await page
+        .getByRole("alertdialog")
+        .getByRole("button", { name: "Cancel run", exact: true })
+        .click();
       await expect(page.getByRole("dialog", { name: "Plan preview" })).toHaveCount(0);
 
       expect(state.run.status).toBe("CANCELLED");
@@ -362,6 +376,16 @@ for (const theme of ["dark", "light"] as const) {
 
       await page.reload();
       await page.getByRole("button", { name: "Cancel run" }).click();
+      await expect(page.getByRole("alertdialog")).toContainText(
+        "A cancelled run cannot be resumed",
+      );
+      await page.getByRole("alertdialog").getByRole("button", { name: "Keep running" }).click();
+      await expect(page.getByRole("alertdialog")).toBeHidden();
+      await page.getByRole("button", { name: "Cancel run" }).click();
+      await page
+        .getByRole("alertdialog")
+        .getByRole("button", { name: "Cancel run", exact: true })
+        .click();
       await expect(page.getByText("CANCELLED", { exact: true })).toBeVisible();
     });
 

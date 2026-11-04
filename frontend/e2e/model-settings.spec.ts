@@ -359,6 +359,14 @@ for (const theme of ["light", "dark"]) {
     await expect(page.getByText("Waiting for agent reconfiguration")).toBeVisible();
     await expect(page.getByText("Preserved result", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Cancel run" }).click();
+    await expect(page.getByRole("alertdialog")).toContainText("A cancelled run cannot be resumed");
+    await page.getByRole("alertdialog").getByRole("button", { name: "Keep running" }).click();
+    await expect(page.getByRole("alertdialog")).toBeHidden();
+    await page.getByRole("button", { name: "Cancel run" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Cancel run", exact: true })
+      .click();
     await expect(page.getByText("CANCELLED", { exact: true })).toBeVisible();
   });
 }

@@ -89,3 +89,26 @@ export function graphErrors(nodes: AgentNode[], edges: Edge[]): string[] {
 
   return errors;
 }
+
+export function graphSnapshot(title: string, nodes: AgentNode[], edges: Edge[]): string {
+  return JSON.stringify({
+    title,
+    nodes: nodes
+      .map(({ id, position, data }) => ({
+        id,
+        position,
+        agentId: data.agentId,
+        step: data.step,
+        inputTransform: data.inputTransform,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    edges: edges
+      .map(({ source, target, sourceHandle, targetHandle }) => ({
+        source,
+        target,
+        sourceHandle: sourceHandle ?? null,
+        targetHandle: targetHandle ?? null,
+      }))
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+  });
+}

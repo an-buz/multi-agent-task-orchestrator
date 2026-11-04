@@ -7,6 +7,7 @@ import "@xyflow/react/dist/style.css";
 
 import { GitBranch, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 
+import { ActionConfirmationDialog } from "@/components/action-confirmation-dialog";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -26,7 +27,7 @@ import { useDeleteWorkflow, useSaveWorkflow, useWorkflows } from "@/features/wor
 import type { Workflow, WorkflowInput, WorkflowType } from "./types";
 
 import { useGraphEditor } from "./use-graph-editor";
-import { inferType, graphErrors, type AgentNode } from "./graph";
+import { inferType, graphErrors, graphSnapshot, type AgentNode } from "./graph";
 
 export default function WorkflowsContent() {
   const workflowsQuery = useWorkflows();
@@ -38,6 +39,9 @@ export default function WorkflowsContent() {
   const [deleting, setDeleting] = useState<Workflow | null>(null);
   const [editing, setEditing] = useState<Workflow | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [initialSnapshot, setInitialSnapshot] = useState("");
 
   const [title, setTitle] = useState("");
   const [preset, setPreset] = useState<WorkflowType>("hybrid");
@@ -106,21 +110,30 @@ export default function WorkflowsContent() {
 
     setNodes(nextNodes);
 
-    setEdges(
-      (workflow?.steps ?? []).flatMap((step) =>
-        step.depends_on.map((dep) => ({
-          id: `${dep}-${step.step_number}`,
-          source: String(dep),
-          target: String(step.step_number),
-          type: "smoothstep",
-          animated: false,
-        })),
-      ),
+    const nextEdges = (workflow?.steps ?? []).flatMap((step) =>
+      step.depends_on.map((dep) => ({
+        id: `${dep}-${step.step_number}`,
+        source: String(dep),
+        target: String(step.step_number),
+        type: "smoothstep",
+        animated: false,
+      })),
     );
+
+    setEdges(nextEdges);
+    setInitialSnapshot(graphSnapshot(workflow?.title ?? "", nextNodes, nextEdges));
+    setConfirmDiscard(false);
 
     setSelectedId(null);
     resetHistory();
     setNotice("");
+  }
+
+  function requestClose() {
+    if (saveMutation.isPending) return;
+
+    if (graphSnapshot(title, nodes, edges) !== initialSnapshot) setConfirmDiscard(true);
+    else setEditorOpen(false);
   }
 
   function addAgent(agentId: string) {
@@ -284,7 +297,7 @@ export default function WorkflowsContent() {
         open={editorOpen}
         disablePointerDismissal={saveMutation.isPending}
         onOpenChange={(open) => {
-          if (!saveMutation.isPending) setEditorOpen(open);
+          if (!open) requestClose();
         }}
       >
         <DialogContent
@@ -331,7 +344,7 @@ export default function WorkflowsContent() {
             </Button>
             <Button
               disabled={saveMutation.isPending}
-              onClick={() => setEditorOpen(false)}
+              onClick={requestClose}
               aria-label="Close editor"
               size="icon"
               variant="ghost"
@@ -551,7 +564,7 @@ export default function WorkflowsContent() {
             <Button
               variant="secondary"
               disabled={saveMutation.isPending}
-              onClick={() => setEditorOpen(false)}
+              onClick={requestClose}
               className="rounded-md border border-border px-4 py-2 text-sm text-foreground"
             >
               Cancel
@@ -570,6 +583,17 @@ export default function WorkflowsContent() {
             </Button>
           </footer>
         </DialogContent>
+        <ActionConfirmationDialog
+          open={confirmDiscard}
+          onOpenChange={setConfirmDiscard}
+          title="Discard workflow changes?"
+          description="Your unsaved workflow changes will be lost."
+          actionLabel="Discard changes"
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            setEditorOpen(false);
+          }}
+        />
       </Dialog>
     </AppShell>
   );

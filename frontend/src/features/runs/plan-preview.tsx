@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 
+import { CancelRunButton } from "@/components/action-confirmation-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -155,14 +156,7 @@ export function PlanPreview({ run }: { run: RunDetails }) {
               </p>
             )}
             <DialogFooter>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => mutation.mutate("cancel")}
-              >
-                Cancel run
-              </Button>
+              <CancelRunButton pending={busy} onConfirm={() => mutation.mutateAsync("cancel")} />
               <Button
                 type="submit"
                 disabled={

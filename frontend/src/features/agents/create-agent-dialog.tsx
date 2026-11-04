@@ -20,6 +20,7 @@ import { useForm, useWatch } from "react-hook-form";
 
 import { agentSchemaForModels, modelTokenLimits, type AgentFormValues } from "./form-schema";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ActionConfirmationDialog } from "@/components/action-confirmation-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
@@ -82,6 +83,8 @@ export function CreateAgentDialog({
 
   const config = useAppConfig(open && !agent);
 
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
   const [advanced, setAdvanced] = useState(false);
   const [promptView, setPromptView] = useState<"write" | "preview">("write");
 
@@ -95,6 +98,8 @@ export function CreateAgentDialog({
     resolver: zodResolver(agentSchemaForModels(models)),
     defaultValues,
   });
+
+  const { isDirty } = form.formState;
 
   useEffect(() => {
     if (agent) {
@@ -113,13 +118,15 @@ export function CreateAgentDialog({
 
   useEffect(() => {
     if (open && !agent && config.data) {
-      if (!form.getFieldState("model").isDirty) form.setValue("model", config.data.default_model);
-
-      if (!form.getFieldState("temperature").isDirty)
-        form.setValue("temperature", config.data.temperature);
-
-      if (!form.getFieldState("max_tokens").isDirty)
-        form.setValue("max_tokens", config.data.max_tokens);
+      form.reset(
+        {
+          ...defaultValues,
+          model: config.data.default_model,
+          temperature: config.data.temperature,
+          max_tokens: config.data.max_tokens,
+        },
+        { keepDirtyValues: true },
+      );
     }
   }, [open, agent, config.data, form]);
 
@@ -132,9 +139,17 @@ export function CreateAgentDialog({
   const tools = catalog.data?.tools ?? [];
   const selectedModelInfo = models.find((model) => model.key === selectedModel);
 
+  function requestClose() {
+    if (mutation.isPending) return;
+
+    if (isDirty) setConfirmDiscard(true);
+    else close();
+  }
+
   function close() {
     if (mutation.isPending) return;
 
+    setConfirmDiscard(false);
     setOpen(false);
     form.reset(defaultValues);
     setPromptView("write");
@@ -147,7 +162,7 @@ export function CreateAgentDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (nextOpen) setOpen(true);
-        else close();
+        else requestClose();
       }}
     >
       {trigger && (
@@ -170,7 +185,7 @@ export function CreateAgentDialog({
           </div>
           <button
             type="button"
-            onClick={close}
+            onClick={requestClose}
             aria-label="Close dialog"
             className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
           >
@@ -411,6 +426,7 @@ export function CreateAgentDialog({
                         selected
                           ? selectedTools.filter((key) => key !== tool.key)
                           : [...selectedTools, tool.key],
+                        { shouldDirty: true },
                       )
                     }
                     className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${selected ? "border-status-completed/70 bg-status-completed/10 text-foreground" : "border-border bg-background text-muted-foreground hover:border-slate-600"}`}
@@ -574,7 +590,7 @@ export function CreateAgentDialog({
             <Button
               variant="secondary"
               type="button"
-              onClick={close}
+              onClick={requestClose}
               className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-foreground/5"
             >
               Cancel
@@ -599,6 +615,14 @@ export function CreateAgentDialog({
           </footer>
         </form>
       </DialogContent>
+      <ActionConfirmationDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="Discard agent changes?"
+        description="Your unsaved agent changes, including the system prompt, will be lost."
+        actionLabel="Discard changes"
+        onConfirm={close}
+      />
     </Dialog>
   );
 }
