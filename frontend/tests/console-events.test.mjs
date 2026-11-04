@@ -13,7 +13,7 @@ test("console retains model waiting markers and excludes response fragments thro
     data: { stepNumber: 1, status: "IN_PROGRESS" },
   };
 
-  let log = appendRunEvent({ events: [], activityEvents: [], after: 0 }, status);
+  let log = appendRunEvent({ activityEvents: [], after: 0 }, status);
 
   for (let id = 2; id <= 502; id++) {
     log = appendRunEvent(log, {
@@ -23,7 +23,8 @@ test("console retains model waiting markers and excludes response fragments thro
     });
   }
 
-  assert.deepEqual(consoleEvents([status, ...log.events]), [status]);
+  assert.deepEqual(consoleEvents(log.activityEvents), log.activityEvents);
+  assert.equal("events" in log, false);
   assert.equal(consoleEvents(log.activityEvents).length, 2);
   assert.equal(log.activityEvents[1].data.reset, true);
 

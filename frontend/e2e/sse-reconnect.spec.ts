@@ -41,5 +41,6 @@ test("HTTP 502 replaces EventSource using the last received cursor", async ({ pa
 
   await page.goto(`/runs/${id}`);
   await expect.poll(() => connections.length, { timeout: 20000 }).toBeGreaterThanOrEqual(3);
+  expect(connections[0]).toBe("");
   expect(connections[2]).toBe("?after=42");
 });

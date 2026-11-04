@@ -64,7 +64,8 @@ class StatusChanged(StepIdentity):
 
 class StreamChunk(StepIdentity):
     textDelta: str
-    output: str
+    output: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    outputOffset: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None)
     reset: bool = False
     attempt: int = Field(ge=1)
 
@@ -118,6 +119,7 @@ class TaskFailed(TaskIdentity):
 
 class Snapshot(EventData):
     run: RunRead
+    eventCursor: int = Field(default=0, ge=0)
 
 
 PAYLOAD_MODELS: dict[str, type[EventData]] = {

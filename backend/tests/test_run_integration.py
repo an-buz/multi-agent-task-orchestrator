@@ -928,7 +928,7 @@ async def test_confirm_queue_execution_and_redelivery(
                     assert event.data["attempt"] == step.attempt
 
                     if event.data["reset"]:
-                        assert event.data["output"] == ""
+                        assert event.data["outputOffset"] == 0
 
                 for step in steps:
                     streamed = [
@@ -936,7 +936,7 @@ async def test_confirm_queue_execution_and_redelivery(
                     ]
 
                     if streamed:
-                        assert streamed[-1].data["output"] == step.output
+                        assert "".join(event.data["textDelta"] for event in streamed) == step.output
 
                 assert sum(event.event == "agent:completed" for event in events) == (
                     1 if deferred_dispatch else 2

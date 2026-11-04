@@ -106,7 +106,8 @@ async def test_complete_only_provider_emits_waiting_reset_without_pausing() -> N
     chunks = [data for name, data in repository.saved_events if name == "agent:stream_chunk"]
 
     assert len(chunks) == 1 and chunks[0]["reset"] is True
-    assert chunks[0]["textDelta"] == chunks[0]["output"] == ""
+    assert chunks[0]["textDelta"] == ""
+    assert "output" not in chunks[0]
 
     EventEnvelope(event="agent:stream_chunk", runId=run.id, ts=datetime.now(UTC), data=chunks[0])
     provider.aclose.assert_awaited_once()
@@ -131,7 +132,8 @@ async def test_stream_persists_partial_output_before_completion() -> None:
     chunks = [data for event, data in repository.saved_events if event == "agent:stream_chunk"]
 
     assert chunks[0]["reset"] is True
-    assert chunks[-1]["output"] == "Fixture result"
+    assert chunks[-1]["outputOffset"] + len(chunks[-1]["textDelta"]) == len("Fixture result")
+    assert all("output" not in chunk for chunk in chunks)
     assert ("IN_PROGRESS", "Fixture result") in snapshots
     assert ("IN_PROGRESS", "Fixture ") in snapshots
     assert run.status == "COMPLETED"
@@ -166,7 +168,8 @@ async def test_transient_stream_retry_resets_partial_text(monkeypatch: pytest.Mo
     chunks = [data for event, data in repository.saved_events if event == "agent:stream_chunk"]
 
     assert sum(data["reset"] for data in chunks) == 2
-    assert chunks[-1]["output"] == "Fixture result"
+    assert chunks[-1]["outputOffset"] + len(chunks[-1]["textDelta"]) == len("Fixture result")
+    assert all("output" not in chunk for chunk in chunks)
     assert repository.saved_steps[0].output == "Fixture result"
     assert provider.closed == 2
     assert run.status == "COMPLETED"

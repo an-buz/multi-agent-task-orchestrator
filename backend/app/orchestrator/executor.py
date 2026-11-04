@@ -506,7 +506,7 @@ class DAGExecutor:
                     step = by_number[int(data["stepNumber"])]
                     output = ("" if data["reset"] else step.output or "") + str(data["textDelta"])
                     step.output = output or None
-                    data["output"] = output
+                    data["outputOffset"] = len(output) - len(str(data["textDelta"]))
 
                 self.repository.emit(run.id, name, data)
 

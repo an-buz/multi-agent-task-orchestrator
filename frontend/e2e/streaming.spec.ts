@@ -10,6 +10,7 @@ for (const theme of ["light", "dark"]) {
 
       class MockEventSource extends EventTarget {
         onerror = null;
+        onopen: (() => void) | null = null;
 
         forward = (event: Event) => {
           const envelope = (event as CustomEvent).detail;
@@ -17,13 +18,16 @@ for (const theme of ["light", "dark"]) {
           this.dispatchEvent(
             new MessageEvent(envelope.event, {
               data: JSON.stringify(envelope),
+              lastEventId: envelope.id ?? "",
             }),
           );
         };
 
-        constructor() {
+        constructor(url: string) {
           super();
+          document.documentElement.dataset.sseUrl = url;
           window.addEventListener("mock-sse", this.forward);
+          setTimeout(() => this.onopen?.(), 0);
         }
 
         close() {
@@ -88,7 +92,7 @@ for (const theme of ["light", "dark"]) {
                   agentId,
                   stepNumber: 1,
                   textDelta: text,
-                  output: text,
+                  outputOffset: 0,
                   reset,
                   attempt: 1,
                 },
@@ -103,6 +107,8 @@ for (const theme of ["light", "dark"]) {
     await page.goto(`/runs/${runId}`);
     await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
     await expect(page.getByText("Waiting for model response…")).toBeVisible();
+
+    expect(await page.locator("html").getAttribute("data-sse-url")).not.toContain("after=0");
 
     const initialGets = gets;
 
@@ -123,12 +129,62 @@ for (const theme of ["light", "dark"]) {
     await emit("Fixture result");
     await expect(page.getByLabel("Output for step 1")).toHaveText("Fixture result");
 
+    // A replay burst should produce one batched GET, without cancelling requests.
+    const beforeBurst = gets;
+
+    await page.evaluate(() => {
+      for (let id = 1; id <= 40; id++) {
+        window.dispatchEvent(
+          new CustomEvent("mock-sse", {
+            detail: {
+              id: String(id),
+              event: "agent:status_change",
+              data: { stepNumber: 1, status: "IN_PROGRESS" },
+            },
+          }),
+        );
+      }
+    });
+    await expect.poll(() => gets).toBe(beforeBurst + 1);
+    await page.waitForTimeout(500);
+    expect(gets).toBe(beforeBurst + 1);
+
+    // A reconnect snapshot is newer than replayed resets and deltas.
+    await page.evaluate(
+      async ({ runId }) => {
+        const run = await fetch(`http://localhost:8000/api/v1/runs/${runId}`).then((response) =>
+          response.json(),
+        );
+        for (const detail of [
+          { event: "run:snapshot", data: { run, eventCursor: 100 } },
+          {
+            id: "99",
+            event: "agent:stream_chunk",
+            data: { stepNumber: 1, attempt: 1, reset: true, textDelta: "", outputOffset: 0 },
+          },
+          {
+            id: "100",
+            event: "agent:stream_chunk",
+            data: { stepNumber: 1, attempt: 1, textDelta: "Old", outputOffset: 0 },
+          },
+          {
+            id: "101",
+            event: "agent:stream_chunk",
+            data: { stepNumber: 1, attempt: 1, textDelta: "!", outputOffset: 14 },
+          },
+        ])
+          window.dispatchEvent(new CustomEvent("mock-sse", { detail }));
+      },
+      { runId },
+    );
+    await expect(page.getByLabel("Output for step 1")).toHaveText("Fixture result!");
+
     completed = true;
 
     await page.evaluate(() =>
       window.dispatchEvent(
         new CustomEvent("mock-sse", {
-          detail: { event: "agent:completed", data: {} },
+          detail: { id: "102", event: "agent:completed", data: {} },
         }),
       ),
     );

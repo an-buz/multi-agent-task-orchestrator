@@ -42,7 +42,7 @@ async def stream_run(
             event="run:snapshot",
             runId=run_id,
             ts=datetime.now(UTC),
-            data={"run": snapshot.model_dump(mode="json")},
+            data={"run": snapshot.model_dump(mode="json"), "eventCursor": watermark},
         ).model_dump_json(),
     }
 

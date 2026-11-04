@@ -15,8 +15,8 @@ export function useRunEvents(runId: string | undefined) {
 
   const log = useQuery<RunEventLog>({
     queryKey: runEventsQueryKey(runId),
-    queryFn: () => ({ events: [], activityEvents: [], after: 0 }),
-    initialData: { events: [], activityEvents: [], after: 0 },
+    queryFn: () => ({ activityEvents: [], after: 0 }),
+    initialData: { activityEvents: [], after: 0 },
     enabled: false,
   });
 
@@ -32,9 +32,28 @@ export function useRunEvents(runId: string | undefined) {
     if (!runId || !enabled) return;
 
     const key = runQueryKey(runId);
-    const after = client.getQueryData<RunEventLog>(runEventsQueryKey(runId))?.after ?? 0;
+    const after = client.getQueryData<RunEventLog>(runEventsQueryKey(runId))?.after || undefined;
 
     let active = true;
+    let snapshotCursor = 0;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let refreshList = false;
+
+    const scheduleRefresh = (list: boolean) => {
+      refreshList ||= list;
+      if (refreshTimer !== undefined) return;
+
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        void client.invalidateQueries({ queryKey: key, exact: true }, { cancelRefetch: false });
+        if (refreshList)
+          void client.invalidateQueries(
+            { queryKey: [...runsQueryKey, "list"] },
+            { cancelRefetch: false },
+          );
+        refreshList = false;
+      }, 300);
+    };
 
     const close = subscribeToRun(
       runId,
@@ -43,8 +62,14 @@ export function useRunEvents(runId: string | undefined) {
 
         setConnectionError(null);
 
+        const previousCursor =
+          client.getQueryData<RunEventLog>(runEventsQueryKey(runId))?.after ?? 0;
+
+        if (event.event === "agent:stream_chunk" && event.id && Number(event.id) <= previousCursor)
+          return;
+
         client.setQueryData<RunEventLog>(runEventsQueryKey(runId), (current) =>
-          appendRunEvent(current ?? { events: [], activityEvents: [], after: 0 }, event),
+          appendRunEvent(current ?? { activityEvents: [], after: 0 }, event),
         );
 
         const data = event.data ?? event.payload;
@@ -57,25 +82,23 @@ export function useRunEvents(runId: string | undefined) {
           data.run.id === runId
         ) {
           void client.cancelQueries({ queryKey: key, exact: true });
+          snapshotCursor = typeof data.eventCursor === "number" ? data.eventCursor : 0;
           client.setQueryData(key, data.run);
           return;
         }
 
         if (event.event === "agent:stream_chunk") {
+          if (event.id && Number(event.id) <= snapshotCursor) return;
           void client.cancelQueries({ queryKey: key, exact: true });
           client.setQueryData<RunDetails>(key, (run) => applyStreamChunk(run, event));
           return;
         }
 
-        void client.invalidateQueries({ queryKey: key, exact: true });
-
-        if (
+        scheduleRefresh(
           event.event.startsWith("task:") ||
-          event.event.startsWith("decision:") ||
-          event.event === "plan:ready"
-        ) {
-          void client.invalidateQueries({ queryKey: [...runsQueryKey, "list"] });
-        }
+            event.event.startsWith("decision:") ||
+            event.event === "plan:ready",
+        );
       },
       () => {
         if (active) setConnectionError(runId);
@@ -93,13 +116,13 @@ export function useRunEvents(runId: string | undefined) {
 
     return () => {
       active = false;
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer);
       close();
     };
   }, [runId, client, isTerminal, enabled]);
 
   return {
     query,
-    events: log.data.events,
     activityEvents: log.data.activityEvents,
     activationOrder: log.data.activationOrder ?? [],
     connectionError: enabled && Boolean(runId) && connectionError === runId,

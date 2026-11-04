@@ -17,7 +17,6 @@ export function canRetryStep(run: RunDetails, step: RunStep): boolean {
 }
 
 export interface RunEventLog {
-  events: RunEvent[];
   activityEvents: RunEvent[];
   after: number;
   activationOrder?: number[];
@@ -43,9 +42,9 @@ export function appendRunEvent(log: RunEventLog, event: RunEvent): RunEventLog {
     !log.activityEvents.some((item) => eventKey(item) === eventKey(event));
 
   return {
-    events: append(log.events),
     activityEvents:
-      event.event === "agent:stream_chunk" && data?.reset !== true
+      event.event === "run:snapshot" ||
+      (event.event === "agent:stream_chunk" && data?.reset !== true)
         ? log.activityEvents
         : append(log.activityEvents),
     after: Math.max(log.after, cursor),
@@ -90,14 +89,18 @@ export function applyStreamChunk(
     event.event !== "agent:stream_chunk" ||
     !data ||
     typeof data.stepNumber !== "number" ||
-    typeof data.output !== "string" ||
+    (typeof data.output !== "string" &&
+      (typeof data.textDelta !== "string" ||
+        typeof data.outputOffset !== "number" ||
+        !Number.isInteger(data.outputOffset) ||
+        data.outputOffset < 0)) ||
     typeof data.attempt !== "number" ||
     !Number.isInteger(data.attempt) ||
     data.attempt < 0
   )
     return run;
 
-  const { stepNumber, output, attempt } = data;
+  const { stepNumber, attempt } = data;
   let changed = false;
 
   const steps = runSteps(run).map((step) => {
@@ -107,6 +110,20 @@ export function applyStreamChunk(
       (["COMPLETED", "FAILED", "CANCELLED"].includes(step.status) && (step.attempt ?? 0) >= attempt)
     )
       return step;
+
+    const previous = step.attempt === attempt && data.reset !== true ? (step.output ?? "") : "";
+    const length = Array.from(previous).length;
+    const offset = data.outputOffset as number;
+
+    if (typeof data.output !== "string" && offset > length) return step;
+
+    const output =
+      typeof data.output === "string"
+        ? data.output
+        : previous +
+          Array.from(data.textDelta as string)
+            .slice(Math.max(0, length - offset))
+            .join("");
 
     if (step.status === "IN_PROGRESS" && step.attempt === attempt && step.output === output)
       return step;

@@ -32,7 +32,7 @@ const activation = (stepNumber, id) => ({
 test("dashboard follows activation order rather than plan order or manual selection", () => {
   const steps = [1, 2, 3].map((step_number) => ({ step_number, status: "IN_PROGRESS" }));
   const run = { plan: { steps } };
-  let log = { events: [], activityEvents: [], after: 0 };
+  let log = { activityEvents: [], after: 0 };
 
   for (const [number, id] of [
     [3, 1],
@@ -59,7 +59,7 @@ test("dashboard follows activation order rather than plan order or manual select
 });
 
 test("activation order survives eviction, duplicates, stale replay and non-activation events", () => {
-  let log = { events: [], activityEvents: [], after: 0 };
+  let log = { activityEvents: [], after: 0 };
 
   log = appendRunEvent(appendRunEvent(log, activation(2, 1)), activation(1, 2));
 
@@ -95,7 +95,7 @@ test("inspector handles empty runs, legacy plans, snapshots and separate run his
   steps[1].status = "PENDING";
   assert.equal(dashboardInspectorStep({ plan: steps }, []), steps[0]);
 
-  let log = { events: [], activityEvents: [], after: 0 };
+  let log = { activityEvents: [], after: 0 };
 
   log = appendRunEvent(log, {
     ...activation(2, 1),
@@ -126,7 +126,7 @@ test("retry is available only for a failed step in a failed run without a retrya
 });
 
 test("long streams preserve activity history and advance replay independently", () => {
-  let log = { events: [], activityEvents: [], after: 0 };
+  let log = { activityEvents: [], after: 0 };
   const started = { id: "1", event: "task:started" };
   const tool = { id: "2", event: "agent:tool_call" };
 
@@ -135,7 +135,7 @@ test("long streams preserve activity history and advance replay independently", 
   for (let id = 3; id <= 203; id++)
     log = appendRunEvent(log, { ...chunk(String(id)), id: String(id) });
 
-  assert.equal(log.events.length, 150);
+  assert.equal("events" in log, false);
   assert.deepEqual(log.activityEvents, [started, tool]);
   assert.equal(log.after, 203);
   log = appendRunEvent(log, started);
@@ -145,7 +145,7 @@ test("long streams preserve activity history and advance replay independently", 
   for (let id = 204; id <= 404; id++)
     log = appendRunEvent(log, { id: String(id), event: "agent:status_change" });
 
-  assert.equal(log.events.length, 150);
+  assert.equal("events" in log, false);
   assert.equal(log.activityEvents.length, 150);
   assert.equal(log.after, 404);
 });
@@ -311,3 +311,31 @@ for (const [status, label, tone] of [
     assert.match(html, /<i class="[^"]*rounded-full[^\"]*bg-current[^\"]*"><\/i>/);
   });
 }
+
+test("delta chunks append Unicode code points and ignore overlapping delivery", () => {
+  const delta = (textDelta, outputOffset, reset = false, attempt = 2) => ({
+    event: "agent:stream_chunk",
+    data: { stepNumber: 1, attempt, textDelta, outputOffset, reset },
+  });
+  const initial = applyStreamChunk(run, delta("Hi 🌍", 0, true));
+  const next = applyStreamChunk(initial, delta("🌍!", 3));
+
+  assert.equal(runSteps(next)[0].output, "Hi 🌍!");
+  assert.equal(applyStreamChunk(next, delta("🌍!", 3)), next);
+  assert.equal(applyStreamChunk(next, delta("gap", 100)), next);
+  assert.equal(runSteps(applyStreamChunk(next, delta("", 0, true, 3)))[0].output, "");
+});
+
+test("snapshots advance the cursor without retaining full run payloads in activity", () => {
+  const log = appendRunEvent(
+    { activityEvents: [], after: 0 },
+    {
+      id: "42",
+      event: "run:snapshot",
+      data: { run },
+    },
+  );
+
+  assert.equal(log.after, 42);
+  assert.deepEqual(log.activityEvents, []);
+});

@@ -122,7 +122,8 @@ export interface StreamChunkData {
   agentId: string;
   stepNumber: number;
   textDelta: string;
-  output: string;
+  outputOffset: number;
+  output?: string;
   reset: boolean;
   attempt: number;
 }
