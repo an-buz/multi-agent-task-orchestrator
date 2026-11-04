@@ -23,6 +23,7 @@ from app.llm.context import ContextTooLarge, check_context
 from app.llm.discovery import refresh_model_registry
 from app.llm.provider import IncompleteLLMResponse, LLMProvider, LLMResponse, StreamingLLMProvider
 from app.llm.providers import create_provider
+from app.llm.registry import ModelInfo, execution_models, get_model_registry
 from app.llm.retry import llm_retrying
 from app.models.run import Run
 from app.models.run_decision import RunDecision
@@ -124,6 +125,11 @@ class DAGExecutor:
                     }
                 )
 
+        info = step.agent_config.get("model_info")
+        registry_token = execution_models.set(
+            {info["key"]: ModelInfo(**info)} if info else dict(get_model_registry())
+        )
+
         error_code = "llm_error"
 
         try:
@@ -165,8 +171,6 @@ class DAGExecutor:
                     response = LLMResponse.model_validate(turns[round_number]["response"])
                 else:
                     if provider is None:
-                        await refresh_model_registry()
-
                         provider = self.provider_factory(str(config["model"]))
 
                     async for attempt in llm_retrying():
@@ -402,6 +406,8 @@ class DAGExecutor:
                 completion_tokens,
             )
         finally:
+            execution_models.reset(registry_token)
+
             if provider is not None:
                 try:
                     await provider.aclose()
@@ -413,6 +419,9 @@ class DAGExecutor:
                     )
 
     async def execute(self, run: Run) -> None:
+        # Discovery must never hold the run row lock across provider HTTP.
+        await refresh_model_registry()
+
         current = await self.repository.get(run.id, lock=True)
 
         if current is None or current.status not in {"IN_PROGRESS", "PAUSED"}:
@@ -781,12 +790,19 @@ class DAGExecutor:
     async def models_ready(self, run: Run, steps: list[RunStep]) -> bool:
         """Drain active work before pausing; repair only invalidated snapshots."""
 
+        current = await self.repository.get(run.id, lock=True)
+
+        if current is None or current.status not in {"IN_PROGRESS", "PAUSED"}:
+            return False
+
         unfinished = [step for step in steps if step.status in {"PENDING", "IN_PROGRESS"}]
 
         if not unfinished:
             return True
 
-        available = await ModelService(ModelRepository(self.repository.session)).available()
+        available = await ModelService(ModelRepository(self.repository.session)).available(
+            refresh=False
+        )
 
         flags = await self.repository.reconfiguration_flags(run.id)
         agents = await self.repository.agents({step.agent_id for step in unfinished})
@@ -816,7 +832,9 @@ class DAGExecutor:
 
             replacement = snapshot_agent(agent)
 
-            if step.checkpoint and replacement != step.agent_config:
+            if step.checkpoint and {
+                key: value for key, value in replacement.items() if key != "model_info"
+            } != {key: value for key, value in step.agent_config.items() if key != "model_info"}:
                 # Native conversations and tool receipts belong to the original snapshot.
                 # Only an explicit retry may discard them and start with new permissions.
                 step.status = "FAILED"

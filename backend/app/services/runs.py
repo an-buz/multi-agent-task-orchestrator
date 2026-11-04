@@ -1,5 +1,6 @@
 """Run planning and confirmation, independent of HTTP and transport."""
 
+from dataclasses import asdict
 from datetime import UTC, datetime
 from graphlib import TopologicalSorter
 from typing import cast
@@ -293,10 +294,20 @@ class RunService:
         if run.status != "AWAITING_CONFIRMATION":
             raise RunError("Run is not awaiting confirmation")
 
-        if not await self.repository.steps(run.id):
+        steps = await self.repository.steps(run.id)
+
+        if not steps:
             raise RunError("This legacy run has no execution snapshot; create a new run")
 
         self.validate_reviewed_plan(RunPlan.model_validate(run.plan), expected_subtasks)
+
+        registry = get_model_registry()
+
+        for step in steps:
+            info = registry.get(step.agent_config["model"])
+
+            if info is not None:
+                step.agent_config = {**step.agent_config, "model_info": asdict(info)}
 
         run.status = "IN_PROGRESS"
         run.started_at = datetime.now(UTC)

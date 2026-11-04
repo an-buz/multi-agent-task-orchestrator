@@ -1,5 +1,6 @@
 """Configured model and tool catalogues used by API validation and LLM clients."""
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
@@ -16,6 +17,11 @@ class ModelInfo:
     max_output_tokens: int | None
 
 
+execution_models: ContextVar[dict[str, ModelInfo] | None] = ContextVar(
+    "execution_models", default=None
+)
+
+
 @dataclass(frozen=True)
 class ToolInfo:
     key: str
@@ -25,6 +31,11 @@ class ToolInfo:
 
 def get_model_registry(settings: Settings | None = None) -> dict[str, ModelInfo]:
     """Build public model keys mapped to current provider API model IDs."""
+
+    frozen = execution_models.get()
+
+    if frozen is not None:
+        return frozen
 
     active = settings or get_settings()
 

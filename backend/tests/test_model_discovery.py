@@ -302,3 +302,52 @@ async def test_real_http_catalogue_and_agent_creation_use_discovered_ids(monkeyp
             assert response.status_code == 422
     finally:
         app.dependency_overrides.pop(get_session, None)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_discovery_503_during_step_uses_confirmed_model_snapshot(monkeypatch, legacy):
+    from app.llm.registry import execution_models
+    from app.orchestrator.executor import DAGExecutor
+
+    from test_executor import make_run
+    from test_tools import FixtureTools
+
+    repository, run = await make_run([[]])
+    step = repository.saved_steps[0]
+    assert step.agent_config["model_info"]["context_window"] is not None
+    step.agent_config["tools"] = ["calculator"]
+
+    if legacy:
+        step.agent_config.pop("model_info")
+
+    original_registry = get_model_registry()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_provider_mode", "real")
+    monkeypatch.setattr(settings, "anthropic_api_key", "fixture-secret")
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    if legacy:
+        discovery._cache[
+            discovery.cache_key("anthropic", "fixture-secret", settings.anthropic_api_url)
+        ] = discovery.CatalogueEntry(original_registry, 0)
+
+    install_transport(monkeypatch, lambda request: httpx.Response(503))
+
+    class DiscoveryFailureMock(FixtureTools):
+        async def count_input_tokens(self, *args):
+            # A separate request refreshes the process cache while the step is active.
+            token = execution_models.set(None)
+            try:
+                assert await discovery.refresh_model_registry(settings) == {}
+            finally:
+                execution_models.reset(token)
+            assert get_model_registry()[step.agent_config["model"]].context_window is not None
+            return 1
+
+    provider = DiscoveryFailureMock()
+    result = await DAGExecutor(repository, lambda _: provider).complete(step)
+    assert result.error is None
+    assert result.response is not None
+    assert provider.calls == 2
+    assert execution_models.get() is None
+    assert get_model_registry() == {}

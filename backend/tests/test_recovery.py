@@ -2,11 +2,13 @@
 
 import asyncio
 import json
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from app.llm.provider import LLMResponse
+from app.llm.registry import get_model_registry
 from app.orchestrator.executor import DAGExecutor
 from app.orchestrator.planner import LLMPlanner, PlannerExecutor
 from app.services.runs import RunService
@@ -81,7 +83,12 @@ async def test_checkpoint_model_switch_requires_explicit_retry(
 
     step = repository.saved_steps[0]
 
-    step.agent_config = {**step.agent_config, "model": original_model, "tools": ["calculator"]}
+    step.agent_config = {
+        **step.agent_config,
+        "model": original_model,
+        "model_info": asdict(get_model_registry()[original_model]),
+        "tools": ["calculator"],
+    }
 
     execute_tool = AsyncMock(return_value=json.dumps({"value": 20}))
 

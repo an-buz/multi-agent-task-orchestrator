@@ -25,7 +25,7 @@ from app.orchestrator.executor import DAGExecutor
 from app.orchestrator.planner import PlannerExecutor
 from app.schemas.run import RunCreate
 from app.services.models import ModelService
-from app.services.runs import RunService
+from app.services.runs import RunError, RunService
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -540,3 +540,131 @@ async def test_all_disabled_validation_and_paused_cancellation(
         )
     ).status_code == 422
     assert (await client.post(f"/runs/{run_id}/cancel")).json()["status"] == "CANCELLED"
+
+
+async def test_cancel_before_model_repair_preserves_cancelled_steps(model_client) -> None:
+    client, sessions = model_client
+    run_id, _ = await create_confirmed(client, sessions)
+
+    async with sessions() as worker_session:
+        repository = RunRepository(worker_session)
+        run = await repository.get(run_id)
+        steps = await repository.steps(run_id)
+        steps[0].checkpoint = {"turns": []}
+        steps[0].requires_reconfiguration = True
+        steps[0].agent_config = {**steps[0].agent_config, "system_prompt": "Old prompt"}
+        await repository.save()
+
+        async with sessions() as cancel_session:
+            await RunService(RunRepository(cancel_session)).cancel(run_id)
+
+        executor = DAGExecutor(repository)
+        assert not await executor.models_ready(run, steps)
+        assert not await executor.still_running(run)
+
+    async with sessions() as session:
+        repository = RunRepository(session)
+        assert all(step.status == "CANCELLED" for step in await repository.steps(run_id))
+        events = await repository.events(run_id, 0)
+        assert events[-1].event == "task:cancelled"
+        assert not any(record.event == "agent:failed" for record in events)
+
+
+@pytest.mark.parametrize("operation", ["cancel", "retry"])
+async def test_service_waits_for_worker_completion_lock(model_client, operation) -> None:
+    client, sessions = model_client
+    run_id, _ = await create_confirmed(client, sessions)
+
+    async with sessions() as session:
+        repository = RunRepository(session)
+        run = await repository.get(run_id)
+        steps = await repository.steps(run_id)
+        if operation == "retry":
+            run.status = "FAILED"
+            steps[0].status = "FAILED"
+        else:
+            steps[0].status = "IN_PROGRESS"
+        await repository.save()
+
+    async with sessions() as worker_session, sessions() as api_session:
+        worker = RunRepository(worker_session)
+        run = await worker.get(run_id, lock=True)
+        steps = await worker.steps(run_id)
+        service = RunService(RunRepository(api_session))
+        action = asyncio.create_task(
+            service.cancel(run_id) if operation == "cancel" else service.retry(run_id, 1)
+        )
+
+        try:
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(action), 0.2)
+
+            if operation == "cancel":
+                steps[0].status = "COMPLETED"
+                steps[0].output = "Worker finished before cancellation"
+                DAGExecutor(worker).result_event(run, steps[0])
+            else:
+                run.status = "CANCELLED"
+                steps[0].status = "CANCELLED"
+
+            await worker.save()
+
+            if operation == "retry":
+                with pytest.raises(RunError, match="Retry requires"):
+                    await asyncio.wait_for(action, 5)
+            else:
+                await asyncio.wait_for(action, 5)
+        finally:
+            action.cancel()
+            await asyncio.gather(action, return_exceptions=True)
+
+    async with sessions() as session:
+        repository = RunRepository(session)
+        run = await repository.get(run_id)
+        steps = await repository.steps(run_id)
+        if operation == "cancel":
+            assert run.status == "CANCELLED"
+            assert [step.status for step in steps] == ["COMPLETED", "CANCELLED"]
+            assert (await repository.events(run_id, 0))[-1].event == "task:cancelled"
+        else:
+            assert run.status == "CANCELLED"
+            assert steps[0].status == "CANCELLED"
+
+
+async def test_cancel_during_provider_completion_has_no_late_result(model_client) -> None:
+    client, sessions = model_client
+    run_id, _ = await create_confirmed(client, sessions)
+    started = asyncio.Event()
+    finish = asyncio.Event()
+
+    class BlockedMock(MockLLMProvider):
+        async def complete_tools(self, *args, **kwargs):
+            started.set()
+            await finish.wait()
+            return LLMResponse(
+                content="Completed provider response",
+                usage={"input_tokens": 2, "output_tokens": 1},
+            )
+
+    async with sessions() as worker_session:
+        repository = RunRepository(worker_session)
+        run = await repository.get(run_id)
+        task = asyncio.create_task(DAGExecutor(repository, lambda _: BlockedMock()).execute(run))
+        try:
+            await asyncio.wait_for(started.wait(), 5)
+            async with sessions() as cancel_session:
+                await RunService(RunRepository(cancel_session)).cancel(run_id)
+            finish.set()
+            await asyncio.wait_for(task, 5)
+        finally:
+            finish.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async with sessions() as session:
+        repository = RunRepository(session)
+        assert (await repository.get(run_id)).status == "CANCELLED"
+        assert all(step.status == "CANCELLED" for step in await repository.steps(run_id))
+        events = await repository.events(run_id, 0)
+        assert events[-1].event == "task:cancelled"
+        assert not any(record.event in {"agent:failed", "agent:completed"} for record in events)

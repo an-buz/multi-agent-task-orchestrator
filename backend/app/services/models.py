@@ -28,8 +28,12 @@ class ModelService:
         self.repository = repository
         self.settings = settings or get_settings()
 
-    async def available(self) -> set[str]:
-        registry = await refresh_model_registry(self.settings)
+    async def available(self, *, refresh: bool = True) -> set[str]:
+        registry = (
+            await refresh_model_registry(self.settings)
+            if refresh
+            else get_model_registry(self.settings)
+        )
         disabled = await self.repository.disabled()
 
         return {
