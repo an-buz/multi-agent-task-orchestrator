@@ -394,7 +394,7 @@ for (const theme of ["dark", "light"]) {
       () => (window as unknown as { closedDashboardStreams: string[] }).closedDashboardStreams,
     );
 
-    expect(closed.some((url) => url.includes(firstId) && url.endsWith("?after=0"))).toBe(true);
+    expect(closed.some((url) => url.endsWith(`/runs/${firstId}/events`))).toBe(true);
 
     await emit(page, "agent:stream_chunk", { ...chunk, output: "Stale first run" }, "14");
     await expect(inspector.getByLabel("Output for step 1")).toHaveText("Previous output");

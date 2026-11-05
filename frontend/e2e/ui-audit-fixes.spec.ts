@@ -57,6 +57,7 @@ async function mockApplication(page: Page, existingRun = true) {
       },
     },
     exportFailure: false,
+    consoleEvent: false,
     savedConfig: null as Record<string, unknown> | null,
   };
 
@@ -147,7 +148,9 @@ async function mockApplication(page: Page, existingRun = true) {
       return route.fulfill({
         headers,
         contentType: "text/event-stream",
-        body: `event: run:snapshot\ndata: ${JSON.stringify({ event: "run:snapshot", ts: timestamp, run_id: runId, data: {} })}\n\n`,
+        body: state.consoleEvent
+          ? `id: 1\nevent: agent:tool_result\ndata: ${JSON.stringify({ event: "agent:tool_result", ts: timestamp, run_id: runId, data: { stepNumber: 1, toolName: "calculator", ok: true, summary: "Calculation complete" } })}\n\n`
+          : `event: run:snapshot\ndata: ${JSON.stringify({ event: "run:snapshot", ts: timestamp, run_id: runId, data: {} })}\n\n`,
       });
 
     if (url.pathname.endsWith("/export"))
@@ -289,6 +292,7 @@ for (const theme of ["dark", "light"] as const) {
       const state = await mockApplication(page);
 
       state.run.status = "IN_PROGRESS";
+      state.consoleEvent = true;
 
       const errors: string[] = [];
 
@@ -304,9 +308,12 @@ for (const theme of ["dark", "light"] as const) {
         "QA workflow",
       );
 
+      await expect(
+        page.getByLabel("Run orchestration events").getByText("Calculation complete"),
+      ).toBeVisible();
       await page.getByRole("button", { name: "Clear", exact: true }).click();
       await expect(page.getByText("Console cleared. Waiting for new events.")).toBeVisible();
-      await expect(page.getByText("Cloned repository", { exact: false })).toHaveCount(0);
+      await expect(page.getByText("Calculation complete")).toHaveCount(0);
       await page.getByRole("button", { name: "More pipeline options" }).click();
       await expect(page.getByRole("button", { name: "Manage workflows" })).toBeVisible();
       await page.getByRole("button", { name: "Help about input context" }).click();
